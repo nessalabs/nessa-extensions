@@ -1,21 +1,14 @@
 # Architecture decision records
 
-Folders show implementation progress; the `Status` inside a record shows whether
-its decision is proposed, accepted, or superseded. Acceptance alone does not
-make an implementation done.
+Records here follow
+[nessa-agent's ADR index](https://github.com/nessalabs/nessa-agent/blob/main/docs/adr/README.md):
+its folders, its status, and its
+[numbering rule](https://github.com/nessalabs/nessa-agent/blob/main/docs/adr/README.md#numbering-open-the-issue-first),
+with the issue opened in this repository. A decision about Nessa itself — the
+app, the gateway, the host — is recorded in nessa-agent, not here.
 
-- **`todo/`** — proposals and decisions with implementation remaining.
-- **`done/`** — implemented decisions, keeping their numbers and filenames.
-
-## Numbering: open the issue first
-
-**A record takes the number of the issue in this repository that proposed it.**
-Open the issue, then write `todo/<issue>-<slug>.md`. This is nessa-agent's rule,
-for nessa-agent's reason, which
-[its ADR index](https://github.com/nessalabs/nessa-agent/blob/main/docs/adr/README.md#numbering-open-the-issue-first)
-gives: GitHub hands out issue numbers one at a time to everybody, so two
-branches cannot give two records one number. A decision about Nessa itself —
-the app, the gateway, the host — is recorded in nessa-agent, not here.
+nessa-agent's check for a number used twice is not copied here; with numbers
+taken from issues, only a typo can repeat one, and review catches it.
 
 ## Todo
 

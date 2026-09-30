@@ -26,6 +26,8 @@ sequenceDiagram
   participant Server as Extension server
   participant App as Extension app (sandboxed iframe)
   Host->>Server: initialize, with capabilities.extensions["io.modelcontextprotocol/ui"]
+  Server-->>Host: its capabilities
+  Host->>Server: tools/list
   Server-->>Host: tools, each naming its view in _meta.ui.resourceUri
   Model->>Host: call a tool
   Host->>Server: tools/call
@@ -35,6 +37,7 @@ sequenceDiagram
   Host->>App: render in a sandboxed iframe on its own origin
   App->>Host: ui/initialize
   Host-->>App: host context (theme, locale, display mode, size)
+  App->>Host: ui/notifications/initialized
   Host->>App: ui/notifications/tool-input, then tool-result
   App->>Host: tools/call on its own server
   Host->>Server: tools/call (only tools visible to the app)
@@ -57,20 +60,27 @@ It can also serve streamable HTTP, for hosts that connect to a remote server;
 the option that selects it is set by
 [#3](https://github.com/nessalabs/nessa-extensions/issues/3).
 
-**Nessa.** Add it to `agents.mcpServers` in the gateway's `config.json`, as
-[the gateway guide](https://github.com/nessalabs/nessa-agent/blob/main/docs/guides/gateway-chat.md#local-setup)
-describes, with an absolute path to `npx`:
+**Nessa.** Nessa starts an MCP server from an absolute command with an empty
+environment, so `npx`, which needs `node` on `PATH`, does not start there.
+Install the package, then give Nessa `node` and the package's server script,
+as [the gateway guide](https://github.com/nessalabs/nessa-agent/blob/main/docs/guides/gateway-chat.md#local-setup)
+describes for `agents.mcpServers` in the gateway's `config.json`:
+
+```sh
+npm install --prefix /absolute/path/to/extensions @nessalabs/<name>
+```
 
 ```json
 {
   "name": "<name>",
-  "command": "/absolute/path/to/npx",
-  "args": ["-y", "@nessalabs/<name>"]
+  "command": "/absolute/path/to/node",
+  "args": ["/absolute/path/to/extensions/node_modules/@nessalabs/<name>/<bin>"]
 }
 ```
 
-Its tools reach the agent there today, as any configured server's do, with
-their text results. Its view needs Nessa to host MCP Apps, which is
+where `<bin>` is the file the package's `bin` names. Its tools reach the agent
+there today, as any configured server's do, with their text results. Its view
+needs Nessa to host MCP Apps, which is
 [nessalabs/nessa-agent#345](https://github.com/nessalabs/nessa-agent/issues/345).
 
 **ChatGPT.** ChatGPT does not start local processes. Serve the extension over
@@ -108,7 +118,7 @@ release workflow arrives with the first extension; until then every package is
 
 ## Development
 
-Requires Node 22.13 or later and pnpm 11.9.0.
+Requires Node 24 or later and pnpm 11.9.0.
 
 ```sh
 pnpm install
@@ -123,7 +133,7 @@ pull request and on `main`; run the ones your change touches before pushing.
 | `pnpm lint` | ESLint, with typescript-eslint |
 | `pnpm typecheck` | TypeScript, strict |
 | `pnpm test` | Vitest, over every package and extension |
-| `pnpm architecture` | What an extension and a package may import ([`scripts/check-architecture.mjs`](scripts/check-architecture.mjs)), after its own tests. Bare Node: CI runs it before installing anything |
+| `pnpm architecture` | What an extension and a package may depend on ([`scripts/check-architecture.mjs`](scripts/check-architecture.mjs)), after its own tests. Bare Node: CI runs it before installing anything |
 
 ```
 packages/

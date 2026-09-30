@@ -6,9 +6,6 @@ packages:
 allowBuilds:
   esbuild: true
 
-onlyBuiltDependencies:
-  - esbuild
-
 # Run a script as written. Left to its default, pnpm installs before running
 # one, and CI's architecture step — which runs before `pnpm install` to show the
 # check needs nothing but Node — would install first and show nothing.

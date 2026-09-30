@@ -1,10 +1,14 @@
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { test } from "node:test"
+import { fileURLToPath } from "node:url"
 
 import { checkRepository } from "../check-architecture.mjs"
+
+const script = fileURLToPath(new URL("../check-architecture.mjs", import.meta.url))
 
 /** A repository on disk made of `files`, removed when the test ends. */
 function repository(t, files) {
@@ -17,53 +21,99 @@ function repository(t, files) {
   return root
 }
 
-const manifest = (name) => JSON.stringify({ name })
+const manifest = (name, fields = {}) => JSON.stringify({ name, ...fields })
+
+const twoExtensions = {
+  "package.json": manifest("root"),
+  "extensions/experiments/package.json": manifest("@nessalabs/experiments"),
+  "extensions/notes/package.json": manifest("@nessalabs/notes"),
+}
 
 test("an empty repository passes", (t) => {
   assert.deepEqual(checkRepository(repository(t, { "README.md": "" })), [])
 })
 
-test("finds a violation deep in an extension, by path and by name", (t) => {
+test("finds a relative path out of an extension, deep in any checked file", (t) => {
   const root = repository(t, {
-    "extensions/experiments/package.json": manifest("@nessalabs/experiments"),
-    "extensions/notes/package.json": manifest("@nessalabs/notes"),
+    ...twoExtensions,
     "extensions/experiments/app/views/run.tsx": `import { n } from "../../../notes/app/n"`,
-    "extensions/experiments/server/tools.ts": `import { n } from "@nessalabs/notes"`,
+    "extensions/experiments/app/index.html": `<script src="../../notes/app/x.js"></script>`,
+    "extensions/experiments/server/tsconfig.json": `{ "extends": "../../../tsconfig.json" }`,
     "extensions/notes/server/index.ts": `import { own } from "./own"`,
   })
   assert.deepEqual(checkRepository(root), [
-    `extensions/experiments/app/views/run.tsx: imports "../../../notes/app/n" from extension notes; an extension never imports another extension — share it through a package`,
-    `extensions/experiments/server/tools.ts: imports "@nessalabs/notes" from extension notes; an extension never imports another extension — share it through a package`,
+    `extensions/experiments/app/index.html: "../../notes/app/x.js" reaches outside extensions/experiments; depend on a package by name instead`,
+    `extensions/experiments/app/views/run.tsx: "../../../notes/app/n" reaches outside extensions/experiments; depend on a package by name instead`,
   ])
 })
 
-test("finds a package importing an extension", (t) => {
+test("finds a dependency on an extension in any manifest", (t) => {
   const root = repository(t, {
-    "extensions/notes/package.json": manifest("@nessalabs/notes"),
-    "packages/server-kit/src/index.ts": `export * from "@nessalabs/notes/server"`,
+    ...twoExtensions,
+    "package.json": manifest("root", { devDependencies: { "@nessalabs/notes": "*" } }),
+    "extensions/experiments/package.json": manifest("@nessalabs/experiments", {
+      dependencies: { bee: "workspace:@nessalabs/notes@*" },
+    }),
+    "packages/server-kit/package.json": manifest("@nessalabs/server-kit", {
+      dependencies: { "@nessalabs/experiments": "workspace:*" },
+    }),
   })
   assert.deepEqual(checkRepository(root), [
-    `packages/server-kit/src/index.ts: imports "@nessalabs/notes/server" from extension notes; a package never imports an extension`,
+    "package.json: devDependencies names extension @nessalabs/notes; nothing depends on an extension — share it through a package",
+    "packages/server-kit/package.json: dependencies names extension @nessalabs/experiments; nothing depends on an extension — share it through a package",
+    "extensions/experiments/package.json: dependencies names extension @nessalabs/notes; nothing depends on an extension — share it through a package",
   ])
 })
 
-test("skips installed and built files", (t) => {
+test("skips installed and built files and dot-directories", (t) => {
   const root = repository(t, {
-    "extensions/notes/package.json": manifest("@nessalabs/notes"),
-    "extensions/experiments/package.json": manifest("@nessalabs/experiments"),
-    "extensions/experiments/node_modules/x/index.js": `require("@nessalabs/notes")`,
-    "extensions/experiments/dist/app.js": `import "@nessalabs/notes"`,
+    ...twoExtensions,
+    "extensions/experiments/node_modules/x/index.js": `require("../../../notes/x")`,
+    "extensions/experiments/dist/app.js": `import "../../notes/x"`,
+    "extensions/.cache/x.ts": `import "../notes/x"`,
   })
   assert.deepEqual(checkRepository(root), [])
 })
 
-test("an extension without a manifest naming it fails", (t) => {
+test("an extension without a readable manifest naming it fails", (t) => {
   const root = repository(t, {
     "extensions/unnamed/server/index.ts": "",
     "extensions/nameless/package.json": JSON.stringify({ version: "0.0.0" }),
+    "extensions/broken/package.json": "{bad",
   })
   assert.deepEqual(checkRepository(root).sort(), [
+    "extensions/broken/package.json: is not valid JSON",
     "extensions/nameless/package.json: an extension's manifest names its package",
     "extensions/unnamed/package.json: an extension is one package and needs a manifest",
   ])
+})
+
+test("the command exits 1 with each failure on stderr, and 0 when clean", (t) => {
+  const broken = repository(t, {
+    ...twoExtensions,
+    "extensions/experiments/server/index.ts": `import "../../notes/server"`,
+  })
+  const failed = spawnSync(process.execPath, [script, broken], { encoding: "utf8" })
+  assert.equal(failed.status, 1)
+  assert.equal(failed.stdout, "")
+  assert.match(
+    failed.stderr,
+    /^extensions\/experiments\/server\/index\.ts: "\.\.\/\.\.\/notes\/server" reaches outside/,
+  )
+
+  const clean = repository(t, twoExtensions)
+  const passed = spawnSync(process.execPath, [script, clean], { encoding: "utf8" })
+  assert.equal(passed.status, 0)
+  assert.equal(passed.stderr, "")
+})
+
+test("the command still checks when run through a symlink", (t) => {
+  const broken = repository(t, {
+    ...twoExtensions,
+    "extensions/experiments/server/index.ts": `import "../../notes/server"`,
+  })
+  const link = join(broken, "linked-check.mjs")
+  symlinkSync(script, link)
+  const result = spawnSync(process.execPath, [link, broken], { encoding: "utf8" })
+  assert.equal(result.status, 1)
 })

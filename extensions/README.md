@@ -13,25 +13,28 @@ extensions/<name>/
 ```
 
 - **`server/`** runs in Node. It declares the extension's tools and serves the
-  app as a `ui://` resource. It is the only place the extension reads data from
-  outside the process, behind a port the standards'
+  app as a `ui://` resource. What it reads from outside the process, it reads
+  behind a port, as the standards'
   [seams at the process boundary](https://github.com/nessalabs/nessa-agent/blob/main/CODING_STANDARDS.md#seams-at-the-process-boundary)
-  describes.
+  describe.
 - **`app/`** runs in the host's sandboxed iframe. It is built into one
-  self-contained HTML file, which `server/` serves. It reaches its data only
-  through the host: the tool's result, and `tools/call` to its own server.
+  self-contained HTML file, which `server/` serves. Its data comes from its
+  host — the tool's input and result, and `tools/call` and `resources/read` on
+  its own server — plus any origin it declares in `_meta.ui.csp`
+  (see [AGENTS.md](../AGENTS.md#what-an-app-may-assume-about-its-sandbox)).
 - Code both sides need — an extension's domain model, validation, and
   formatting — sits in the extension beside them, in its own directory named
   for what it holds, and imports neither side. Its layout follows the
   standards' [organization](https://github.com/nessalabs/nessa-agent/blob/main/CODING_STANDARDS.md#organization-across-the-repository)
   and [domain-driven design](https://github.com/nessalabs/nessa-agent/blob/main/CODING_STANDARDS.md#domain-driven-design-boundaries)
   sections.
-- An extension imports nothing from another extension. What two share belongs
-  in a package under [`packages/`](../packages). `pnpm architecture` refuses
-  it, by path and by package name, and refuses an extension directory without a
-  `package.json` naming it.
+- An extension depends on nothing in another extension. What two share
+  belongs in a package under [`packages/`](../packages). `pnpm architecture`
+  refuses a `package.json` that names an extension, a relative path that
+  leaves the extension, and an extension directory without a `package.json`
+  naming it.
 
-Tests sit beside the code they test (`*.test.ts`), and `pnpm test` finds them.
+Tests sit beside the code they test (`*.test.ts`, `*.test.tsx`), and `pnpm test` finds them.
 
 Adding one: open its issue first, add the directory with its `package.json`,
 `README.md`, `server/`, and `app/`, and add it to the table in the repository
