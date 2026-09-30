@@ -156,9 +156,6 @@ export function checkRepository(root) {
       units(join(root, top)).map((name) => `${top}/${name}`),
     ),
   )
-  const rootFiles = new Set(
-    readdirSync(root).filter((name) => lstatSync(join(root, name)).isFile()),
-  )
   for (const unit of unitNames) {
     const { files, links } = walk(join(root, unit))
     for (const link of links) {
@@ -168,7 +165,7 @@ export function checkRepository(root) {
       const path = rel(file)
       const contents = text(file)
       if (contents === null) continue
-      for (const violation of relativePathViolations(path, contents, rootFiles)) {
+      for (const violation of relativePathViolations(path, contents)) {
         failures.push(`${path}: ${violation}`)
       }
     }

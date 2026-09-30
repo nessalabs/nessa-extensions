@@ -66,7 +66,8 @@ manifest. `pnpm architecture` enforces it, in bare Node before install:
   how they link.
 - **Dependencies are checked within it.** Every dependency is a workspace
   package, a semver range, or a dist-tag, and none is named for an extension.
-- **Files do not reach another unit** by a quoted path or a symbolic link.
+- **Files stay in their unit**: a path written in one may lead only inside it
+  (or to the shared `tsconfig.json`), and no symbolic link sits in one.
 
 This is the owner's decision after five review rounds. Checking how a
 dependency was written, then the lockfile, then the install, each fell to a
