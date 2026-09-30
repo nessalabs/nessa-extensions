@@ -1,0 +1,30 @@
+{
+  "name": "nessa-extensions",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Nessa's first-party extensions: MCP servers with MCP App UIs.",
+  "license": "MIT",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "architecture": "node --test scripts/architecture/*.test.mjs && node scripts/check-architecture.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.4.0",
+    "eslint": "^10.9.1",
+    "globals": "^17.11.0",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.68.0",
+    "vitest": "^3.2.7"
+  }
+}
