@@ -19,13 +19,16 @@
  *   catalogs, `packageExtensions`, `patchedDependencies`, injection, a
  *   pnpmfile — is refused by not being on the list. The files pnpm reads its
  *   settings and hooks from, `.npmrc` and `.pnpmfile.cjs` or `.mjs`, are
- *   refused outright at the root and in every unit (`pnpmFiles`, checked by
- *   `check-architecture.mjs`).
+ *   refused outright at the root and in every unit, and so are the manifests
+ *   pnpm would read instead of `package.json`, `package.json5` and
+ *   `package.yaml` (`pnpmFiles`, checked by `check-architecture.mjs`, which
+ *   also requires a `package.json` in every unit).
  * - **Manifests** (`manifestViolations`). A `package.json` may hold only
  *   `manifestKeys`, so `pnpm`, `resolutions`, `overrides`,
  *   `dependenciesMeta`, and `bundledDependencies` are refused;
  *   `publishConfig` only `publishConfigKeys`, since `directory` moves a
- *   workspace link; no script pnpm runs on install (`installScripts`), since
+ *   workspace link; no script pnpm runs on install (`installScripts`, and any
+ *   `pnpm:` script), since
  *   one can write any link; and `packageManager` only `pnpm@<version>`. Every
  *   dependency is `workspace:*` (or `^`, `~`), a semver range, or a dist-tag:
  *   never a path, a tarball, a URL, `file:`, `link:`, `portal:`,
@@ -57,7 +60,9 @@ export const publishConfigKeys = ["access", "registry", "tag", "provenance"]
 
 /**
  * The scripts pnpm runs by itself when a workspace project is installed. Any
- * of them can write into `node_modules`, so none may be defined.
+ * of them can write into `node_modules`, so none may be defined — nor any in
+ * pnpm's own `pnpm:` namespace, such as `pnpm:devPreinstall`, which pnpm runs
+ * on install at the root.
  */
 export const installScripts = [
   "preinstall",
@@ -69,8 +74,19 @@ export const installScripts = [
   "prepublish",
 ]
 
-/** Files pnpm reads settings or hooks from; none may exist in the repository's units or root. */
-export const pnpmFiles = [".npmrc", ".pnpmfile.cjs", ".pnpmfile.mjs"]
+/**
+ * Files pnpm reads settings, hooks, or a manifest other than `package.json`
+ * from; none may exist at the repository's root or a unit's.
+ */
+export const pnpmFiles = [
+  ".npmrc",
+  ".pnpmfile.cjs",
+  ".pnpmfile.mjs",
+  // pnpm reads a project's manifest from package.json, then these; only
+  // package.json is checked, so these are refused.
+  "package.json5",
+  "package.yaml",
+]
 
 /** The keys a `package.json` may hold. None of them changes resolution. */
 export const manifestKeys = [
@@ -232,8 +248,8 @@ export function manifestViolations(manifest, extensionNames) {
   }
   const scripts = own("scripts")
   if (isObject(scripts)) {
-    for (const name of installScripts) {
-      if (Object.hasOwn(scripts, name)) {
+    for (const name of Object.keys(scripts)) {
+      if (installScripts.includes(name) || name.startsWith("pnpm:")) {
         violations.push(`scripts.${name} runs on install, and could link anything`)
       }
     }

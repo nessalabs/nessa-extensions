@@ -19,7 +19,10 @@ import {
   workspaceViolations,
 } from "./architecture/layout.mjs"
 
-/** Installed and built files are not ours to check. */
+/**
+ * What install and build write at a unit's root: not ours to check. Only
+ * there — a `dist` or `node_modules` deeper in a unit is source like any other.
+ */
 const skipped = new Set(["node_modules", "dist"])
 
 /**
@@ -28,15 +31,15 @@ const skipped = new Set(["node_modules", "dist"])
  * HTML page, or a component format nobody listed reaches as far as one in
  * TypeScript.
  */
-function walk(directory) {
+function walk(directory, atUnitRoot = true) {
   const found = { files: [], links: [] }
   for (const name of readdirSync(directory).sort()) {
-    if (skipped.has(name)) continue
+    if (atUnitRoot && skipped.has(name)) continue
     const path = join(directory, name)
     const entry = lstatSync(path)
     if (entry.isSymbolicLink()) found.links.push(path)
     else if (entry.isDirectory()) {
-      const inner = walk(path)
+      const inner = walk(path, false)
       found.files.push(...inner.files)
       found.links.push(...inner.links)
     } else found.files.push(path)
@@ -95,6 +98,12 @@ export function checkRepository(root) {
     }
   }
 
+  for (const name of units(join(root, "packages"))) {
+    const path = join(root, "packages", name, "package.json")
+    if (!existsSync(path)) {
+      failures.push(`${rel(path)}: a package needs a manifest, and it is package.json`)
+    }
+  }
   const extensionNames = new Set()
   for (const name of units(join(root, "extensions"))) {
     const path = join(root, "extensions", name, "package.json")
@@ -120,7 +129,7 @@ export function checkRepository(root) {
       const path = join(root, project, file)
       if (existsSync(path)) {
         failures.push(
-          `${rel(path)}: pnpm reads settings from it; the layout is pinned in pnpm-workspace.yaml`,
+          `${rel(path)}: pnpm reads settings or a manifest from it; the layout is pinned to package.json and pnpm-workspace.yaml`,
         )
       }
     }

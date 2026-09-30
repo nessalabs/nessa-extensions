@@ -66,12 +66,42 @@ test("a file pnpm reads settings or hooks from fails, at the root or in a unit",
     "packages/server-kit/package.json": manifest("@nessalabs/server-kit"),
     "packages/server-kit/.pnpmfile.mjs": "",
   })
-  const rule = "pnpm reads settings from it; the layout is pinned in pnpm-workspace.yaml"
+  const rule =
+    "pnpm reads settings or a manifest from it; the layout is pinned to package.json and pnpm-workspace.yaml"
   assert.deepEqual(checkRepository(root), [
     `.npmrc: ${rule}`,
     `.pnpmfile.cjs: ${rule}`,
     `packages/server-kit/.pnpmfile.mjs: ${rule}`,
     `extensions/notes/.npmrc: ${rule}`,
+  ])
+})
+
+test("a manifest pnpm reads instead of package.json fails, and a unit needs package.json", (t) => {
+  const root = repository(t, {
+    ...twoExtensions,
+    "packages/evil/package.yaml": "name: evil\n",
+    "extensions/notes/package.json5": "{}",
+  })
+  const rule =
+    "pnpm reads settings or a manifest from it; the layout is pinned to package.json and pnpm-workspace.yaml"
+  assert.deepEqual(checkRepository(root), [
+    "packages/evil/package.json: a package needs a manifest, and it is package.json",
+    `packages/evil/package.yaml: ${rule}`,
+    `extensions/notes/package.json5: ${rule}`,
+  ])
+})
+
+test("a dist or node_modules deeper in a unit is checked like any source", (t) => {
+  const root = repository(t, {
+    ...twoExtensions,
+    "extensions/experiments/src/dist/re.js": `export * from "../../../notes/src/index.js"`,
+    "extensions/experiments/src/node_modules/x.js": `import "../../../notes/x"`,
+    "extensions/experiments/dist/built.js": `import "../../notes/x"`,
+  })
+  const rule = "reach another unit by package name, through its manifest"
+  assert.deepEqual(checkRepository(root), [
+    `extensions/experiments/src/dist/re.js: "../../../notes/src/index.js" reaches into extensions/notes; ${rule}`,
+    `extensions/experiments/src/node_modules/x.js: "../../../notes/x" reaches into extensions/notes; ${rule}`,
   ])
 })
 

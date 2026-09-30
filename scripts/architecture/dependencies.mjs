@@ -21,7 +21,9 @@
  * What these do not see: a path assembled at run time; an unquoted one — a
  * CSS `url(../x)`, an HTML attribute written without quotes; one resolved from
  * somewhere other than its file's directory, such as a Vite `root`; and one
- * that does not climb, such as an absolute path. Those are held by review.
+ * that does not climb, such as an absolute path; and anything under a unit's
+ * own `node_modules` or `dist`, which install and build write. Those are held
+ * by review.
  */
 import { posix } from "node:path"
 

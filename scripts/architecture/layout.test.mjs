@@ -230,6 +230,11 @@ test("a script pnpm runs on install is refused, one by one", () => {
       name,
     )
   }
+  for (const name of ["pnpm:devPreinstall", "pnpm:anything"]) {
+    assert.deepEqual(manifestViolations({ scripts: { [name]: "true" } }, new Set()), [
+      `scripts.${name} runs on install, and could link anything`,
+    ])
+  }
   assert.deepEqual(
     manifestViolations({ scripts: { build: "vite build" } }, new Set()),
     [],
