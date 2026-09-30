@@ -10,16 +10,18 @@
  * the files:
  *
  * - **A quoted relative path does not reach into another unit**
- *   (`relativePathViolations`). Every quoted `./` or `../` path in any file of
- *   an extension or a package must not resolve into another extension or
- *   package. It may leave its own unit for somewhere that is neither — the
- *   repository root's shared configuration, a build directory.
+ *   (`relativePathViolations`). Every quoted path in any file of an extension
+ *   or a package that begins `./` or `../`, or climbs with `..` anywhere in it,
+ *   resolved from the file's directory, must not lead into another unit. It
+ *   may leave its own unit for somewhere that is neither — the repository
+ *   root's shared configuration, a build directory.
  * - **No symbolic link in a unit** (`check-architecture.mjs`), since a link
  *   makes a path inside the unit lead into another.
  *
- * What these do not see: a path assembled at run time, and an unquoted one —
- * a CSS `url(../x)`, an HTML attribute written without quotes. Those are held
- * by review.
+ * What these do not see: a path assembled at run time; an unquoted one — a
+ * CSS `url(../x)`, an HTML attribute written without quotes; one resolved from
+ * somewhere other than its file's directory, such as a Vite `root`; and one
+ * that does not climb, such as an absolute path. Those are held by review.
  */
 import { posix } from "node:path"
 
@@ -37,13 +39,16 @@ export function unitOf(path) {
 
 /**
  * Every quoted relative path in a file: a string literal — single, double, or
- * backtick-quoted without interpolation — that begins `./` or `../`. In
- * source, that is every static import, `export … from`, dynamic `import()`,
- * `require`, and `new URL(…, import.meta.url)`; in configuration, HTML, and
- * CSS, every path written in quotes.
+ * backtick-quoted without interpolation, on one line — that begins `./` or
+ * `../`, or that climbs anywhere inside it (`src/../../x`). In source, that is
+ * every static import, `export … from`, dynamic `import()`, `require`, and
+ * `new URL(…, import.meta.url)`; in configuration, HTML, and CSS, every path
+ * written in quotes.
  */
 export function relativePaths(text) {
-  return [...text.matchAll(/(["'`])(\.\.?\/[^"'`$\n]*)\1/g)].map((match) => match[2])
+  return [...text.matchAll(/(["'`])([^"'`$\n]*)\1/g)]
+    .map((match) => match[2])
+    .filter((path) => /^\.\.?\//.test(path) || /(?:^|\/)\.\.(?:\/|$)/.test(path))
 }
 
 /**

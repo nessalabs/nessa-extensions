@@ -58,27 +58,15 @@ extensions/<name>/     one extension, one package @nessalabs/<name>
 An arrow runs one way: extensions depend on packages. **An extension depends on
 nothing in another extension, and a package on nothing in any extension**; what
 two extensions share becomes a package, reached by its package name through a
-manifest. `pnpm architecture` enforces it, in bare Node before install, by
-pinning the layout and checking dependencies within it:
+manifest. `pnpm architecture` enforces it, in bare Node before install:
 
-- **The install layout is pinned.** `pnpm-workspace.yaml` may hold only
-  `packages`, `allowBuilds`, and `verifyDepsBeforeRun`, and `packages` is
-  exactly `packages/*` and `extensions/*`. No `.npmrc` or pnpmfile may exist
-  at the root or in a unit. Every setting that moves where packages install
-  or how they link is refused by not being allowed.
-- **Dependencies are checked within it.** A `package.json` may hold only the
-  keys on an allow-list (no `pnpm`, `resolutions`, `overrides`,
-  `dependenciesMeta`); every dependency is `workspace:*` (or `^`, `~`), a
-  semver range, or a dist-tag — never a path, tarball, URL, `file:`, `link:`,
-  `portal:`, `workspace:<path>`, `npm:` alias, or `catalog:`; and none is
-  named for an extension. In the pinned layout pnpm links into a unit exactly
-  the workspace packages its manifest names, so an extension no manifest
-  names is installed nowhere, and an import of one by name fails typecheck and
-  test.
-- **Files do not reach another unit**: no quoted relative path in any file of
-  an extension or a package leads into another unit (it may leave for the
-  root's shared configuration or a build directory), and no symbolic link
-  sits in a unit.
+- **The install layout is pinned.** `pnpm-workspace.yaml`, the manifests'
+  keys, and the files pnpm reads settings and hooks from are held to
+  allow-lists, so nothing in the repository moves where packages install or
+  how they link.
+- **Dependencies are checked within it.** Every dependency is a workspace
+  package, a semver range, or a dist-tag, and none is named for an extension.
+- **Files do not reach another unit** by a quoted path or a symbolic link.
 
 This is the owner's decision after five review rounds. Checking how a
 dependency was written, then the lockfile, then the install, each fell to a
@@ -87,12 +75,9 @@ the settings takes those away, so what remains to check is the manifest; the
 lockfile and the install are not read, since they would re-decide what the
 manifest check decides.
 
-Held by review, not by the check: pnpm settings from outside the repository
-(a user's `~/.npmrc`, `npm_config_*` environment variables; CI sets none),
-a registry package that depends on a published extension, and a path
-assembled at run time or written without quotes. The two module comments,
-`scripts/architecture/layout.mjs` and `dependencies.mjs`, are the one
-statement of what is checked.
+What exactly is allowed, what is refused, and what is held by review instead
+is stated once, in the module comments of `scripts/architecture/layout.mjs`
+and `dependencies.mjs`; this record does not restate it.
 
 Every extension directory must also be a package, with its own
 `package.json`.

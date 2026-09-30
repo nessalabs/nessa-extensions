@@ -3,6 +3,7 @@ import { test } from "node:test"
 
 import {
   allowedSpec,
+  installScripts,
   manifestKeys,
   manifestViolations,
   workspaceKeys,
@@ -50,6 +51,57 @@ test("every setting that moves an install or a link is refused, one by one", () 
   }
 })
 
+test("the pinned workspace passes with CRLF line endings and trailing comments", () => {
+  const text =
+    'packages:\r\n  - "packages/*" # each package\r\n  - "extensions/*"\r\n' +
+    "allowBuilds:\r\n  esbuild: true # vitest needs it\r\nverifyDepsBeforeRun: false\r\n"
+  assert.deepEqual(workspaceViolations(text), [])
+})
+
+test("a line of any other YAML shape is refused, one by one", () => {
+  for (const [lines, expected] of [
+    [
+      "? overrides\n:\n  a: link:./extensions/notes",
+      [
+        "line 4 is not a setting this layout allows",
+        "line 5 is not a setting this layout allows",
+        "line 6 is not a line this layout allows under no key",
+      ],
+    ],
+    [
+      "? nodeLinker\n: hoisted",
+      [
+        "line 4 is not a setting this layout allows",
+        "line 5 is not a setting this layout allows",
+      ],
+    ],
+    ["---", ["line 4 is not a setting this layout allows"]],
+    ["...", ["line 4 is not a setting this layout allows"]],
+    ["%YAML 1.2", ["line 4 is not a setting this layout allows"]],
+    ["{nodeLinker: hoisted}", ["line 4 is not a setting this layout allows"]],
+    ["&a nodeLinker: hoisted", ["line 4 is not a setting this layout allows"]],
+    ["*a : x", ["line 4 is not a setting this layout allows"]],
+    [
+      "allowBuilds: {esbuild: true}",
+      ["allowBuilds is written as `<package>: true|false` lines"],
+    ],
+    [
+      "allowBuilds:\n  x:\n    nodeLinker: hoisted",
+      [
+        "line 5 is not a line this layout allows under allowBuilds",
+        "line 6 is not a line this layout allows under allowBuilds",
+      ],
+    ],
+    ["verifyDepsBeforeRun: maybe", ["verifyDepsBeforeRun is true or false"]],
+    [
+      "verifyDepsBeforeRun: false\nverifyDepsBeforeRun: true",
+      ["verifyDepsBeforeRun is set twice"],
+    ],
+  ]) {
+    assert.deepEqual(workspaceViolations(`${pinned}${lines}\n`), expected, lines)
+  }
+})
+
 test("any other set of workspace globs is refused", () => {
   for (const globs of [
     ["packages/*"],
@@ -79,6 +131,7 @@ test("a dependency may be workspace:*, a semver range, or a dist-tag", () => {
     "1.x",
     "*",
     ">=1.0.0 <2",
+    ">= 1.0",
     "1 - 2",
     "^1.0.0 || ^2.0.0",
     "1.0.0-beta.1",
@@ -134,7 +187,6 @@ test("a manifest key off the list is refused, one by one", () => {
     "overrides",
     "dependenciesMeta",
     "bundledDependencies",
-    "imports",
     "workspaces",
   ]) {
     assert.ok(!manifestKeys.includes(key), key)
@@ -142,6 +194,59 @@ test("a manifest key off the list is refused, one by one", () => {
       manifestViolations({ name: "x", [key]: {} }, new Set()),
       [`${key} is not a manifest key this layout allows`],
       key,
+    )
+  }
+})
+
+test("publishConfig may say where to publish, and nothing else", () => {
+  assert.deepEqual(
+    manifestViolations(
+      {
+        publishConfig: {
+          access: "public",
+          registry: "https://registry.npmjs.org/",
+          tag: "next",
+          provenance: true,
+        },
+      },
+      new Set(),
+    ),
+    [],
+  )
+  for (const key of ["directory", "linkDirectory", "main", "exports", "bin"]) {
+    assert.deepEqual(
+      manifestViolations({ publishConfig: { [key]: "x" } }, new Set()),
+      [`publishConfig.${key} is not one of access, registry, tag, provenance`],
+      key,
+    )
+  }
+})
+
+test("a script pnpm runs on install is refused, one by one", () => {
+  for (const name of installScripts) {
+    assert.deepEqual(
+      manifestViolations({ scripts: { [name]: "true", test: "vitest" } }, new Set()),
+      [`scripts.${name} runs on install, and could link anything`],
+      name,
+    )
+  }
+  assert.deepEqual(
+    manifestViolations({ scripts: { build: "vite build" } }, new Set()),
+    [],
+  )
+})
+
+test("packageManager names a pnpm version and nothing else", () => {
+  assert.deepEqual(manifestViolations({ packageManager: "pnpm@11.9.0" }, new Set()), [])
+  for (const value of [
+    "yarn@4.0.0",
+    "pnpm@https://example.com/pnpm.tgz",
+    "pnpm@latest",
+  ]) {
+    assert.equal(
+      manifestViolations({ packageManager: value }, new Set()).length,
+      1,
+      value,
     )
   }
 })

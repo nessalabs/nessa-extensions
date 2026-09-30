@@ -44,17 +44,12 @@ docs/adr/        decision records
   nothing in any extension. What two extensions share goes in a package.
   Another unit is reached only by package name, through a manifest.
   `pnpm architecture` (`scripts/check-architecture.mjs`, bare Node, before
-  install) holds that. **The install layout is pinned**: `pnpm-workspace.yaml`
-  may hold only the settings on an allow-list and exactly the globs
-  `packages/*` and `extensions/*`, and there is no `.npmrc` or pnpmfile.
-  **Dependencies are checked within it**: a manifest may hold only allowed
-  keys, every dependency is `workspace:*`, a semver range, or a dist-tag, and
-  none is named for an extension. **Files** may not reach another unit by a
-  quoted relative path or a symbolic link. Exactly what is allowed, and what
-  is held by review instead — settings from outside the repository, a
-  registry package that depends on a published extension, a path built at run
-  time — is in the module comments of `scripts/architecture/layout.mjs` and
-  `dependencies.mjs`. Everything else in this section is held by review.
+  install) holds that by pinning pnpm's install layout, checking dependencies
+  within it, and refusing files that reach another unit by path. What it
+  allows, refuses, and leaves to review is stated once, in the module comments
+  of [`scripts/architecture/layout.mjs`](scripts/architecture/layout.mjs) and
+  [`dependencies.mjs`](scripts/architecture/dependencies.mjs). Everything else
+  in this section is held by review.
 - An extension's own layout, below `server/` and `app/`, follows the standards'
   [organization][organization] and [domain-driven design][ddd] sections, and is
   described in [extensions/README.md](extensions/README.md).

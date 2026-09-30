@@ -32,6 +32,23 @@ test("finds every quoted relative path, however it is used", () => {
   ])
 })
 
+test("a quoted path that climbs anywhere inside it is a relative path", () => {
+  const text = [
+    `"publishConfig": { "directory": "src/../../../extensions/notes" }`,
+    `const u = new URL("app/../../notes/x", import.meta.url)`,
+    `"paths": { "n/*": ["src/../../notes/*"] }`,
+  ].join("\n")
+  assert.deepEqual(relativePaths(text), [
+    "src/../../../extensions/notes",
+    "app/../../notes/x",
+    "src/../../notes/*",
+  ])
+})
+
+test("text that only looks like climbing is not a path", () => {
+  assert.deepEqual(relativePaths(`const a = "Loading..."; const b = "a..b/c"`), [])
+})
+
 test("a path built at run time or a bare name is not a relative path", () => {
   const text = [
     "const a = await import(`./${name}`)",
@@ -65,6 +82,7 @@ test("a relative path inside its own extension or package passes", () => {
 
 test("a relative path into another extension fails, whatever uses it", () => {
   for (const line of [
+    `"directory": "src/../../../notes/server"`,
     `import { note } from "../../notes/app/note"`,
     `import { note } from "../../notes"`,
     `export { "a-b" as c } from "../../notes/server"`,
