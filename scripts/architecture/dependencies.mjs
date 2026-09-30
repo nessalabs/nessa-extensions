@@ -5,22 +5,13 @@
  *
  * The rules, from docs/adr/todo/1-extensions-repo.md, are that an extension
  * depends on nothing in another extension, and a package on nothing in any
- * extension. Another unit is reached only by package name, through a manifest,
- * and three constraints hold that:
+ * extension. Another unit is reached only by package name, through a manifest.
+ * This module holds the source half; three constraints in all:
  *
- * - **Nothing is linked to an extension** (`lockfileViolations`). An extension
- *   is a leaf: in pnpm's resolution of the workspace, no importer — the root,
- *   a package, another extension — has a dependency that resolves into an
- *   extension's directory. The lockfile is read rather than the manifests
- *   because it is the outcome: however a dependency was spelled (a name, an
- *   alias, `workspace:../x`, a bare path, an override, a catalog), pnpm
- *   records where it resolved, as `link:` or `file:` relative to the importer.
- *   CI installs with `--frozen-lockfile`, which fails when the lockfile does
- *   not match the manifests and overrides, so the lockfile checked is the one
- *   installed.
- *   A unit resolves by name only what it or the root declares; neither may
- *   be an extension, so an import of one by name does not resolve, and fails
- *   typecheck and test.
+ * - **Nothing installed is an extension** (`installed.mjs`, run after
+ *   install by `check-installed.mjs`): whatever a manifest, override, or
+ *   setting says, no `node_modules` outside an extension holds a link into it
+ *   or a copy of a package from it.
  * - **A quoted relative path does not reach into another unit**
  *   (`relativePathViolations`). Every quoted `./` or `../` path in any file of
  *   an extension or a package must not resolve into another extension or
@@ -81,46 +72,3 @@ export function relativePathViolations(path, text, units) {
   }
   return violations
 }
-
-/**
- * The dependencies pnpm's lockfile resolves into an extension from anywhere
- * but that extension itself, one message each.
- *
- * Pure text, read line by line: the check runs in bare Node, so it cannot
- * import a YAML parser, and it needs only the `importers:` section, whose
- * shape pnpm fixes — an importer at two spaces, a dependency field at four, a
- * dependency at six, its `version:` at eight.
- *
- * @param {string} lockfile the contents of pnpm-lock.yaml
- * @param {Set<string>} extensions every extension, as `extensions/<name>`
- */
-export function lockfileViolations(lockfile, extensions) {
-  const violations = []
-  let inImporters = false
-  let importer = null
-  let field = null
-  let dependency = null
-  for (const line of lockfile.split("\n")) {
-    if (/^\S/.test(line)) {
-      inImporters = line.trimEnd() === "importers:"
-      continue
-    }
-    if (!inImporters) continue
-    let match
-    if ((match = /^ {2}(\S[^:]*):/.exec(line))) importer = unquote(match[1])
-    else if ((match = /^ {4}(\S[^:]*):/.exec(line))) field = match[1]
-    else if ((match = /^ {6}(\S.*):\s*$/.exec(line))) dependency = unquote(match[1])
-    else if ((match = /^ {8}version: (?:link|file):(.+?)\s*$/.exec(line))) {
-      const [top, name] = posix.normalize(posix.join(importer, match[1])).split("/")
-      const reached = `${top}/${name}`
-      if (reached === importer || !extensions.has(reached)) continue
-      violations.push(
-        `${importer} ${field} ${dependency} resolves into ${reached}; nothing depends on an extension — share it through a package`,
-      )
-    }
-  }
-  return violations
-}
-
-/** A YAML key without the quotes pnpm puts around one starting with `@`. */
-const unquote = (key) => key.replace(/^'(.*)'$/, "$1")

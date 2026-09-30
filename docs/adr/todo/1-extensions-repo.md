@@ -58,20 +58,20 @@ extensions/<name>/     one extension, one package @nessalabs/<name>
 An arrow runs one way: extensions depend on packages. **An extension depends on
 nothing in another extension, and a package on nothing in any extension**; what
 two extensions share becomes a package, reached by its package name through a
-manifest. `pnpm architecture` enforces this as constraints, not as a list of
-import forms to catch, and checks outcomes rather than spellings:
+manifest. Two checks enforce it, as constraints on outcomes rather than a list
+of spellings to catch:
 
-- **Nothing resolves into an extension from outside it.** The check reads
-  pnpm's resolution, `pnpm-lock.yaml`, where every importer's dependencies are
-  recorded as resolved — a workspace link is `link:<path>` however it was
-  written: a name, an alias, `workspace:../x`, a bare path in the root, an
-  override in `pnpm-workspace.yaml`. CI installs with `--frozen-lockfile`,
-  which refuses a lockfile that disagrees with the manifests and overrides, so
-  the resolution checked is the one installed. A unit resolves by name only
-  what it or the root declares, and neither may be an extension, so an import
-  of one by name fails typecheck and test. The first version read the
-  manifests instead, and each review found another spelling it missed; that
-  is why it reads the outcome.
+- **Nothing installed outside an extension is from it.** After `pnpm install`,
+  `pnpm architecture:installed` reads every `node_modules` — the root's, each
+  unit's, and each package's in pnpm's store — and fails on an entry that
+  links into an extension from outside it, or that is a copy of a package
+  from one (by the names of the packages in it). A unit resolves by name only
+  what is installed for it or the root, so an import of an extension by name
+  then fails typecheck and test. The first version read the manifests and the
+  second the lockfile; each review found another way to write a dependency
+  that they missed — an alias, `workspace:../x`, a bare path, an override,
+  `excludeLinksFromLockfile`, a lockfile per project, a `file:` copy. Every one
+  ends as an entry in some `node_modules`, so that is what is read.
 - **No quoted relative path in any file of an extension or a package leads
   into another unit.** It may leave for somewhere that is not one, such as the
   root's shared configuration or a build directory.
@@ -98,8 +98,9 @@ brings its release workflow; nothing publishes from a pull request.
 
 **Checks.** TypeScript strict, ESLint with typescript-eslint, Prettier, and
 Vitest, configured as nessa-agent's are where the two repositories have the same
-needs; the architecture check in bare Node with no dependencies, which CI holds
-it to by running it before `pnpm install`. CI runs all of them on every pull
+needs; the architecture checks in bare Node with no dependencies — the source
+half before `pnpm install`, which is what holds it to that, and the install
+half after. CI runs all of them on every pull
 request and on `main`, in one job. nessa-agent's own lint rules, such as
 `nessa/inherited-lookups`, are not copied here: a second copy of a rule's
 enforcer is gate 13's defect too, so until the rule is shared, what it enforces
@@ -134,7 +135,7 @@ to copy that script or share it.
   bridge; ADR 344 records what that rules out for now.
 - The standards are one link away rather than one directory away, and a change
   to them for extensions is a nessa-agent pull request.
-- The architecture check covers dependencies only, and cannot see a path
+- The architecture checks cover dependencies only. The source half cannot see a path
   assembled at run time or one written without quotes (a CSS `url(../x)`, an
   unquoted HTML attribute). Everything else in `AGENTS.md`'s extensions
   section is held by review — including, until the first extension gives

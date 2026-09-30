@@ -23,24 +23,15 @@ function repository(t, files) {
 
 const manifest = (name, fields = {}) => JSON.stringify({ name, ...fields })
 
-const emptyLockfile = "lockfileVersion: '9.0'\n\nimporters:\n\n  .: {}\n"
-
 const twoExtensions = {
   "package.json": manifest("root"),
-  "pnpm-lock.yaml": emptyLockfile,
   "extensions/experiments/package.json": manifest("@nessalabs/experiments"),
   "extensions/notes/package.json": manifest("@nessalabs/notes"),
 }
 
 test("an empty repository passes", (t) => {
-  const root = repository(t, { "README.md": "", "pnpm-lock.yaml": emptyLockfile })
+  const root = repository(t, { "README.md": "" })
   assert.deepEqual(checkRepository(root), [])
-})
-
-test("a repository without a lockfile fails", (t) => {
-  assert.deepEqual(checkRepository(repository(t, { "README.md": "" })), [
-    "pnpm-lock.yaml: is missing, so what the workspace depends on is unknown",
-  ])
 })
 
 test("finds a relative path into another unit, deep in any file", (t) => {
@@ -87,25 +78,6 @@ test("a symbolic link in or as a unit fails, and is not followed", (t) => {
   ])
 })
 
-test("finds a dependency the lockfile resolves into an extension", (t) => {
-  const root = repository(t, {
-    ...twoExtensions,
-    "pnpm-lock.yaml": `importers:
-
-  .: {}
-
-  extensions/experiments:
-    dependencies:
-      bee:
-        specifier: workspace:../notes
-        version: link:../notes
-`,
-  })
-  assert.deepEqual(checkRepository(root), [
-    "pnpm-lock.yaml: extensions/experiments dependencies bee resolves into extensions/notes; nothing depends on an extension — share it through a package",
-  ])
-})
-
 test("skips installed and built files and dot-directories", (t) => {
   const root = repository(t, {
     ...twoExtensions,
@@ -118,7 +90,6 @@ test("skips installed and built files and dot-directories", (t) => {
 
 test("an extension without a manifest fails", (t) => {
   const root = repository(t, {
-    "pnpm-lock.yaml": emptyLockfile,
     "extensions/unnamed/server/index.ts": "",
   })
   assert.deepEqual(checkRepository(root), [

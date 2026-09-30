@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
- * The architecture check: what an extension and a package may depend on
- * (scripts/architecture/dependencies.mjs). Bare Node, no dependencies — CI runs
- * it before `pnpm install`. Failures are printed as `path: rule`, one per line,
+ * The architecture check, source half: what an extension's and a package's
+ * files may reach (scripts/architecture/dependencies.mjs). Bare Node, no
+ * dependencies — CI runs it before `pnpm install`. The install half is
+ * `check-installed.mjs`. Failures are printed as `path: rule`, one per line,
  * on stderr, and the exit status is 1.
  *
  *   node scripts/check-architecture.mjs [root]   check root, or this repository
@@ -11,10 +12,7 @@ import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "
 import { dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
-import {
-  lockfileViolations,
-  relativePathViolations,
-} from "./architecture/dependencies.mjs"
+import { relativePathViolations } from "./architecture/dependencies.mjs"
 
 /** Installed and built files are not ours to check. */
 const skipped = new Set(["node_modules", "dist"])
@@ -69,26 +67,6 @@ export function checkRepository(root) {
     const path = join(root, "extensions", name, "package.json")
     if (!existsSync(path)) {
       failures.push(`${rel(path)}: an extension is one package and needs a manifest`)
-    }
-  }
-
-  // What the workspace depends on is what pnpm resolved. With no lockfile there
-  // is nothing to check, and CI's `pnpm install --frozen-lockfile` refuses to
-  // run, so its absence is a failure here too rather than a pass.
-  const lockfile = join(root, "pnpm-lock.yaml")
-  const extensions = new Set(
-    units(join(root, "extensions")).map((name) => `extensions/${name}`),
-  )
-  if (!existsSync(lockfile)) {
-    failures.push(
-      "pnpm-lock.yaml: is missing, so what the workspace depends on is unknown",
-    )
-  } else {
-    for (const violation of lockfileViolations(
-      readFileSync(lockfile, "utf8"),
-      extensions,
-    )) {
-      failures.push(`pnpm-lock.yaml: ${violation}`)
     }
   }
 

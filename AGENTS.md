@@ -43,14 +43,14 @@ docs/adr/        decision records
 - An extension depends on nothing in another extension, and a package on
   nothing in any extension. What two extensions share goes in a package.
   Another unit is reached only by package name, through a manifest.
-  `pnpm architecture` (`scripts/check-architecture.mjs`) holds that: in
-  pnpm's resolution of the workspace (`pnpm-lock.yaml`, which CI installs
-  with `--frozen-lockfile`), nothing resolves into an extension from outside
-  it, however the dependency was spelled; no quoted relative path in an
-  extension's or a package's files leads into another unit; and no symbolic
-  link sits in one. A unit resolves by name only what it or the root declares,
-  and neither may be an extension, so an import of one by name fails
-  typecheck and test.
+  Two checks hold that. `pnpm architecture` (`scripts/check-architecture.mjs`,
+  before install): no quoted relative path in an extension's or a package's
+  files leads into another unit, and no symbolic link sits in one.
+  `pnpm architecture:installed` (`scripts/check-installed.mjs`, after
+  install): no `node_modules` outside an extension holds a link into it or a
+  copy of a package from it, however the dependency was written. A unit
+  resolves by name only what is installed for it or the root, so an import of
+  an extension by name fails typecheck and test.
   The check's module comment lists what it cannot see. That is the whole of
   what is checked mechanically; the rest of this section is held by review.
 - An extension's own layout, below `server/` and `app/`, follows the standards'
