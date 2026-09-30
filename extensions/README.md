@@ -29,10 +29,11 @@ extensions/<name>/
   and [domain-driven design](https://github.com/nessalabs/nessa-agent/blob/main/CODING_STANDARDS.md#domain-driven-design-boundaries)
   sections.
 - An extension depends on nothing in another extension. What two share
-  belongs in a package under [`packages/`](../packages). `pnpm architecture`
-  refuses a `package.json` that names an extension, a relative path that
-  leaves the extension, and an extension directory without a `package.json`
-  naming it.
+  belongs in a package under [`packages/`](../packages), reached by its
+  package name. `pnpm architecture` refuses a `package.json` that names an
+  extension, a quoted relative path that leads into another extension or
+  package, a symbolic link, and an extension directory without a
+  `package.json` naming it.
 
 Tests sit beside the code they test (`*.test.ts`, `*.test.tsx`), and `pnpm test` finds them.
 

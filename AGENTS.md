@@ -42,11 +42,13 @@ docs/adr/        decision records
 
 - An extension depends on nothing in another extension, and a package on
   nothing in any extension. What two extensions share goes in a package.
-  `pnpm architecture` (`scripts/check-architecture.mjs`) enforces this as two
-  constraints: no `package.json` in the workspace names an extension as a
-  dependency, and a quoted relative path in an extension's or a package's files
-  stays inside it. An import by name of an undeclared package does not resolve
-  under pnpm, so it fails typecheck and test instead. Those are the whole of
+  Another unit is reached only by package name, through a manifest.
+  `pnpm architecture` (`scripts/check-architecture.mjs`) holds that: no
+  `package.json` in the workspace names an extension as a dependency; no quoted
+  relative path in an extension's or a package's files leads into another
+  unit; and no symbolic link sits in one. An import by name of an undeclared
+  package does not resolve under pnpm, so it fails typecheck and test instead.
+  The check's module comment lists what it cannot see. That is the whole of
   what is checked mechanically; the rest of this section is held by review.
 - An extension's own layout, below `server/` and `app/`, follows the standards'
   [organization][organization] and [domain-driven design][ddd] sections, and is
@@ -90,11 +92,13 @@ hosts it as any other ([nessa-agent ADR 344][adr-344], proposed in
 - **No network** unless the resource declares it in `_meta.ui.csp`:
   `connectDomains` for fetch, XHR, and WebSocket; `resourceDomains` for
   scripts, styles, images, fonts, and media; `frameDomains` for nested iframes.
-  With nothing declared, the host's default CSP allows only the app's own
-  inline scripts and styles and `data:` images and media. So the app's HTML
-  carries its scripts and styles inline, and a font comes from a declared
-  `resourceDomains` origin, from the host's `styles.css.fonts`, or from the
-  system.
+  With nothing declared, the spec's default CSP allows scripts, styles,
+  images, and media only from the app's own document (`'self'`, inline, and
+  `data:` for images and media), fonts and connections from nowhere. So the
+  app's HTML carries its scripts and styles inline, and a font the app needs
+  comes from an origin it declares in `resourceDomains`; otherwise it uses
+  what the host offers in `styles.css.fonts`, if the host's policy lets it
+  load, or the system's fonts.
 - Its data comes from its host: the tool's input and result, and `tools/call`
   and `resources/read` on its own server, through the bridge — plus whatever
   it fetches from a `connectDomains` origin. It never assumes it can reach its

@@ -59,10 +59,18 @@ test("names the unit a path is in", () => {
   assert.equal(unitOf("packages/stray.ts"), null)
 })
 
+const units = new Set([
+  "extensions/experiments",
+  "extensions/notes",
+  "packages/app-shell",
+  "packages/server-kit",
+])
+const reaches = (path, text) => relativePathViolations(path, text, units)
+
 test("a relative path inside its own extension or package passes", () => {
   const text = [`import { model } from "../model/experiment"`, `import "./x"`].join("\n")
-  assert.deepEqual(relativePathViolations("extensions/experiments/server/i.ts", text), [])
-  assert.deepEqual(relativePathViolations("packages/app-shell/src/a/i.ts", text), [])
+  assert.deepEqual(reaches("extensions/experiments/server/i.ts", text), [])
+  assert.deepEqual(reaches("packages/app-shell/src/a/i.ts", text), [])
 })
 
 test("a relative path into another extension fails, whatever uses it", () => {
@@ -72,39 +80,48 @@ test("a relative path into another extension fails, whatever uses it", () => {
     `export { "a-b" as c } from "../../notes/server"`,
     `const n = await import("../../notes/n.json", { with: { type: "json" } })`,
     `const html = new URL("../../notes/app/index.html", import.meta.url)`,
+    `"paths": { "n/*": ["../../notes/server/*"] }`,
   ]) {
-    const violations = relativePathViolations("extensions/experiments/app/view.ts", line)
+    const violations = reaches("extensions/experiments/app/view.ts", line)
     assert.equal(violations.length, 1, line)
-    assert.match(violations[0], /reaches outside extensions\/experiments/)
+    assert.match(violations[0], /reaches into extensions\/notes; reach another unit by/)
   }
 })
 
 test("a relative path from a package into an extension or another package fails", () => {
-  for (const line of [
-    `import { view } from "../../../extensions/experiments/app/view"`,
-    `import { x } from "../../server-kit/src"`,
+  for (const [line, reached] of [
+    [
+      `import { view } from "../../../extensions/experiments/app/view"`,
+      "extensions/experiments",
+    ],
+    [`import { x } from "../../server-kit/src"`, "packages/server-kit"],
   ]) {
-    const violations = relativePathViolations("packages/app-shell/src/index.ts", line)
+    const violations = reaches("packages/app-shell/src/index.ts", line)
     assert.equal(violations.length, 1, line)
-    assert.match(violations[0], /reaches outside packages\/app-shell/)
+    assert.match(violations[0], new RegExp(`reaches into ${reached};`))
+  }
+})
+
+test("a relative path out of its unit to somewhere that is no unit passes", () => {
+  for (const [path, line] of [
+    // Vite resolves `outDir` against its `root`, not against this file.
+    ["extensions/experiments/vite.config.ts", `build: { outDir: "../dist/app" }`],
+    ["extensions/experiments/tsconfig.json", `"extends": "../../tsconfig.json"`],
+    ["extensions/experiments/server/paths.ts", `if (p.startsWith("../")) throw e`],
+  ]) {
+    assert.deepEqual(reaches(path, line), [], line)
   }
 })
 
 test("a path that leaves and comes back into its own unit passes", () => {
   assert.deepEqual(
-    relativePathViolations(
-      "extensions/notes/server/index.ts",
-      `import "../../notes/app/x"`,
-    ),
+    reaches("extensions/notes/server/index.ts", `import "../../notes/app/x"`),
     [],
   )
 })
 
 test("files outside extensions and packages are not held to it", () => {
-  assert.deepEqual(
-    relativePathViolations("scripts/tool.mjs", `import "../extensions/notes/server"`),
-    [],
-  )
+  assert.deepEqual(reaches("scripts/tool.mjs", `import "../extensions/notes/server"`), [])
 })
 
 test("a manifest may depend on packages and libraries", () => {

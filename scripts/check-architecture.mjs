@@ -7,7 +7,7 @@
  *
  *   node scripts/check-architecture.mjs [root]   check root, or this repository
  */
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs"
 import { dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
@@ -18,18 +18,33 @@ import {
 
 /** Installed and built files are not ours to check. */
 const skipped = new Set(["node_modules", "dist"])
-/** Files whose quoted relative paths can reach another unit. */
-const checkedFile = /\.(?:[cm]?[jt]sx?|html|css)$/
 
+/**
+ * Every file under `directory`, and every symbolic link, which is not
+ * followed. Every file, not a list of kinds: a quoted path in a config, an
+ * HTML page, or a component format nobody listed reaches as far as one in
+ * TypeScript.
+ */
 function walk(directory) {
-  const files = []
+  const found = { files: [], links: [] }
   for (const name of readdirSync(directory).sort()) {
     if (skipped.has(name)) continue
     const path = join(directory, name)
-    if (statSync(path).isDirectory()) files.push(...walk(path))
-    else if (checkedFile.test(name)) files.push(path)
+    const entry = lstatSync(path)
+    if (entry.isSymbolicLink()) found.links.push(path)
+    else if (entry.isDirectory()) {
+      const inner = walk(path)
+      found.files.push(...inner.files)
+      found.links.push(...inner.links)
+    } else found.files.push(path)
   }
-  return files
+  return found
+}
+
+/** Text, or null for a binary file, which holds no paths to read. */
+function text(path) {
+  const contents = readFileSync(path)
+  return contents.includes(0) ? null : contents.toString("utf8")
 }
 
 /** The units under `extensions/` or `packages/`. A dot-directory is not one. */
@@ -38,7 +53,7 @@ const units = (path) =>
     ? readdirSync(path)
         .sort()
         .filter(
-          (name) => !name.startsWith(".") && statSync(join(path, name)).isDirectory(),
+          (name) => !name.startsWith(".") && lstatSync(join(path, name)).isDirectory(),
         )
     : []
 
@@ -102,15 +117,30 @@ export function checkRepository(root) {
   }
 
   for (const top of ["packages", "extensions"]) {
-    for (const name of units(join(root, top))) {
-      for (const file of walk(join(root, top, name))) {
-        const path = rel(file)
-        for (const violation of relativePathViolations(
-          path,
-          readFileSync(file, "utf8"),
-        )) {
-          failures.push(`${path}: ${violation}`)
-        }
+    const directory = join(root, top)
+    if (!existsSync(directory)) continue
+    for (const name of readdirSync(directory).sort()) {
+      if (lstatSync(join(directory, name)).isSymbolicLink()) {
+        failures.push(`${top}/${name}: a symbolic link in a unit can lead into another`)
+      }
+    }
+  }
+  const unitNames = new Set(
+    ["packages", "extensions"].flatMap((top) =>
+      units(join(root, top)).map((name) => `${top}/${name}`),
+    ),
+  )
+  for (const unit of unitNames) {
+    const { files, links } = walk(join(root, unit))
+    for (const link of links) {
+      failures.push(`${rel(link)}: a symbolic link in a unit can lead into another`)
+    }
+    for (const file of files) {
+      const path = rel(file)
+      const contents = text(file)
+      if (contents === null) continue
+      for (const violation of relativePathViolations(path, contents, unitNames)) {
+        failures.push(`${path}: ${violation}`)
       }
     }
   }

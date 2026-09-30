@@ -4,7 +4,7 @@ import tseslint from "typescript-eslint"
 
 export default tseslint.config(
   {
-    ignores: ["**/node_modules", "**/dist", "scripts"],
+    ignores: ["**/node_modules", "**/dist"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -19,6 +19,12 @@ export default tseslint.config(
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "@typescript-eslint/no-non-null-assertion": "error",
+    },
+  },
+  {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: { ...globals.node },
     },
   },
   {

@@ -57,14 +57,17 @@ extensions/<name>/     one extension, one package @nessalabs/<name>
 
 An arrow runs one way: extensions depend on packages. **An extension depends on
 nothing in another extension, and a package on nothing in any extension**; what
-two extensions share becomes a package. `pnpm architecture` enforces this as
-two constraints, not as a list of import forms to catch. No `package.json` in
-the workspace — the root, a package, another extension — names an extension as
-a dependency, by name, alias, or path; pnpm links only what a manifest declares,
-so an import of an undeclared extension by name does not resolve, and fails
-typecheck and test. And every quoted relative path in an extension's or a
-package's files stays inside it. Every extension directory must be a package
-that names itself, so a dependency on it is recognisable.
+two extensions share becomes a package, reached by its package name through a
+manifest. `pnpm architecture` enforces this as constraints, not as a list of
+import forms to catch. No `package.json` in the workspace — the root, a
+package, another extension — names an extension as a dependency, by name,
+alias, or path; pnpm links only what a manifest declares, so an import of an
+undeclared extension by name does not resolve, and fails typecheck and test.
+No quoted relative path in any file of an extension or a package leads into
+another unit; it may leave for somewhere that is not one, such as the root's
+shared configuration. No symbolic link sits in a unit. Every extension
+directory must be a package that names itself, so a dependency on it is
+recognisable.
 
 **Conformance.** Every extension negotiates `io.modelcontextprotocol/ui` under
 `capabilities.extensions`, names its view in `_meta.ui.resourceUri`, serves it
@@ -120,8 +123,9 @@ to copy that script or share it.
 - The standards are one link away rather than one directory away, and a change
   to them for extensions is a nessa-agent pull request.
 - The architecture check covers dependencies only, and cannot see a path
-  assembled at run time or an unquoted CSS `url(…)`. Everything else in
-  `AGENTS.md`'s extensions section is held by review.
+  assembled at run time or one written without quotes (a CSS `url(../x)`, an
+  unquoted HTML attribute). Everything else in `AGENTS.md`'s extensions
+  section is held by review.
 - Remaining work: #2 and #3 (the packages, with `nessa_ui`), #4–#7 (the
   experiments extension and its release workflow); the `@nessalabs` npm scope
   must be held by Nessa Labs before anything is published.

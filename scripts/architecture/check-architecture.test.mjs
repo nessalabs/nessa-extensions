@@ -33,17 +33,47 @@ test("an empty repository passes", (t) => {
   assert.deepEqual(checkRepository(repository(t, { "README.md": "" })), [])
 })
 
-test("finds a relative path out of an extension, deep in any checked file", (t) => {
+test("finds a relative path into another unit, deep in any file", (t) => {
   const root = repository(t, {
     ...twoExtensions,
+    "packages/server-kit/package.json": manifest("@nessalabs/server-kit"),
     "extensions/experiments/app/views/run.tsx": `import { n } from "../../../notes/app/n"`,
     "extensions/experiments/app/index.html": `<script src="../../notes/app/x.js"></script>`,
+    "extensions/experiments/app/view.svelte": `<script>import "../../../packages/server-kit/src"</script>`,
     "extensions/experiments/server/tsconfig.json": `{ "extends": "../../../tsconfig.json" }`,
     "extensions/notes/server/index.ts": `import { own } from "./own"`,
   })
+  const rule = "reach another unit by package name, through its manifest"
   assert.deepEqual(checkRepository(root), [
-    `extensions/experiments/app/index.html: "../../notes/app/x.js" reaches outside extensions/experiments; depend on a package by name instead`,
-    `extensions/experiments/app/views/run.tsx: "../../../notes/app/n" reaches outside extensions/experiments; depend on a package by name instead`,
+    `extensions/experiments/app/index.html: "../../notes/app/x.js" reaches into extensions/notes; ${rule}`,
+    `extensions/experiments/app/view.svelte: "../../../packages/server-kit/src" reaches into packages/server-kit; ${rule}`,
+    `extensions/experiments/app/views/run.tsx: "../../../notes/app/n" reaches into extensions/notes; ${rule}`,
+  ])
+})
+
+test("skips a binary file", (t) => {
+  const root = repository(t, {
+    ...twoExtensions,
+    "extensions/experiments/app/icon.png": `\u0000"../../notes/x"`,
+  })
+  assert.deepEqual(checkRepository(root), [])
+})
+
+test("a symbolic link in or as a unit fails, and is not followed", (t) => {
+  const root = repository(t, {
+    ...twoExtensions,
+    "extensions/notes/server/index.ts": `import "../../experiments/x"`,
+  })
+  symlinkSync(
+    join(root, "extensions/notes/server"),
+    join(root, "extensions/experiments/borrowed"),
+  )
+  symlinkSync(join(root, "extensions/notes"), join(root, "extensions/alias"))
+  const rule = "a symbolic link in a unit can lead into another"
+  assert.deepEqual(checkRepository(root), [
+    `extensions/alias: ${rule}`,
+    `extensions/experiments/borrowed: ${rule}`,
+    `extensions/notes/server/index.ts: "../../experiments/x" reaches into extensions/experiments; reach another unit by package name, through its manifest`,
   ])
 })
 
@@ -98,7 +128,7 @@ test("the command exits 1 with each failure on stderr, and 0 when clean", (t) =>
   assert.equal(failed.stdout, "")
   assert.match(
     failed.stderr,
-    /^extensions\/experiments\/server\/index\.ts: "\.\.\/\.\.\/notes\/server" reaches outside/,
+    /^extensions\/experiments\/server\/index\.ts: "\.\.\/\.\.\/notes\/server" reaches into extensions\/notes;/,
   )
 
   const clean = repository(t, twoExtensions)
