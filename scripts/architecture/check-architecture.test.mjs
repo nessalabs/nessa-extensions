@@ -23,14 +23,24 @@ function repository(t, files) {
 
 const manifest = (name, fields = {}) => JSON.stringify({ name, ...fields })
 
+const emptyLockfile = "lockfileVersion: '9.0'\n\nimporters:\n\n  .: {}\n"
+
 const twoExtensions = {
   "package.json": manifest("root"),
+  "pnpm-lock.yaml": emptyLockfile,
   "extensions/experiments/package.json": manifest("@nessalabs/experiments"),
   "extensions/notes/package.json": manifest("@nessalabs/notes"),
 }
 
 test("an empty repository passes", (t) => {
-  assert.deepEqual(checkRepository(repository(t, { "README.md": "" })), [])
+  const root = repository(t, { "README.md": "", "pnpm-lock.yaml": emptyLockfile })
+  assert.deepEqual(checkRepository(root), [])
+})
+
+test("a repository without a lockfile fails", (t) => {
+  assert.deepEqual(checkRepository(repository(t, { "README.md": "" })), [
+    "pnpm-lock.yaml: is missing, so what the workspace depends on is unknown",
+  ])
 })
 
 test("finds a relative path into another unit, deep in any file", (t) => {
@@ -77,21 +87,22 @@ test("a symbolic link in or as a unit fails, and is not followed", (t) => {
   ])
 })
 
-test("finds a dependency on an extension in any manifest", (t) => {
+test("finds a dependency the lockfile resolves into an extension", (t) => {
   const root = repository(t, {
     ...twoExtensions,
-    "package.json": manifest("root", { devDependencies: { "@nessalabs/notes": "*" } }),
-    "extensions/experiments/package.json": manifest("@nessalabs/experiments", {
-      dependencies: { bee: "workspace:@nessalabs/notes@*" },
-    }),
-    "packages/server-kit/package.json": manifest("@nessalabs/server-kit", {
-      dependencies: { "@nessalabs/experiments": "workspace:*" },
-    }),
+    "pnpm-lock.yaml": `importers:
+
+  .: {}
+
+  extensions/experiments:
+    dependencies:
+      bee:
+        specifier: workspace:../notes
+        version: link:../notes
+`,
   })
   assert.deepEqual(checkRepository(root), [
-    "package.json: devDependencies names extension @nessalabs/notes; nothing depends on an extension — share it through a package",
-    "packages/server-kit/package.json: dependencies names extension @nessalabs/experiments; nothing depends on an extension — share it through a package",
-    "extensions/experiments/package.json: dependencies names extension @nessalabs/notes; nothing depends on an extension — share it through a package",
+    "pnpm-lock.yaml: extensions/experiments dependencies bee resolves into extensions/notes; nothing depends on an extension — share it through a package",
   ])
 })
 
@@ -105,15 +116,12 @@ test("skips installed and built files and dot-directories", (t) => {
   assert.deepEqual(checkRepository(root), [])
 })
 
-test("an extension without a readable manifest naming it fails", (t) => {
+test("an extension without a manifest fails", (t) => {
   const root = repository(t, {
+    "pnpm-lock.yaml": emptyLockfile,
     "extensions/unnamed/server/index.ts": "",
-    "extensions/nameless/package.json": JSON.stringify({ version: "0.0.0" }),
-    "extensions/broken/package.json": "{bad",
   })
-  assert.deepEqual(checkRepository(root).sort(), [
-    "extensions/broken/package.json: is not valid JSON",
-    "extensions/nameless/package.json: an extension's manifest names its package",
+  assert.deepEqual(checkRepository(root), [
     "extensions/unnamed/package.json: an extension is one package and needs a manifest",
   ])
 })

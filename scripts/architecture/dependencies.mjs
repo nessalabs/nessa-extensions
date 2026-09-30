@@ -8,12 +8,19 @@
  * extension. Another unit is reached only by package name, through a manifest,
  * and three constraints hold that:
  *
- * - **No manifest depends on an extension** (`manifestViolations`). An
- *   extension is a leaf: not another extension, not a package, not the root
- *   names one as a dependency, whether by its package name, an alias of it, or
- *   a path into `extensions/`. pnpm links into a package's `node_modules` only
- *   what its manifest declares, so an import of an undeclared extension by name
- *   does not resolve, and fails typecheck, test, and build.
+ * - **Nothing is linked to an extension** (`lockfileViolations`). An extension
+ *   is a leaf: in pnpm's resolution of the workspace, no importer — the root,
+ *   a package, another extension — has a dependency that resolves into an
+ *   extension's directory. The lockfile is read rather than the manifests
+ *   because it is the outcome: however a dependency was spelled (a name, an
+ *   alias, `workspace:../x`, a bare path, an override, a catalog), pnpm
+ *   records where it resolved, as `link:` or `file:` relative to the importer.
+ *   CI installs with `--frozen-lockfile`, which fails when the lockfile does
+ *   not match the manifests and overrides, so the lockfile checked is the one
+ *   installed.
+ *   A unit resolves by name only what it or the root declares; neither may
+ *   be an extension, so an import of one by name does not resolve, and fails
+ *   typecheck and test.
  * - **A quoted relative path does not reach into another unit**
  *   (`relativePathViolations`). Every quoted `./` or `../` path in any file of
  *   an extension or a package must not resolve into another extension or
@@ -26,13 +33,6 @@
  * a CSS `url(../x)`, an HTML attribute written without quotes.
  */
 import { posix } from "node:path"
-
-const dependencyFields = [
-  "dependencies",
-  "devDependencies",
-  "peerDependencies",
-  "optionalDependencies",
-]
 
 /**
  * The unit a repository-relative path is in: `extensions/<name>` or
@@ -83,49 +83,44 @@ export function relativePathViolations(path, text, units) {
 }
 
 /**
- * The extension a dependency entry refers to, if any: by its key, by an
- * aliased name in its version (`workspace:@nessalabs/x@*`, `npm:@nessalabs/x@1`),
- * or by a `link:`, `file:`, or `portal:` path into `extensions/`.
- */
-function dependedExtension(manifestPath, key, version, extensionPackages) {
-  const names = [...extensionPackages.values()]
-  if (names.includes(key)) return key
-  if (typeof version !== "string") return null
-  const alias = /^(?:workspace|npm):(@?[^@]+)/.exec(version)
-  if (alias && names.includes(alias[1])) return alias[1]
-  const local = /^(?:link|file|portal):(.+)$/.exec(version)
-  if (local) {
-    const target = posix.normalize(posix.join(posix.dirname(manifestPath), local[1]))
-    const [top, name] = target.split("/")
-    if (top === "extensions" && name) {
-      return extensionPackages.get(name) ?? target
-    }
-  }
-  return null
-}
-
-/**
- * The dependencies in a manifest that name an extension, one message each.
+ * The dependencies pnpm's lockfile resolves into an extension from anywhere
+ * but that extension itself, one message each.
  *
- * @param {string} manifestPath repository-relative path of the package.json
- * @param {Record<string, unknown>} manifest its parsed contents
- * @param {Map<string, string>} extensionPackages extension directory name →
- *   its package name, for every extension in the repository
+ * Pure text, read line by line: the check runs in bare Node, so it cannot
+ * import a YAML parser, and it needs only the `importers:` section, whose
+ * shape pnpm fixes — an importer at two spaces, a dependency field at four, a
+ * dependency at six, its `version:` at eight.
+ *
+ * @param {string} lockfile the contents of pnpm-lock.yaml
+ * @param {Set<string>} extensions every extension, as `extensions/<name>`
  */
-export function manifestViolations(manifestPath, manifest, extensionPackages) {
+export function lockfileViolations(lockfile, extensions) {
   const violations = []
-  for (const field of dependencyFields) {
-    const entries = Object.hasOwn(manifest, field) ? manifest[field] : null
-    if (entries === null || typeof entries !== "object" || Array.isArray(entries)) {
+  let inImporters = false
+  let importer = null
+  let field = null
+  let dependency = null
+  for (const line of lockfile.split("\n")) {
+    if (/^\S/.test(line)) {
+      inImporters = line.trimEnd() === "importers:"
       continue
     }
-    for (const [key, version] of Object.entries(entries)) {
-      const extension = dependedExtension(manifestPath, key, version, extensionPackages)
-      if (extension === null) continue
+    if (!inImporters) continue
+    let match
+    if ((match = /^ {2}(\S[^:]*):/.exec(line))) importer = unquote(match[1])
+    else if ((match = /^ {4}(\S[^:]*):/.exec(line))) field = match[1]
+    else if ((match = /^ {6}(\S.*):\s*$/.exec(line))) dependency = unquote(match[1])
+    else if ((match = /^ {8}version: (?:link|file):(.+?)\s*$/.exec(line))) {
+      const [top, name] = posix.normalize(posix.join(importer, match[1])).split("/")
+      const reached = `${top}/${name}`
+      if (reached === importer || !extensions.has(reached)) continue
       violations.push(
-        `${field} names extension ${extension}; nothing depends on an extension — share it through a package`,
+        `${importer} ${field} ${dependency} resolves into ${reached}; nothing depends on an extension — share it through a package`,
       )
     }
   }
   return violations
 }
+
+/** A YAML key without the quotes pnpm puts around one starting with `@`. */
+const unquote = (key) => key.replace(/^'(.*)'$/, "$1")

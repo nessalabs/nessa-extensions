@@ -2,16 +2,11 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 
 import {
-  manifestViolations,
+  lockfileViolations,
   relativePathViolations,
   relativePaths,
   unitOf,
 } from "./dependencies.mjs"
-
-const extensions = new Map([
-  ["experiments", "@nessalabs/experiments"],
-  ["notes", "@nessalabs/notes"],
-])
 
 test("finds every quoted relative path, however it is used", () => {
   const text = [
@@ -124,57 +119,114 @@ test("files outside extensions and packages are not held to it", () => {
   assert.deepEqual(reaches("scripts/tool.mjs", `import "../extensions/notes/server"`), [])
 })
 
-test("a manifest may depend on packages and libraries", () => {
-  const manifest = {
-    dependencies: { "@nessalabs/server-kit": "workspace:*", zod: "^4.0.0" },
-    devDependencies: { "@nessalabs/app-shell": "workspace:*" },
-  }
-  assert.deepEqual(
-    manifestViolations("extensions/experiments/package.json", manifest, extensions),
-    [],
-  )
+// The importers section of the lockfile pnpm 11.9.0 wrote for a workspace
+// that reaches one extension from another in every way a manifest or the
+// workspace file can spell it: `workspace:*` by name, `workspace:../x`, `link:`,
+// `file:`, a bare path in the root, and an override in pnpm-workspace.yaml.
+const bypasses = `lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+
+overrides:
+  '@nessalabs/server-kit': link:./extensions/notes
+
+importers:
+
+  .:
+    devDependencies:
+      bee:
+        specifier: ./extensions/notes
+        version: link:extensions/notes
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/node@24.19.0)
+
+  extensions/experiments:
+    dependencies:
+      '@nessalabs/notes':
+        specifier: workspace:*
+        version: link:../notes
+      '@nessalabs/server-kit':
+        specifier: link:../notes
+        version: link:../notes
+      a:
+        specifier: workspace:../notes
+        version: link:../notes
+      b:
+        specifier: file:../notes/server
+        version: file:../notes/server
+
+  extensions/notes: {}
+
+  packages/app-shell:
+    dependencies:
+      '@nessalabs/server-kit':
+        specifier: link:../../extensions/notes
+        version: link:../../extensions/notes
+
+  packages/server-kit: {}
+
+packages:
+
+  vitest@3.2.7:
+    resolution: {integrity: sha512-x}
+
+snapshots:
+
+  .:
+    dependencies:
+      shaped-like-an-importer:
+        specifier: only the importers section is read
+        version: link:extensions/notes
+`
+
+const extensionDirectories = new Set(["extensions/experiments", "extensions/notes"])
+const rule = "nothing depends on an extension — share it through a package"
+
+test("finds every dependency that resolves into an extension, however it was spelled", () => {
+  assert.deepEqual(lockfileViolations(bypasses, extensionDirectories), [
+    `. devDependencies bee resolves into extensions/notes; ${rule}`,
+    `extensions/experiments dependencies @nessalabs/notes resolves into extensions/notes; ${rule}`,
+    `extensions/experiments dependencies @nessalabs/server-kit resolves into extensions/notes; ${rule}`,
+    `extensions/experiments dependencies a resolves into extensions/notes; ${rule}`,
+    `extensions/experiments dependencies b resolves into extensions/notes; ${rule}`,
+    `packages/app-shell dependencies @nessalabs/server-kit resolves into extensions/notes; ${rule}`,
+  ])
 })
 
-test("a manifest may not name an extension, however it spells it", () => {
-  for (const [field, key, version] of [
-    ["dependencies", "@nessalabs/notes", "workspace:*"],
-    ["devDependencies", "@nessalabs/notes", "^1.0.0"],
-    ["peerDependencies", "@nessalabs/notes", "*"],
-    ["optionalDependencies", "@nessalabs/notes", "*"],
-    ["dependencies", "bee", "workspace:@nessalabs/notes@*"],
-    ["dependencies", "bee", "npm:@nessalabs/notes@1.0.0"],
-    ["dependencies", "bee", "link:../notes"],
-    ["dependencies", "bee", "file:../notes/server"],
-  ]) {
-    const manifest = { [field]: { [key]: version } }
-    const violations = manifestViolations(
-      "extensions/experiments/package.json",
-      manifest,
-      extensions,
-    )
-    assert.equal(violations.length, 1, `${field} ${key} ${version}`)
-    assert.match(violations[0], new RegExp(`^${field} names extension @nessalabs/notes;`))
-  }
+test("a dependency on a package, a library, or an extension's own directory passes", () => {
+  const lockfile = `importers:
+
+  extensions/notes:
+    dependencies:
+      '@nessalabs/server-kit':
+        specifier: workspace:*
+        version: link:../../packages/server-kit
+      self:
+        specifier: link:./server
+        version: link:server
+      zod:
+        specifier: ^4.0.0
+        version: 4.0.0
+
+  packages/app-shell:
+    devDependencies:
+      '@nessalabs/server-kit':
+        specifier: workspace:*
+        version: link:../server-kit
+`
+  assert.deepEqual(lockfileViolations(lockfile, extensionDirectories), [])
 })
 
-test("neither a package nor the root may name an extension", () => {
-  const manifest = { dependencies: { "@nessalabs/experiments": "workspace:*" } }
-  for (const path of ["packages/server-kit/package.json", "package.json"]) {
-    assert.equal(manifestViolations(path, manifest, extensions).length, 1, path)
-  }
-})
+test("a link to a directory that only starts like an extension's passes", () => {
+  const lockfile = `importers:
 
-test("a name that only starts like an extension's is not that extension", () => {
-  const manifest = {
-    dependencies: {
-      "@nessalabs/notes-kit": "*",
-      bee: "workspace:@nessalabs/notes-kit@*",
-    },
-  }
-  assert.deepEqual(manifestViolations("package.json", manifest, extensions), [])
-})
-
-test("a malformed dependency field is skipped rather than thrown on", () => {
-  const manifest = { dependencies: null, devDependencies: "x", peerDependencies: [] }
-  assert.deepEqual(manifestViolations("package.json", manifest, extensions), [])
+  .:
+    dependencies:
+      kit:
+        specifier: link:./extensions/notes-kit
+        version: link:extensions/notes-kit
+`
+  assert.deepEqual(lockfileViolations(lockfile, extensionDirectories), [])
 })

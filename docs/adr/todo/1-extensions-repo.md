@@ -59,15 +59,27 @@ An arrow runs one way: extensions depend on packages. **An extension depends on
 nothing in another extension, and a package on nothing in any extension**; what
 two extensions share becomes a package, reached by its package name through a
 manifest. `pnpm architecture` enforces this as constraints, not as a list of
-import forms to catch. No `package.json` in the workspace — the root, a
-package, another extension — names an extension as a dependency, by name,
-alias, or path; pnpm links only what a manifest declares, so an import of an
-undeclared extension by name does not resolve, and fails typecheck and test.
-No quoted relative path in any file of an extension or a package leads into
-another unit; it may leave for somewhere that is not one, such as the root's
-shared configuration. No symbolic link sits in a unit. Every extension
-directory must be a package that names itself, so a dependency on it is
-recognisable.
+import forms to catch, and checks outcomes rather than spellings:
+
+- **Nothing resolves into an extension from outside it.** The check reads
+  pnpm's resolution, `pnpm-lock.yaml`, where every importer's dependencies are
+  recorded as resolved — a workspace link is `link:<path>` however it was
+  written: a name, an alias, `workspace:../x`, a bare path in the root, an
+  override in `pnpm-workspace.yaml`. CI installs with `--frozen-lockfile`,
+  which refuses a lockfile that disagrees with the manifests and overrides, so
+  the resolution checked is the one installed. A unit resolves by name only
+  what it or the root declares, and neither may be an extension, so an import
+  of one by name fails typecheck and test. The first version read the
+  manifests instead, and each review found another spelling it missed; that
+  is why it reads the outcome.
+- **No quoted relative path in any file of an extension or a package leads
+  into another unit.** It may leave for somewhere that is not one, such as the
+  root's shared configuration or a build directory.
+- **No symbolic link sits in a unit**, since one would make a path inside it
+  lead into another.
+
+Every extension directory must also be a package, with its own
+`package.json`.
 
 **Conformance.** Every extension negotiates `io.modelcontextprotocol/ui` under
 `capabilities.extensions`, names its view in `_meta.ui.resourceUri`, serves it
@@ -125,7 +137,9 @@ to copy that script or share it.
 - The architecture check covers dependencies only, and cannot see a path
   assembled at run time or one written without quotes (a CSS `url(../x)`, an
   unquoted HTML attribute). Everything else in `AGENTS.md`'s extensions
-  section is held by review.
+  section is held by review — including, until the first extension gives
+  `server/` and `app/` a configuration each, that server code does not use
+  browser globals or app code Node's.
 - Remaining work: #2 and #3 (the packages, with `nessa_ui`), #4–#7 (the
   experiments extension and its release workflow); the `@nessalabs` npm scope
   must be held by Nessa Labs before anything is published.

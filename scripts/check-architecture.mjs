@@ -12,7 +12,7 @@ import { dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 import {
-  manifestViolations,
+  lockfileViolations,
   relativePathViolations,
 } from "./architecture/dependencies.mjs"
 
@@ -59,60 +59,36 @@ const units = (path) =>
 
 /**
  * Every failure in the repository at `root`, as `path: rule` lines. An
- * extension is one package, so each needs a `package.json` naming it: without
- * that name, a dependency on it could not be recognised.
+ * extension is one package, so each needs a `package.json`.
  */
 export function checkRepository(root) {
   const failures = []
   const rel = (path) => relative(root, path).split(sep).join("/")
 
-  /**
-   * A manifest's contents, or null when it is absent or unreadable — recorded
-   * once, however often it is asked for.
-   */
-  const read = new Map()
-  const readManifest = (path) => {
-    if (!read.has(path)) {
-      let manifest = null
-      if (existsSync(path)) {
-        try {
-          manifest = JSON.parse(readFileSync(path, "utf8"))
-        } catch {
-          failures.push(`${rel(path)}: is not valid JSON`)
-        }
-      }
-      read.set(path, manifest)
-    }
-    return read.get(path)
-  }
-
-  const extensionPackages = new Map()
   for (const name of units(join(root, "extensions"))) {
     const path = join(root, "extensions", name, "package.json")
     if (!existsSync(path)) {
       failures.push(`${rel(path)}: an extension is one package and needs a manifest`)
-      continue
     }
-    const manifest = readManifest(path)
-    if (manifest === null) continue
-    if (typeof manifest.name !== "string" || manifest.name === "") {
-      failures.push(`${rel(path)}: an extension's manifest names its package`)
-      continue
-    }
-    extensionPackages.set(name, manifest.name)
   }
 
-  const manifests = [
-    join(root, "package.json"),
-    ...["packages", "extensions"].flatMap((top) =>
-      units(join(root, top)).map((name) => join(root, top, name, "package.json")),
-    ),
-  ]
-  for (const path of manifests) {
-    const manifest = readManifest(path)
-    if (manifest === null) continue
-    for (const violation of manifestViolations(rel(path), manifest, extensionPackages)) {
-      failures.push(`${rel(path)}: ${violation}`)
+  // What the workspace depends on is what pnpm resolved. With no lockfile there
+  // is nothing to check, and CI's `pnpm install --frozen-lockfile` refuses to
+  // run, so its absence is a failure here too rather than a pass.
+  const lockfile = join(root, "pnpm-lock.yaml")
+  const extensions = new Set(
+    units(join(root, "extensions")).map((name) => `extensions/${name}`),
+  )
+  if (!existsSync(lockfile)) {
+    failures.push(
+      "pnpm-lock.yaml: is missing, so what the workspace depends on is unknown",
+    )
+  } else {
+    for (const violation of lockfileViolations(
+      readFileSync(lockfile, "utf8"),
+      extensions,
+    )) {
+      failures.push(`pnpm-lock.yaml: ${violation}`)
     }
   }
 

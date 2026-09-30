@@ -30,10 +30,16 @@ extensions/<name>/
   sections.
 - An extension depends on nothing in another extension. What two share
   belongs in a package under [`packages/`](../packages), reached by its
-  package name. `pnpm architecture` refuses a `package.json` that names an
-  extension, a quoted relative path that leads into another extension or
-  package, a symbolic link, and an extension directory without a
-  `package.json` naming it.
+  package name. `pnpm architecture` refuses a dependency the lockfile resolves
+  into an extension from outside it, a quoted relative path that leads into
+  another extension or package, a symbolic link, and an extension directory
+  without a `package.json`. A tool that needs another unit's files, such as
+  Tailwind's `@source`, reaches them through `node_modules`
+  (`@source "../node_modules/@nessalabs/app-shell/src"`), not by path.
+- Until the first extension, one `tsconfig.json` types every file with both
+  the DOM and Node, so nothing yet stops `server/` using `window` or `app/`
+  using `process`; that is held by review. The first extension gives each
+  side its own configuration.
 
 Tests sit beside the code they test (`*.test.ts`, `*.test.tsx`), and `pnpm test` finds them.
 
