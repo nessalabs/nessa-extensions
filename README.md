@@ -144,11 +144,12 @@ scripts/         the architecture check
 docs/adr/        decision records
 ```
 
-`nessa_ui`, Nessa's design system, is consumed the way nessa-agent consumes
-it — a commit pinned in `nessa-ui-revision` and fetched on install — from
+`nessa_ui`, Nessa's design system, arrives with
 [#2](https://github.com/nessalabs/nessa-extensions/issues/2), the first package
-to import it. The [decision record](docs/adr/todo/1-extensions-repo.md) says
-why it is not here yet.
+to import it. nessa-agent's way of taking it (a vendored commit linked on
+install) is ruled out by this repository's pinned layout; the
+[decision record](docs/adr/todo/1-extensions-repo.md) says what #2 chooses
+between.
 
 ## License
 

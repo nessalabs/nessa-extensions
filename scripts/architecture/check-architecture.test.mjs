@@ -98,10 +98,11 @@ test("a dist or node_modules deeper in a unit is checked like any source", (t) =
     "extensions/experiments/src/node_modules/x.js": `import "../../../notes/x"`,
     "extensions/experiments/dist/built.js": `import "../../notes/x"`,
   })
-  const rule = "reach another unit by package name, through its manifest"
+  const rule = (unit) =>
+    `a path leaves ${unit} only for a root file or docs/ — reach another unit by package name`
   assert.deepEqual(checkRepository(root), [
-    `extensions/experiments/src/dist/re.js: "../../../notes/src/index.js" reaches into extensions/notes; ${rule}`,
-    `extensions/experiments/src/node_modules/x.js: "../../../notes/x" reaches into extensions/notes; ${rule}`,
+    `extensions/experiments/src/dist/re.js: "../../../notes/src/index.js" leads to extensions/notes/src/index.js; ${rule("extensions/experiments")}`,
+    `extensions/experiments/src/node_modules/x.js: "../../../notes/x" leads to extensions/notes/x; ${rule("extensions/experiments")}`,
   ])
 })
 
@@ -144,14 +145,29 @@ test("finds a relative path into another unit, deep in any file", (t) => {
     "extensions/experiments/app/views/run.tsx": `import { n } from "../../../notes/app/n"`,
     "extensions/experiments/app/index.html": `<script src="../../notes/app/x.js"></script>`,
     "extensions/experiments/app/view.svelte": `<script>import "../../../packages/server-kit/src"</script>`,
+    "tsconfig.json": "{}",
     "extensions/experiments/server/tsconfig.json": `{ "extends": "../../../tsconfig.json" }`,
     "extensions/notes/server/index.ts": `import { own } from "./own"`,
   })
-  const rule = "reach another unit by package name, through its manifest"
+  const rule = (unit) =>
+    `a path leaves ${unit} only for a root file or docs/ — reach another unit by package name`
   assert.deepEqual(checkRepository(root), [
-    `extensions/experiments/app/index.html: "../../notes/app/x.js" reaches into extensions/notes; ${rule}`,
-    `extensions/experiments/app/view.svelte: "../../../packages/server-kit/src" reaches into packages/server-kit; ${rule}`,
-    `extensions/experiments/app/views/run.tsx: "../../../notes/app/n" reaches into extensions/notes; ${rule}`,
+    `extensions/experiments/app/index.html: "../../notes/app/x.js" leads to extensions/notes/app/x.js; ${rule("extensions/experiments")}`,
+    `extensions/experiments/app/view.svelte: "../../../packages/server-kit/src" leads to packages/server-kit/src; ${rule("extensions/experiments")}`,
+    `extensions/experiments/app/views/run.tsx: "../../../notes/app/n" leads to extensions/notes/app/n; ${rule("extensions/experiments")}`,
+  ])
+})
+
+test("a path may name a file at the root, not a directory there", (t) => {
+  const root = repository(t, {
+    ...twoExtensions,
+    "tsconfig.json": "{}",
+    "scripts/tool.mjs": "",
+    "extensions/notes/tsconfig.json": `{ "extends": "../../tsconfig.json" }`,
+    "extensions/notes/server/index.ts": `import "../../../scripts"`,
+  })
+  assert.deepEqual(checkRepository(root), [
+    `extensions/notes/server/index.ts: "../../../scripts" leads to scripts; a path leaves extensions/notes only for a root file or docs/ — reach another unit by package name`,
   ])
 })
 
@@ -177,7 +193,7 @@ test("a symbolic link in or as a unit fails, and is not followed", (t) => {
   assert.deepEqual(checkRepository(root), [
     `extensions/alias: ${rule}`,
     `extensions/experiments/borrowed: ${rule}`,
-    `extensions/notes/server/index.ts: "../../experiments/x" reaches into extensions/experiments; reach another unit by package name, through its manifest`,
+    `extensions/notes/server/index.ts: "../../experiments/x" leads to extensions/experiments/x; a path leaves extensions/notes only for a root file or docs/ — reach another unit by package name`,
   ])
 })
 
@@ -210,7 +226,7 @@ test("the command exits 1 with each failure on stderr, and 0 when clean", (t) =>
   assert.equal(failed.stdout, "")
   assert.match(
     failed.stderr,
-    /^extensions\/experiments\/server\/index\.ts: "\.\.\/\.\.\/notes\/server" reaches into extensions\/notes;/,
+    /^extensions\/experiments\/server\/index\.ts: "\.\.\/\.\.\/notes\/server" leads to extensions\/notes\/server;/,
   )
 
   const clean = repository(t, twoExtensions)

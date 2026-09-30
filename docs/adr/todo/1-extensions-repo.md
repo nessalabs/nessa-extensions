@@ -107,11 +107,15 @@ enforcer is gate 13's defect too, so until the rule is shared, what it enforces
 is held here by review. `main` is protected as
 every nessalabs repository is: conversations resolved before merge.
 
-**`nessa_ui` arrives with #2, not here.** The app shell is the first code that
-imports it (#2 maps host context onto its theme tokens). Pinning it now would
-mean a second copy of nessa-agent's 146-line vendoring script, and a pin
-nothing reads — a claim nothing checks. #2 brings the pin and decides whether
-to copy that script or share it.
+**`nessa_ui` arrives with #2, not here, and not the way nessa-agent takes
+it.** The app shell is the first code that imports it (#2 maps host context
+onto its theme tokens). nessa-agent consumes it through a `preinstall` script
+that vendors a pinned commit and `link:` dependencies into the vendored copy;
+the pinned layout refuses both, so that mechanism is ruled out here. #2
+chooses between `nessa_ui` published to a registry and taken by version, and
+a reviewed change to the allow-lists that admits one vendoring path — an owner
+decision, recorded when it is made. Pinning anything now would be a pin
+nothing reads.
 
 ## Alternatives considered
 

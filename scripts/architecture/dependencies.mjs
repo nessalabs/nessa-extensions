@@ -7,23 +7,28 @@
  * depends on nothing in another extension, and a package on nothing in any
  * extension; another unit is reached only by package name, through a manifest.
  * Manifests and the install layout are held by `layout.mjs`. This module holds
- * the files:
+ * the files, by allow-list of where a path may lead:
  *
- * - **A quoted relative path does not reach into another unit**
- *   (`relativePathViolations`). Every quoted path in any file of an extension
- *   or a package that begins `./` or `../`, or climbs with `..` anywhere in it,
- *   resolved from the file's directory, must not lead into another unit. It
- *   may leave its own unit for somewhere that is neither — the repository
- *   root's shared configuration, a build directory.
+ * - **A relative path stays in its unit, or names a file at the repository
+ *   root** (`relativePathViolations`). Every relative path written in any file
+ *   of an extension or a package — a run of path characters that begins `./`
+ *   or `../` or climbs with `..` anywhere in it, found whatever quotes or
+ *   comments surround it — is resolved from the file's directory, and must
+ *   land inside the unit, on a file directly at the repository root (the
+ *   shared `tsconfig.json` an extension extends), in `docs/` (a README's link
+ *   to a decision record; nothing there is code), or on a directory above the
+ *   file with nothing after it (`"../"` in a path guard). Anywhere else is
+ *   refused: another unit, pnpm's `node_modules` (whose hidden hoist links to
+ *   every extension), `scripts/`, and anything above the repository.
  * - **No symbolic link in a unit** (`check-architecture.mjs`), since a link
  *   makes a path inside the unit lead into another.
  *
- * What these do not see: a path assembled at run time; an unquoted one — a
- * CSS `url(../x)`, an HTML attribute written without quotes; one resolved from
- * somewhere other than its file's directory, such as a Vite `root`; and one
- * that does not climb, such as an absolute path; and anything under a unit's
- * own `node_modules` or `dist`, which install and build write. Those are held
- * by review.
+ * What these do not see: a path assembled at run time; one written without a
+ * `./`, `../`, or `..` segment, such as an absolute path; one resolved from
+ * somewhere other than its file's directory, such as a Vite `outDir` against
+ * its `root` (write it from the config's own directory instead); and anything
+ * under a unit's own root `node_modules` or `dist`, which install and build
+ * write. Those are held by review.
  */
 import { posix } from "node:path"
 
@@ -40,39 +45,46 @@ export function unitOf(path) {
 }
 
 /**
- * Every quoted relative path in a file: a string literal — single, double, or
- * backtick-quoted without interpolation, on one line — that begins `./` or
- * `../`, or that climbs anywhere inside it (`src/../../x`). In source, that is
- * every static import, `export … from`, dynamic `import()`, `require`, and
- * `new URL(…, import.meta.url)`; in configuration, HTML, and CSS, every path
- * written in quotes.
+ * Every relative path written in a file: each run of path characters that
+ * begins `./` or `../`, or has a `..` segment anywhere in it. Runs are found
+ * without pairing quotes, so a quote in a comment or another string on the
+ * line cannot hide one; a run that begins `/` is absolute, not relative.
  */
 export function relativePaths(text) {
-  return [...text.matchAll(/(["'`])([^"'`$\n]*)\1/g)]
-    .map((match) => match[2])
-    .filter((path) => /^\.\.?\//.test(path) || /(?:^|\/)\.\.(?:\/|$)/.test(path))
+  return [...text.matchAll(/[\w@$.*+~%/-]+/g)]
+    .map((match) => match[0])
+    .filter(
+      (run) =>
+        !run.startsWith("/") &&
+        (/^\.\.?\//.test(run) || /(?:^|\/)\.\.(?:\/|$)/.test(run)),
+    )
 }
 
 /**
- * The paths in a file that reach into another unit, one message each.
+ * The paths in a file that lead anywhere but its own unit, a file at the
+ * repository root, `docs/`, or a directory above the file; one message each.
  *
  * @param {string} path repository-relative path, forward slashes
  * @param {string} text the file's contents
- * @param {Set<string>} units every unit in the repository, as `unitOf` names
- *   them — a path into a directory that is not one reaches nothing to depend on
+ * @param {Set<string>} rootFiles the names of the files directly at the
+ *   repository root
  */
-export function relativePathViolations(path, text, units) {
+export function relativePathViolations(path, text, rootFiles) {
   const unit = unitOf(path)
   if (unit === null) return []
+  const directory = posix.dirname(path)
   const violations = []
   for (const relative of relativePaths(text)) {
-    const [top, name] = posix
-      .normalize(posix.join(posix.dirname(path), relative))
-      .split("/")
-    const reached = `${top}/${name}`
-    if (reached === unit || !units.has(reached)) continue
+    const target = posix.normalize(posix.join(directory, relative)).replace(/\/$/, "")
+    if (target === unit || target.startsWith(`${unit}/`)) continue
+    if (!target.includes("/") && rootFiles.has(target)) continue
+    if (target.startsWith("docs/")) continue // a README's link to a record
+    const above =
+      target === "." || directory === target || directory.startsWith(`${target}/`)
+    if (above) continue
+    const reached = target.startsWith("..") ? "outside the repository" : target
     violations.push(
-      `"${relative}" reaches into ${reached}; reach another unit by package name, through its manifest`,
+      `"${relative}" leads to ${reached}; a path leaves ${unit} only for a root file or docs/ — reach another unit by package name`,
     )
   }
   return violations
