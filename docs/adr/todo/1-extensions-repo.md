@@ -58,25 +58,41 @@ extensions/<name>/     one extension, one package @nessalabs/<name>
 An arrow runs one way: extensions depend on packages. **An extension depends on
 nothing in another extension, and a package on nothing in any extension**; what
 two extensions share becomes a package, reached by its package name through a
-manifest. Two checks enforce it, as constraints on outcomes rather than a list
-of spellings to catch:
+manifest. `pnpm architecture` enforces it, in bare Node before install, by
+pinning the layout and checking dependencies within it:
 
-- **Nothing installed outside an extension is from it.** After `pnpm install`,
-  `pnpm architecture:installed` reads every `node_modules` — the root's, each
-  unit's, and each package's in pnpm's store — and fails on an entry that
-  links into an extension from outside it, or that is a copy of a package
-  from one (by the names of the packages in it). A unit resolves by name only
-  what is installed for it or the root, so an import of an extension by name
-  then fails typecheck and test. The first version read the manifests and the
-  second the lockfile; each review found another way to write a dependency
-  that they missed — an alias, `workspace:../x`, a bare path, an override,
-  `excludeLinksFromLockfile`, a lockfile per project, a `file:` copy. Every one
-  ends as an entry in some `node_modules`, so that is what is read.
-- **No quoted relative path in any file of an extension or a package leads
-  into another unit.** It may leave for somewhere that is not one, such as the
-  root's shared configuration or a build directory.
-- **No symbolic link sits in a unit**, since one would make a path inside it
-  lead into another.
+- **The install layout is pinned.** `pnpm-workspace.yaml` may hold only
+  `packages`, `allowBuilds`, and `verifyDepsBeforeRun`, and `packages` is
+  exactly `packages/*` and `extensions/*`. No `.npmrc` or pnpmfile may exist
+  at the root or in a unit. Every setting that moves where packages install
+  or how they link is refused by not being allowed.
+- **Dependencies are checked within it.** A `package.json` may hold only the
+  keys on an allow-list (no `pnpm`, `resolutions`, `overrides`,
+  `dependenciesMeta`); every dependency is `workspace:*` (or `^`, `~`), a
+  semver range, or a dist-tag — never a path, tarball, URL, `file:`, `link:`,
+  `portal:`, `workspace:<path>`, `npm:` alias, or `catalog:`; and none is
+  named for an extension. In the pinned layout pnpm links into a unit exactly
+  the workspace packages its manifest names, so an extension no manifest
+  names is installed nowhere, and an import of one by name fails typecheck and
+  test.
+- **Files do not reach another unit**: no quoted relative path in any file of
+  an extension or a package leads into another unit (it may leave for the
+  root's shared configuration or a build directory), and no symbolic link
+  sits in a unit.
+
+This is the owner's decision after five review rounds. Checking how a
+dependency was written, then the lockfile, then the install, each fell to a
+pnpm setting that moved the outcome somewhere the check did not look. Pinning
+the settings takes those away, so what remains to check is the manifest; the
+lockfile and the install are not read, since they would re-decide what the
+manifest check decides.
+
+Held by review, not by the check: pnpm settings from outside the repository
+(a user's `~/.npmrc`, `npm_config_*` environment variables; CI sets none),
+a registry package that depends on a published extension, and a path
+assembled at run time or written without quotes. The two module comments,
+`scripts/architecture/layout.mjs` and `dependencies.mjs`, are the one
+statement of what is checked.
 
 Every extension directory must also be a package, with its own
 `package.json`.
@@ -98,9 +114,8 @@ brings its release workflow; nothing publishes from a pull request.
 
 **Checks.** TypeScript strict, ESLint with typescript-eslint, Prettier, and
 Vitest, configured as nessa-agent's are where the two repositories have the same
-needs; the architecture checks in bare Node with no dependencies — the source
-half before `pnpm install`, which is what holds it to that, and the install
-half after. CI runs all of them on every pull
+needs; the architecture check in bare Node with no dependencies, which CI
+holds it to by running it before `pnpm install`. CI runs all of them on every pull
 request and on `main`, in one job. nessa-agent's own lint rules, such as
 `nessa/inherited-lookups`, are not copied here: a second copy of a rule's
 enforcer is gate 13's defect too, so until the rule is shared, what it enforces
@@ -135,10 +150,9 @@ to copy that script or share it.
   bridge; ADR 344 records what that rules out for now.
 - The standards are one link away rather than one directory away, and a change
   to them for extensions is a nessa-agent pull request.
-- The architecture checks cover dependencies only. The source half cannot see a path
-  assembled at run time or one written without quotes (a CSS `url(../x)`, an
-  unquoted HTML attribute). Everything else in `AGENTS.md`'s extensions
-  section is held by review — including, until the first extension gives
+- The architecture check covers the layout and dependencies only, as the
+  record states above. Everything else in `AGENTS.md`'s extensions section is
+  held by review — including, until the first extension gives
   `server/` and `app/` a configuration each, that server code does not use
   browser globals or app code Node's.
 - Remaining work: #2 and #3 (the packages, with `nessa_ui`), #4–#7 (the

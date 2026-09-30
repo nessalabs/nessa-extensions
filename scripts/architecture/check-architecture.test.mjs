@@ -10,11 +10,18 @@ import { checkRepository } from "../check-architecture.mjs"
 
 const script = fileURLToPath(new URL("../check-architecture.mjs", import.meta.url))
 
-/** A repository on disk made of `files`, removed when the test ends. */
+const pinnedWorkspace = 'packages:\n  - "packages/*"\n  - "extensions/*"\n'
+
+/**
+ * A repository on disk made of `files`, over a pinned `pnpm-workspace.yaml`
+ * unless `files` gives its own (or `null` for none); removed when the test ends.
+ */
 function repository(t, files) {
   const root = mkdtempSync(join(tmpdir(), "nessa-extensions-architecture-"))
   t.after(() => rmSync(root, { recursive: true, force: true }))
-  for (const [path, text] of Object.entries(files)) {
+  const all = { "pnpm-workspace.yaml": pinnedWorkspace, ...files }
+  for (const [path, text] of Object.entries(all)) {
+    if (text === null) continue
     mkdirSync(dirname(join(root, path)), { recursive: true })
     writeFileSync(join(root, path), text)
   }
@@ -32,6 +39,72 @@ const twoExtensions = {
 test("an empty repository passes", (t) => {
   const root = repository(t, { "README.md": "" })
   assert.deepEqual(checkRepository(root), [])
+})
+
+test("a repository without pnpm-workspace.yaml fails", (t) => {
+  const root = repository(t, { "pnpm-workspace.yaml": null })
+  assert.deepEqual(checkRepository(root), [
+    "pnpm-workspace.yaml: is missing; it pins the workspace's layout",
+  ])
+})
+
+test("a workspace setting off the list fails", (t) => {
+  const root = repository(t, {
+    "pnpm-workspace.yaml": `${pinnedWorkspace}nodeLinker: hoisted\n`,
+  })
+  assert.deepEqual(checkRepository(root), [
+    "pnpm-workspace.yaml: nodeLinker is not one of packages, allowBuilds, verifyDepsBeforeRun",
+  ])
+})
+
+test("a file pnpm reads settings or hooks from fails, at the root or in a unit", (t) => {
+  const root = repository(t, {
+    ...twoExtensions,
+    ".npmrc": "node-linker=hoisted\n",
+    ".pnpmfile.cjs": "",
+    "extensions/notes/.npmrc": "",
+    "packages/server-kit/package.json": manifest("@nessalabs/server-kit"),
+    "packages/server-kit/.pnpmfile.mjs": "",
+  })
+  const rule = "pnpm reads settings from it; the layout is pinned in pnpm-workspace.yaml"
+  assert.deepEqual(checkRepository(root), [
+    `.npmrc: ${rule}`,
+    `.pnpmfile.cjs: ${rule}`,
+    `packages/server-kit/.pnpmfile.mjs: ${rule}`,
+    `extensions/notes/.npmrc: ${rule}`,
+  ])
+})
+
+test("a manifest naming an extension, or off the pinned layout, fails", (t) => {
+  const root = repository(t, {
+    ...twoExtensions,
+    "package.json": manifest("root", {
+      pnpm: {},
+      devDependencies: { bee: "./extensions/notes" },
+    }),
+    "packages/server-kit/package.json": manifest("@nessalabs/server-kit", {
+      dependencies: { "@nessalabs/notes": "workspace:*" },
+    }),
+    "extensions/experiments/package.json": manifest("@nessalabs/experiments", {
+      dependencies: { "@nessalabs/server-kit": "workspace:*", zod: "^4.0.0" },
+    }),
+  })
+  assert.deepEqual(checkRepository(root), [
+    "package.json: pnpm is not a manifest key this layout allows",
+    'package.json: devDependencies bee is "./extensions/notes"; a dependency is workspace:*, a semver range, or a dist-tag',
+    "packages/server-kit/package.json: dependencies names extension @nessalabs/notes; nothing depends on an extension — share it through a package",
+  ])
+})
+
+test("an extension's manifest must name it, and parse", (t) => {
+  const root = repository(t, {
+    "extensions/nameless/package.json": JSON.stringify({ version: "0.0.0" }),
+    "extensions/broken/package.json": "{bad",
+  })
+  assert.deepEqual(checkRepository(root).sort(), [
+    "extensions/broken/package.json: is not valid JSON",
+    "extensions/nameless/package.json: an extension's manifest names its package",
+  ])
 })
 
 test("finds a relative path into another unit, deep in any file", (t) => {

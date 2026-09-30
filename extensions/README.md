@@ -30,11 +30,11 @@ extensions/<name>/
   sections.
 - An extension depends on nothing in another extension. What two share
   belongs in a package under [`packages/`](../packages), reached by its
-  package name. `pnpm architecture` refuses a quoted relative path that leads
-  into another extension or package, a symbolic link, and an extension
-  directory without a `package.json`; `pnpm architecture:installed` refuses
-  anything installed outside an extension that links into it or copies a
-  package from it. A tool that needs another unit's files, such as
+  package name. `pnpm architecture` refuses a dependency named for an
+  extension, a dependency that is not `workspace:*`, a semver range, or a
+  dist-tag, a quoted relative path that leads into another extension or
+  package, a symbolic link, and an extension directory without a
+  `package.json` naming it; see [AGENTS.md](../AGENTS.md#layout). A tool that needs another unit's files, such as
   Tailwind's `@source`, reaches them through `node_modules`
   (`@source "../node_modules/@nessalabs/app-shell/src"`), not by path.
 - Until the first extension, one `tsconfig.json` types every file with both

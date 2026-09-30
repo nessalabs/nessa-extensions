@@ -27,8 +27,6 @@ jobs:
       # but Node. Running it here is what holds it to that.
       - run: pnpm architecture
       - run: pnpm install --frozen-lockfile
-      # What was installed, whatever a manifest or a setting said.
-      - run: pnpm architecture:installed
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck

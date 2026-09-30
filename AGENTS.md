@@ -43,16 +43,18 @@ docs/adr/        decision records
 - An extension depends on nothing in another extension, and a package on
   nothing in any extension. What two extensions share goes in a package.
   Another unit is reached only by package name, through a manifest.
-  Two checks hold that. `pnpm architecture` (`scripts/check-architecture.mjs`,
-  before install): no quoted relative path in an extension's or a package's
-  files leads into another unit, and no symbolic link sits in one.
-  `pnpm architecture:installed` (`scripts/check-installed.mjs`, after
-  install): no `node_modules` outside an extension holds a link into it or a
-  copy of a package from it, however the dependency was written. A unit
-  resolves by name only what is installed for it or the root, so an import of
-  an extension by name fails typecheck and test.
-  The check's module comment lists what it cannot see. That is the whole of
-  what is checked mechanically; the rest of this section is held by review.
+  `pnpm architecture` (`scripts/check-architecture.mjs`, bare Node, before
+  install) holds that. **The install layout is pinned**: `pnpm-workspace.yaml`
+  may hold only the settings on an allow-list and exactly the globs
+  `packages/*` and `extensions/*`, and there is no `.npmrc` or pnpmfile.
+  **Dependencies are checked within it**: a manifest may hold only allowed
+  keys, every dependency is `workspace:*`, a semver range, or a dist-tag, and
+  none is named for an extension. **Files** may not reach another unit by a
+  quoted relative path or a symbolic link. Exactly what is allowed, and what
+  is held by review instead — settings from outside the repository, a
+  registry package that depends on a published extension, a path built at run
+  time — is in the module comments of `scripts/architecture/layout.mjs` and
+  `dependencies.mjs`. Everything else in this section is held by review.
 - An extension's own layout, below `server/` and `app/`, follows the standards'
   [organization][organization] and [domain-driven design][ddd] sections, and is
   described in [extensions/README.md](extensions/README.md).

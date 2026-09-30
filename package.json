@@ -15,8 +15,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "architecture": "node --test scripts/architecture/*.test.mjs && node scripts/check-architecture.mjs",
-    "architecture:installed": "node scripts/check-installed.mjs"
+    "architecture": "node --test scripts/architecture/*.test.mjs && node scripts/check-architecture.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

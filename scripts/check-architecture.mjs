@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * The architecture check, source half: what an extension's and a package's
+ * The architecture check: the pinned install layout and the dependencies in it
+ * (scripts/architecture/layout.mjs), and what an extension's and a package's
  * files may reach (scripts/architecture/dependencies.mjs). Bare Node, no
- * dependencies — CI runs it before `pnpm install`. The install half is
- * `check-installed.mjs`. Failures are printed as `path: rule`, one per line,
+ * dependencies — CI runs it before `pnpm install`. Failures are printed as `path: rule`, one per line,
  * on stderr, and the exit status is 1.
  *
  *   node scripts/check-architecture.mjs [root]   check root, or this repository
@@ -13,6 +13,11 @@ import { dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 import { relativePathViolations } from "./architecture/dependencies.mjs"
+import {
+  manifestViolations,
+  pnpmFiles,
+  workspaceViolations,
+} from "./architecture/layout.mjs"
 
 /** Installed and built files are not ours to check. */
 const skipped = new Set(["node_modules", "dist"])
@@ -63,10 +68,68 @@ export function checkRepository(root) {
   const failures = []
   const rel = (path) => relative(root, path).split(sep).join("/")
 
+  /**
+   * A manifest's contents, or null after recording why it cannot be read —
+   * recorded once, however often it is asked for.
+   */
+  const read = new Map()
+  const readManifest = (path) => {
+    if (!read.has(path)) {
+      let manifest = null
+      try {
+        manifest = JSON.parse(readFileSync(path, "utf8"))
+      } catch {
+        failures.push(`${rel(path)}: is not valid JSON`)
+      }
+      read.set(path, manifest)
+    }
+    return read.get(path)
+  }
+
+  const workspace = join(root, "pnpm-workspace.yaml")
+  if (!existsSync(workspace)) {
+    failures.push("pnpm-workspace.yaml: is missing; it pins the workspace's layout")
+  } else {
+    for (const violation of workspaceViolations(readFileSync(workspace, "utf8"))) {
+      failures.push(`pnpm-workspace.yaml: ${violation}`)
+    }
+  }
+
+  const extensionNames = new Set()
   for (const name of units(join(root, "extensions"))) {
     const path = join(root, "extensions", name, "package.json")
     if (!existsSync(path)) {
       failures.push(`${rel(path)}: an extension is one package and needs a manifest`)
+      continue
+    }
+    const manifest = readManifest(path)
+    if (manifest === null) continue
+    if (typeof manifest.name !== "string" || manifest.name === "") {
+      failures.push(`${rel(path)}: an extension's manifest names its package`)
+    } else extensionNames.add(manifest.name)
+  }
+
+  const projects = [
+    ".",
+    ...["packages", "extensions"].flatMap((top) =>
+      units(join(root, top)).map((name) => `${top}/${name}`),
+    ),
+  ]
+  for (const project of projects) {
+    for (const file of pnpmFiles) {
+      const path = join(root, project, file)
+      if (existsSync(path)) {
+        failures.push(
+          `${rel(path)}: pnpm reads settings from it; the layout is pinned in pnpm-workspace.yaml`,
+        )
+      }
+    }
+    const path = join(root, project, "package.json")
+    if (!existsSync(path)) continue
+    const manifest = readManifest(path)
+    if (manifest === null) continue
+    for (const violation of manifestViolations(manifest, extensionNames)) {
+      failures.push(`${rel(path)}: ${violation}`)
     }
   }
 

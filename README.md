@@ -133,8 +133,7 @@ pull request and on `main`; run the ones your change touches before pushing.
 | `pnpm lint` | ESLint, with typescript-eslint |
 | `pnpm typecheck` | TypeScript, strict |
 | `pnpm test` | Vitest, over every package and extension |
-| `pnpm architecture` | What an extension's and a package's files may reach ([`scripts/check-architecture.mjs`](scripts/check-architecture.mjs)), after the tests of both architecture checks. Bare Node: CI runs it before installing anything |
-| `pnpm architecture:installed` | That nothing installed outside an extension comes from it ([`scripts/check-installed.mjs`](scripts/check-installed.mjs)). Runs after install |
+| `pnpm architecture` | The pinned install layout, the dependencies in it, and what an extension's and a package's files may reach ([`scripts/check-architecture.mjs`](scripts/check-architecture.mjs)), after its own tests. Bare Node: CI runs it before installing anything |
 
 ```
 packages/

@@ -1,17 +1,14 @@
 /**
- * What an extension and a package may depend on. Pure: each function is given
- * text and names and reads nothing itself, so its tests can hand it any
- * layout. `check-architecture.mjs` walks the tree and supplies them.
+ * What an extension's and a package's files may reach. Pure: each function is
+ * given text and names and reads nothing itself. `check-architecture.mjs` walks
+ * the tree and supplies them.
  *
- * The rules, from docs/adr/todo/1-extensions-repo.md, are that an extension
+ * The rule, from docs/adr/todo/1-extensions-repo.md, is that an extension
  * depends on nothing in another extension, and a package on nothing in any
- * extension. Another unit is reached only by package name, through a manifest.
- * This module holds the source half; three constraints in all:
+ * extension; another unit is reached only by package name, through a manifest.
+ * Manifests and the install layout are held by `layout.mjs`. This module holds
+ * the files:
  *
- * - **Nothing installed is an extension** (`installed.mjs`, run after
- *   install by `check-installed.mjs`): whatever a manifest, override, or
- *   setting says, no `node_modules` outside an extension holds a link into it
- *   or a copy of a package from it.
  * - **A quoted relative path does not reach into another unit**
  *   (`relativePathViolations`). Every quoted `./` or `../` path in any file of
  *   an extension or a package must not resolve into another extension or
@@ -20,8 +17,9 @@
  * - **No symbolic link in a unit** (`check-architecture.mjs`), since a link
  *   makes a path inside the unit lead into another.
  *
- * What none of these sees: a path assembled at run time, and an unquoted one —
- * a CSS `url(../x)`, an HTML attribute written without quotes.
+ * What these do not see: a path assembled at run time, and an unquoted one —
+ * a CSS `url(../x)`, an HTML attribute written without quotes. Those are held
+ * by review.
  */
 import { posix } from "node:path"
 
