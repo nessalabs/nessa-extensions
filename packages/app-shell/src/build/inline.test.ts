@@ -31,19 +31,34 @@ describe("inlineIntoHtml", () => {
     expect(result.unresolved).toEqual([])
   })
 
-  it("keeps code that names its closing tag from ending the element", () => {
+  it("refuses, and does not change, code that holds its own closing tag", () => {
+    const html = '<script src="a.js"></script><link rel="stylesheet" href="a.css">'
     const result = inlineIntoHtml(
-      '<script src="a.js"></script><link rel="stylesheet" href="a.css">',
+      html,
       new Map([
-        ["a.js", 'const s = "</script><script>alert(1)</SCRIPT>"'],
+        ["a.js", "const s = String.raw`</SCRIPT>`"],
         ["a.css", 'a::after{content:"</style>"}'],
       ]),
     )
-    expect(result.html).toBe(
-      '<script>const s = "<\\/script><script>alert(1)<\\/SCRIPT>"</script>' +
-        '<style>a::after{content:"<\\/style>"}</style>',
+    expect(result.unsafe).toEqual(["a.js", "a.css"])
+    expect(result.html).toBe(html)
+  })
+
+  it("writes code in exactly as it is, an escaped closing tag included", () => {
+    const code = 'const s = "<\\/script>", r = String.raw`a\\b`'
+    const result = inlineIntoHtml(
+      '<script src="a.js"></script>',
+      new Map([["a.js", code]]),
     )
-    expect(result.unsafe).toEqual([])
+    expect(result.html).toBe(`<script>${code}</script>`)
+  })
+
+  it("keeps a stylesheet's media", () => {
+    const result = inlineIntoHtml(
+      '<link rel="stylesheet" href="p.css" media="print">',
+      new Map([["p.css", "body{color:black}"]]),
+    )
+    expect(result.html).toBe('<style media="print">body{color:black}</style>')
   })
 
   it("leaves <!-- as it is, since it means something in code", () => {

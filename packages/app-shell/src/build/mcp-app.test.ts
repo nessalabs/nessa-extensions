@@ -70,7 +70,9 @@ describe("mcpApp", () => {
         '<!doctype html><html><head></head><body><script type="module" src="./main.ts"></script></body></html>',
       "main.ts": 'document.body.innerHTML = "<!--" + String(Math.random()) + "<script>"',
     })
-    await expect(buildApp(root)).rejects.toThrow('hold both "<!--" and "<script"')
+    await expect(buildApp(root)).rejects.toThrow(
+      "these would not end where written inline",
+    )
   })
 
   it("refuses a build whose HTML names a script it did not make", async () => {

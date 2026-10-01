@@ -78,6 +78,19 @@ describe("narrowHostContext", () => {
     })
   })
 
+  it("leaves out a malformed member of a nested object without listing it", () => {
+    expect(
+      narrowHostContext({
+        containerDimensions: { height: "big" },
+        deviceCapabilities: { touch: "yes", hover: true },
+      }),
+    ).toEqual({
+      ok: true,
+      value: { containerDimensions: {}, deviceCapabilities: { hover: true } },
+      dropped: [],
+    })
+  })
+
   it("keeps an openai model context of null: cleared", () => {
     expect(narrowHostContext({ "openai/modelContext": null })).toMatchObject({
       value: { "openai/modelContext": null },

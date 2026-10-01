@@ -13,23 +13,28 @@ export interface Inlined {
   /** Each `src` or `href` of a script or stylesheet that names no file of the bundle. */
   unresolved: string[]
   /**
-   * Each script that holds both `<!--` and `<script`: written inline, the
-   * HTML parser would read it into a state where `</script>` does not end
-   * it. Left in place, for the build to refuse.
+   * Each script or stylesheet that cannot be written inline as it is, left in
+   * place for the build to refuse (`endsEarly`).
    */
   unsafe: string[]
 }
 
 /**
- * Code that cannot end its element early. `</script` becomes `<\/script`,
- * which reads the same inside a string, a template, a comment or a regular
- * expression (where a bare `/` could not stand anyway). `<!--` is not
- * rewritten — it means something in code (`a<!--b`, a regular expression) —
- * so a script that also holds `<script` is refused instead (`unsafe`).
+ * Whether `text`, written inline as an element's contents, would not end
+ * where it is written: it holds the element's closing tag, or — for a script
+ * — both `<!--` and `<script`, which put the HTML parser in a state where
+ * `</script>` does not end it. Such text is refused rather than rewritten:
+ * no escape reads the same everywhere in code (a raw template keeps the
+ * backslash, `a<!--b` is an expression), so the inliner never changes what
+ * it writes in. Bundlers already write `<\/script` inside strings.
  */
-const inScript = (code: string) => code.replace(/<\/(script)/gi, "<\\/$1")
-const opensDoubleEscape = (code: string) => code.includes("<!--") && /<script/i.test(code)
-const inStyle = (css: string) => css.replace(/<\/(style)/gi, "<\\/$1")
+function endsEarly(text: string, element: "script" | "style"): boolean {
+  if (new RegExp(`</${element}`, "i").test(text)) return true
+  return element === "script" && text.includes("<!--") && /<script/i.test(text)
+}
+
+const escapeAttribute = (text: string) =>
+  text.replace(/&/g, "&amp;").replace(/"/g, "&quot;")
 
 const attribute = (tag: string, name: string): string | undefined => {
   const match = new RegExp(
@@ -67,18 +72,26 @@ export function inlineIntoHtml(
     if (src === undefined) return tag
     const code = take(src)
     if (code === undefined) return tag
-    if (opensDoubleEscape(code)) {
+    if (endsEarly(code, "script")) {
       unsafe.push(src)
       return tag
     }
     const module = /\stype\s*=\s*["']?module/i.test(tag) ? ' type="module"' : ""
-    return `<script${module}>${inScript(code)}</script>`
+    return `<script${module}>${code}</script>`
   })
   out = out.replace(/<link\b[^>]*>/gi, (tag) => {
     const rel = attribute(tag, "rel")?.toLowerCase()
     if (rel === "stylesheet") {
-      const css = take(attribute(tag, "href"))
-      return css === undefined ? tag : `<style>${inStyle(css)}</style>`
+      const href = attribute(tag, "href")
+      const css = take(href)
+      if (css === undefined || href === undefined) return tag
+      if (endsEarly(css, "style")) {
+        unsafe.push(href)
+        return tag
+      }
+      const media = attribute(tag, "media")
+      const scoped = media === undefined ? "" : ` media="${escapeAttribute(media)}"`
+      return `<style${scoped}>${css}</style>`
     }
     if (rel === "modulepreload") {
       return take(attribute(tag, "href")) === undefined ? tag : ""

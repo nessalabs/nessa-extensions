@@ -143,6 +143,17 @@ describe("the handshake", () => {
     expect(host.violations).toEqual([{ kind: "repeated-initialize" }])
   })
 
+  it("records a second initialized, and an answer to a request it never sent", async () => {
+    const { host, send } = await initialized()
+    send({ jsonrpc: "2.0", method: "ui/notifications/initialized" })
+    send({ jsonrpc: "2.0", id: "never", result: {} })
+    await flush()
+    expect(host.violations).toEqual([
+      { kind: "repeated-initialized" },
+      { kind: "unknown-response", id: "never" },
+    ])
+  })
+
   it("records initialized sent before ui/initialize was answered", async () => {
     const { host, send } = scripted()
     send({ jsonrpc: "2.0", method: "ui/notifications/initialized" })

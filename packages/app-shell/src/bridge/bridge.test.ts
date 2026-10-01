@@ -386,15 +386,58 @@ describe("the connection", () => {
     expect(bridge.getState().toolCall).toEqual({ phase: "awaiting-input" })
   })
 
-  it("subscribers hear each change, and stop when unsubscribed", async () => {
+  it("subscribers hear after the transition, once per turn, and stop when unsubscribed", async () => {
     const { bridge } = setup()
-    const listener = vi.fn()
-    const unsubscribe = bridge.subscribe(listener)
+    const heard: string[] = []
+    const unsubscribe = bridge.subscribe(() =>
+      heard.push(bridge.getState().connection.status),
+    )
     bridge.connect().catch(() => {})
-    expect(listener).toHaveBeenCalledTimes(1)
-    unsubscribe()
+    expect(heard).toEqual([])
+    await flush()
+    expect(heard).toEqual(["connecting"])
     bridge.close()
-    expect(listener).toHaveBeenCalledTimes(1)
+    unsubscribe()
+    await flush()
+    expect(heard).toEqual(["connecting"])
+  })
+
+  it("a subscriber that closes on hearing connecting: connect rejects closed, nothing hangs", async () => {
+    const { bridge } = setup()
+    bridge.subscribe(() => {
+      if (bridge.getState().connection.status === "connecting") bridge.close()
+    })
+    expect(await failure(bridge.connect())).toEqual({
+      kind: "closed",
+      method: "ui/initialize",
+    })
+    expect(bridge.getState().connection).toEqual({ status: "closed" })
+  })
+
+  it("a subscriber that connects again on hearing connecting gets the same promise", async () => {
+    const { bridge, host } = setup()
+    let again: Promise<void> | null = null
+    bridge.subscribe(() => {
+      if (again === null) again = bridge.connect()
+    })
+    const first = bridge.connect()
+    await flush()
+    expect(again).toBe(first)
+    host.answer("ui/initialize", initializeResult())
+    await expect(first).resolves.toBeUndefined()
+  })
+
+  it("a subscriber that closes on hearing connected: connect has resolved, and the bridge is closed", async () => {
+    const { bridge, host } = setup()
+    bridge.subscribe(() => {
+      if (bridge.getState().connection.status === "connected") bridge.close()
+    })
+    const connecting = bridge.connect()
+    await flush()
+    host.answer("ui/initialize", initializeResult())
+    await expect(connecting).resolves.toBeUndefined()
+    await flush()
+    expect(bridge.getState().connection).toEqual({ status: "closed" })
   })
 })
 

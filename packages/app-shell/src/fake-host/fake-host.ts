@@ -111,6 +111,8 @@ export type AppViolation =
   | { kind: "undeclared-display-mode"; mode: DisplayMode }
   | { kind: "after-teardown"; method: string }
   | { kind: "repeated-initialize" }
+  | { kind: "repeated-initialized" }
+  | { kind: "unknown-response"; id: RequestId }
 
 export interface LoggedMessage {
   direction: "app-to-host" | "host-to-app"
@@ -398,7 +400,11 @@ export function createFakeHost(options: FakeHostOptions): FakeHost {
     if (stage === "torn-down") violations.push({ kind: "after-teardown", method })
     if (method === "ui/notifications/initialized") {
       if (stage !== "initializing") {
-        violations.push({ kind: "before-initialized", method })
+        violations.push(
+          stage === "waiting"
+            ? { kind: "before-initialized", method }
+            : { kind: "repeated-initialized" },
+        )
         return
       }
       stage = "initialized"
@@ -458,8 +464,12 @@ export function createFakeHost(options: FakeHostOptions): FakeHost {
       case "result":
       case "error": {
         const settle = answers.get(envelope.id)
+        if (settle === undefined) {
+          violations.push({ kind: "unknown-response", id: envelope.id })
+          return
+        }
         answers.delete(envelope.id)
-        settle?.(
+        settle(
           envelope.kind === "result"
             ? { result: envelope.result }
             : { error: envelope.error },

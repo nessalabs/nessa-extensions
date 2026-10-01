@@ -102,7 +102,12 @@ export interface BridgeOptions {
   onViolation?: (violation: HostViolation) => void
 }
 
-/** A call's options: a signal that abandons waiting for the host's answer. */
+/**
+ * A call's options: a signal that abandons waiting for the host's answer.
+ * Aborting is the app's alone: the host is not told — the standard gives an
+ * app no cancellation to send — so a `tools/call` it already forwarded may
+ * still run. The id is kept, so a late answer to it is not reported.
+ */
 export interface CallOptions {
   signal?: AbortSignal
 }
@@ -191,19 +196,27 @@ export function createBridge(options: BridgeOptions): Bridge {
   let lastSize: SizeParams | null = null
 
   /**
-   * Replaces the state and tells each subscriber. A subscriber that throws is
-   * logged and the rest still hear: the state machine never stops part way
-   * through a transition because of one.
+   * Replaces the state. Subscribers are told after the transition, not
+   * during it: once, on a microtask, however many updates it made. So a
+   * subscriber that calls back into the bridge — `close()` on hearing
+   * "connecting", `connect()` again — finds every transition complete, and
+   * one that throws is logged without stopping the others or the bridge.
    */
+  let telling = false
   const update = (next: Partial<BridgeState>) => {
     state = { ...state, ...next }
-    for (const listener of [...listeners]) {
-      try {
-        listener()
-      } catch (error) {
-        console.error("[app-shell] a bridge subscriber threw:", error)
+    if (telling) return
+    telling = true
+    queueMicrotask(() => {
+      telling = false
+      for (const listener of [...listeners]) {
+        try {
+          listener()
+        } catch (error) {
+          console.error("[app-shell] a bridge subscriber threw:", error)
+        }
       }
-    }
+    })
   }
   const status = (): ConnectionStatus => state.connection.status
   const open = () => isOpen(state.connection)

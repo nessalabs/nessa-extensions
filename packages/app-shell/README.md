@@ -119,7 +119,7 @@ Each row has a test named for it in `src/bridge/bridge.test.ts`.
 | connecting | a malformed result | failed (`malformed-result`) | `connect` rejects |
 | connecting | another protocol version | failed (`protocol-version`) | `connect` rejects; `initialized` is never sent |
 | connecting | the caller's signal aborts | failed (`aborted`) | a late answer is ignored, not reported |
-| connecting | `close()`, before or after the answer arrives | closed | `connect` rejects `closed`; `initialized` is never sent |
+| connecting | `close()` — before or after the answer arrives, or from a subscriber hearing "connecting" | closed | `connect` rejects `closed`; `initialized` is never sent |
 | connecting | `ui/resource-teardown` | torn-down | `connect` rejects `torn-down`; a result arriving meanwhile does not connect |
 | any | `connect()` again | — | the same promise; after failed or closed, `not-connected` |
 | idle, connecting | a call or notification | — | refused `not-connected`; nothing sent |
@@ -130,7 +130,9 @@ Each row has a test named for it in `src/bridge/bridge.test.ts`.
 | any but closed | `close()` | closed | stops listening; unanswered calls reject `closed` |
 | failed | `ui/resource-teardown` | failed | the failure is kept; the host is answered |
 | any | a message cannot be sent (no host window, not cloneable) | — | the call rejects `not-sent`; nothing is left pending; `connect` fails `not-sent` |
-| any | a subscriber throws | — | logged; the other subscribers and the transition go on |
+| any | a subscriber throws | — | logged; the other subscribers and the bridge go on |
+| any | a transition | — | subscribers are told after it completes, once per turn (a microtask), so one that calls back in — `close()`, `connect()` again — finds no transition half done. `connect` has resolved by the time a subscriber hears "connected"; closing then is the "any but closed, `close()`" row |
+| any | a call aborted by its signal | — | it rejects `aborted`; the host is not told (the standard gives an app no cancellation), so a forwarded `tools/call` may still run |
 | any | an answer to an id not pending | — | silent if the call was settled here (aborted, closed, torn down); otherwise reported `unknown-response` |
 
 The host context is merged by field: each `host-context-changed` field
@@ -216,9 +218,13 @@ given the same way.
 ## Building an app
 
 `mcpApp()` sets the Vite build to produce one script and one stylesheet, with
-every asset as a `data:` URL, then writes them into the HTML (`inlineIntoHtml`,
-escaping a closing tag inside the code). The build fails if anything is left
-that the HTML would have to fetch, since a host's default policy refuses it.
+every asset as a `data:` URL, then writes them into the HTML exactly as they
+are (`inlineIntoHtml`). The build fails if anything is left that the HTML
+would have to fetch, since a host's default policy refuses it, a file in the
+public directory included; and if a script or stylesheet would not end where it
+is written — it holds its own closing tag, or `<!--` with `<script` — since no
+rewrite of code reads the same everywhere. Bundlers already write `<\/script`
+in strings.
 The fixture's build is that: `verification/dist/app/index.html`, one file,
 which runs under the restrictive policy.
 

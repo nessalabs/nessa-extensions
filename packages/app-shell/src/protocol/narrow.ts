@@ -1,13 +1,23 @@
 /**
  * Reading the other side's params into the types of `messages.ts`. Whatever
  * crosses `postMessage` is untrusted: a field is kept only when it has the
- * shape the standard gives it, and a closed set (a theme, a display mode, a
- * style variable) is narrowed by membership, never by a cast.
+ * shape the standard gives it, read only if the object holds it itself
+ * (`own`), and a closed set (a theme, a display mode, a style variable) is
+ * narrowed by membership (`member`).
  *
  * A message whose required fields are missing or malformed is refused
- * (`Narrowed` with `ok: false`). An optional field that is malformed is left
- * out, and its path is listed in `dropped`, so the receiver can report it and
- * carry on with the rest (gate 7: degrade honestly).
+ * (`Narrowed` with `ok: false`). Otherwise what is malformed is left out and
+ * the rest kept (gate 7: degrade honestly). What is left out is listed by
+ * path in `dropped`, so the receiver can report it, for:
+ *
+ * - a field read through `optional`: each field of a message, of the host
+ *   context, of the host's capabilities, and of `styles`;
+ * - an entry of a content array or a display-mode list, and a style variable.
+ *
+ * A member inside the other nested objects — a container dimension, a device
+ * capability, a capability's own flags or domains, a content block's or a
+ * tool's optional text, `hostInfo.title`, `toolInfo.id` — is left out
+ * without being listed. `narrow.test.ts` holds both halves.
  */
 import {
   displayModes,
