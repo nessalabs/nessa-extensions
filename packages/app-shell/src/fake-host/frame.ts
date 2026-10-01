@@ -31,15 +31,15 @@ export interface FakeHostFrameOptions extends Omit<FakeHostOptions, "transport">
 const escapeAttribute = (text: string) =>
   text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;")
 
-/** `html` with the policy as the first thing in its `<head>`. */
+/**
+ * `html` with the policy as the first thing in its `<head>`; without one,
+ * first after its doctype, so the document keeps its standards mode.
+ */
 export function withPolicy(html: string, policy: string): string {
   const meta = `<meta http-equiv="Content-Security-Policy" content="${escapeAttribute(policy)}">`
-  const head = /<head(\s[^>]*)?>/i.exec(html)
-  if (head !== null) {
-    const end = head.index + head[0].length
-    return html.slice(0, end) + meta + html.slice(end)
-  }
-  return meta + html
+  const at = /<head(\s[^>]*)?>/i.exec(html) ?? /^\s*<!doctype[^>]*>/i.exec(html)
+  const end = at === null ? 0 : at.index + at[0].length
+  return html.slice(0, end) + meta + html.slice(end)
 }
 
 export function mountFakeHostFrame(options: FakeHostFrameOptions): {

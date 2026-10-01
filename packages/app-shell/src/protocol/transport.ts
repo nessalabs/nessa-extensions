@@ -8,7 +8,10 @@
 import type { JsonRpcMessage } from "./json-rpc.ts"
 
 export interface Transport {
-  /** Sends one message to the other side. */
+  /**
+   * Sends one message to the other side. Throws if it cannot: there is no
+   * other side, or the message cannot be cloned across.
+   */
   send(message: JsonRpcMessage): void
   /**
    * Hands every message from the other side to `receive`, unread: the
@@ -43,7 +46,9 @@ export function windowPairTransport(
 ): Transport {
   return {
     send(message) {
-      peer()?.postMessage(message, "*")
+      const target = peer()
+      if (target === null) throw new Error("there is no host window to send to")
+      target.postMessage(message, "*")
     },
     listen(receive) {
       const listener = (event: MessageEvent) => {

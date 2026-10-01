@@ -263,6 +263,11 @@ describe("the app's requests", () => {
     })
     send({
       jsonrpc: "2.0",
+      method: "ui/notifications/size-changed",
+      params: { width: Number.NaN, height: Number.POSITIVE_INFINITY },
+    })
+    send({
+      jsonrpc: "2.0",
       method: "notifications/message",
       params: { level: "info", data: "x" },
     })
@@ -281,6 +286,7 @@ describe("the app's requests", () => {
     expect(host.sizes).toEqual([{ width: 10, height: 20 }])
     expect(host.logs).toEqual([{ level: "info", data: "x" }])
     expect(host.violations.map((v) => v.kind)).toEqual([
+      "malformed-params",
       "malformed-params",
       "malformed-params",
       "unknown-method",

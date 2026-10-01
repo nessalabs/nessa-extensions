@@ -91,7 +91,7 @@ messages:
 | host → app, requests | `ui/resource-teardown`, `ping`; any other is answered "method not found" |
 
 A call the host refuses rejects with a `BridgeError` whose `failure` is typed:
-`host-error` (a JSON-RPC error), `refused` (an `isError: true` answer),
+`host-error` (a JSON-RPC error), `refused` (an `isError: true` answer), `not-sent`,
 `malformed-result`, `not-connected`, `torn-down`, `closed`, `aborted`,
 `protocol-version`, `display-mode-undeclared`, `display-mode-unavailable`. The
 app shows it; it never assumes success. The bridge refuses a call itself only
@@ -119,7 +119,7 @@ Each row has a test named for it in `src/bridge/bridge.test.ts`.
 | connecting | a malformed result | failed (`malformed-result`) | `connect` rejects |
 | connecting | another protocol version | failed (`protocol-version`) | `connect` rejects; `initialized` is never sent |
 | connecting | the caller's signal aborts | failed (`aborted`) | a late answer is ignored, not reported |
-| connecting | `close()` | closed | `connect` rejects `closed` |
+| connecting | `close()`, before or after the answer arrives | closed | `connect` rejects `closed`; `initialized` is never sent |
 | connecting | `ui/resource-teardown` | torn-down | `connect` rejects `torn-down`; a result arriving meanwhile does not connect |
 | any | `connect()` again | — | the same promise; after failed or closed, `not-connected` |
 | idle, connecting | a call or notification | — | refused `not-connected`; nothing sent |
@@ -128,6 +128,10 @@ Each row has a test named for it in `src/bridge/bridge.test.ts`.
 | tearing-down | the handlers settle | torn-down | the host is answered (`Teardown error` if a handler failed); unanswered calls reject `torn-down` |
 | tearing-down, torn-down | `ui/resource-teardown` again | — | the handlers do not run again; each request is answered |
 | any but closed | `close()` | closed | stops listening; unanswered calls reject `closed` |
+| failed | `ui/resource-teardown` | failed | the failure is kept; the host is answered |
+| any | a message cannot be sent (no host window, not cloneable) | — | the call rejects `not-sent`; nothing is left pending; `connect` fails `not-sent` |
+| any | a subscriber throws | — | logged; the other subscribers and the transition go on |
+| any | an answer to an id not pending | — | silent if the call was settled here (aborted, closed, torn down); otherwise reported `unknown-response` |
 
 The host context is merged by field: each `host-context-changed` field
 replaces the one held and the rest stay (SEP-1865: the view "SHOULD merge

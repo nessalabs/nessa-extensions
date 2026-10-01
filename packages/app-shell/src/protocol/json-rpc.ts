@@ -4,7 +4,7 @@
  * whatever `postMessage` delivered and says which of the four kinds it is,
  * or that it is none of them; what a method's params mean is `narrow.ts`'s.
  */
-import { isRecord } from "./narrow.ts"
+import { isRecord, own } from "./narrow.ts"
 
 export type RequestId = string | number
 
@@ -57,9 +57,6 @@ const isId = (value: unknown): value is RequestId =>
 /** Which kind of JSON-RPC message `data` is, or why it is none. */
 export function readEnvelope(data: unknown): Envelope {
   if (!isRecord(data)) return { kind: "invalid", reason: "not an object" }
-  // Only what the message holds itself: never a field it inherits.
-  const own = (record: Record<string, unknown>, key: string) =>
-    Object.hasOwn(record, key) ? record[key] : undefined
   if (own(data, "jsonrpc") !== "2.0") {
     return { kind: "invalid", reason: 'jsonrpc is not "2.0"' }
   }

@@ -108,6 +108,23 @@ describe("narrowHostContext", () => {
     expect(narrowHostContext(context)).toEqual({ ok: true, value: {}, dropped: [] })
   })
 
+  it("an own __proto__ key, as postMessage delivers one, never becomes a prototype", () => {
+    // JSON.parse and structured clone both keep "__proto__" as an own key.
+    const result = structuredClone(
+      JSON.parse(
+        '{"protocolVersion":"v","hostInfo":{"name":"h","version":"1"},' +
+          '"hostCapabilities":{"experimental":{"__proto__":{"polluted":{}}}},' +
+          '"hostContext":{"__proto__":{"theme":"dark"}}}',
+      ),
+    )
+    const read = narrowInitializeResult(result)
+    if (!read.ok) throw new Error(read.reason)
+    const experimental = read.value.hostCapabilities.experimental ?? {}
+    expect(Object.getPrototypeOf(experimental)).toBe(Object.prototype)
+    expect("polluted" in experimental).toBe(false)
+    expect(read.value.hostContext.theme).toBeUndefined()
+  })
+
   it("refuses a context that is not an object", () => {
     expect(narrowHostContext([])).toEqual({
       ok: false,

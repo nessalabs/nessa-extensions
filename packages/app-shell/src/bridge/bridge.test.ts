@@ -13,7 +13,7 @@ import {
 } from "../protocol/json-rpc.ts"
 import { memoryChannel } from "../protocol/memory-channel.ts"
 import { PROTOCOL_VERSION } from "../protocol/messages.ts"
-import type { Transport } from "../protocol/transport.ts"
+import { windowTransport, type Transport } from "../protocol/transport.ts"
 import { createBridge, type BridgeOptions } from "./bridge.ts"
 import { BridgeError, type BridgeFailure, type HostViolation } from "./failures.ts"
 
@@ -398,6 +398,127 @@ describe("the connection", () => {
   })
 })
 
+describe("races and faults", () => {
+  it("connecting + close after the answer arrived but before it was read: closed, nothing more sent", async () => {
+    const { bridge, host } = setup()
+    const connecting = bridge.connect()
+    await flush()
+    // The answer's delivery is queued first; the close runs after it is
+    // delivered and before the bridge reads it.
+    host.answer("ui/initialize", initializeResult())
+    queueMicrotask(() => bridge.close())
+    expect(await failure(connecting)).toEqual({ kind: "closed", method: "ui/initialize" })
+    expect(bridge.getState().connection).toEqual({ status: "closed" })
+    await flush()
+    expect(host.methods()).toEqual(["ui/initialize"])
+  })
+
+  it("the same race with another protocol version: still closed", async () => {
+    const { bridge, host } = setup()
+    const connecting = bridge.connect()
+    await flush()
+    host.answer("ui/initialize", initializeResult({ protocolVersion: "1999-01-01" }))
+    queueMicrotask(() => bridge.close())
+    expect(await failure(connecting)).toMatchObject({ kind: "closed" })
+    expect(bridge.getState().connection).toEqual({ status: "closed" })
+  })
+
+  /** A transport whose `send` throws once `failing` is set. */
+  function breakable() {
+    const channel = memoryChannel()
+    let failing = false
+    const transport: Transport = {
+      send(message) {
+        if (failing) throw new Error("DataCloneError: could not be cloned")
+        channel.app.send(message)
+      },
+      listen: (receive) => channel.app.listen(receive),
+    }
+    return { channel, transport, fail: () => (failing = true) }
+  }
+
+  it("a send that throws: the call rejects not-sent, typed, and leaves nothing pending", async () => {
+    const { channel, transport, fail } = breakable()
+    const host = scriptedHost(channel.host)
+    const violations: HostViolation[] = []
+    const bridge = createBridge({
+      transport,
+      app: { name: "a", version: "1" },
+      onViolation: (v) => violations.push(v),
+    })
+    const connecting = bridge.connect()
+    await flush()
+    host.answer("ui/initialize", initializeResult())
+    await connecting
+    fail()
+    expect(await failure(bridge.callTool("x", { fn: "not cloneable" }))).toEqual({
+      kind: "not-sent",
+      method: "tools/call",
+      reason: "DataCloneError: could not be cloned",
+    })
+    expect(() => bridge.reportSize({ width: 1, height: 1 })).toThrow(
+      expect.objectContaining({ failure: expect.objectContaining({ kind: "not-sent" }) }),
+    )
+    // Nothing was left pending: an answer to that id is one to no call.
+    host.send({ jsonrpc: "2.0", id: 2, result: { content: [] } })
+    await flush()
+    expect(violations).toEqual([{ kind: "unknown-response", id: 2 }])
+  })
+
+  it("outside a host window, connect fails not-sent instead of waiting forever", async () => {
+    const own = { addEventListener() {}, removeEventListener() {} } as unknown as Window
+    Object.assign(own, { parent: own })
+    const bridge = createBridge({
+      transport: windowTransport(own),
+      app: { name: "a", version: "1" },
+    })
+    expect(await failure(bridge.connect())).toEqual({
+      kind: "not-sent",
+      method: "ui/initialize",
+      reason: "there is no host window to send to",
+    })
+    expect(bridge.getState().connection.status).toBe("failed")
+  })
+
+  it("a subscriber that throws is logged, and the others and the transition go on", async () => {
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {})
+    const { bridge, host } = setup()
+    const heard = vi.fn()
+    bridge.subscribe(() => {
+      throw new Error("a broken view")
+    })
+    bridge.subscribe(heard)
+    const connecting = bridge.connect()
+    await flush()
+    host.answer("ui/initialize", initializeResult())
+    await expect(connecting).resolves.toBeUndefined()
+    expect(bridge.getState().connection.status).toBe("connected")
+    const unanswered = bridge.callTool("x")
+    host.send({ jsonrpc: "2.0", id: "t", method: "ui/resource-teardown", params: {} })
+    await flush()
+    expect(await failure(unanswered)).toEqual({ kind: "torn-down", method: "tools/call" })
+    expect(host.received.at(-1)).toEqual({ kind: "result", id: "t", result: {} })
+    expect(heard).toHaveBeenCalled()
+    expect(quiet).toHaveBeenCalledWith(
+      "[app-shell] a bridge subscriber threw:",
+      expect.any(Error),
+    )
+    quiet.mockRestore()
+  })
+
+  it("failed + teardown: keeps the failure, and the host is answered", async () => {
+    const { bridge, host } = setup()
+    const connecting = bridge.connect()
+    await flush()
+    host.refuse("ui/initialize")
+    await connecting.catch(() => {})
+    host.send({ jsonrpc: "2.0", id: "t", method: "ui/resource-teardown", params: {} })
+    await flush()
+    expect(bridge.getState().connection.status).toBe("failed")
+    expect(host.received.at(-1)).toEqual({ kind: "result", id: "t", result: {} })
+  })
+})
+
 describe("what the host sends", () => {
   it("ping: answered with an empty result", async () => {
     const { host } = await connected()
@@ -441,6 +562,23 @@ describe("what the host sends", () => {
       { kind: "unknown-response", id: 999 },
       { kind: "unknown-response", id: "theirs" },
     ])
+  })
+
+  it("a second answer to an answered call: reported; a late answer to an aborted one: not", async () => {
+    const { bridge, host, violations } = await connected()
+    const call = bridge.callTool("x")
+    await flush()
+    const id = host.idOf("tools/call")
+    host.send({ jsonrpc: "2.0", id, result: { content: [] } })
+    await call
+    host.send({ jsonrpc: "2.0", id, result: { content: [] } })
+    const abort = new AbortController()
+    const aborted = bridge.callTool("y", {}, { signal: abort.signal })
+    abort.abort()
+    await aborted.catch(() => {})
+    host.send({ jsonrpc: "2.0", id: Number(id) + 1, result: { content: [] } })
+    await flush()
+    expect(violations).toEqual([{ kind: "unknown-response", id }])
   })
 
   it("host-context-changed: merged by field, so a theme change keeps the styles", async () => {

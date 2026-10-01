@@ -116,6 +116,10 @@ export function useDisplayMode(): {
  * descendants read the nearest declaration — so a host's values set anywhere
  * above that element would be shadowed there, and the attribute set on the
  * document's root would lose to the design system's own `:root` defaults.
+ *
+ * The root's inline `color-scheme` and the custom properties the host's
+ * theme names are the applier's: it removes them when the host stops
+ * sending them, so an app does not set them inline on that element itself.
  */
 export function useHostTheme<Token extends `--${string}`>(
   tokens: DesignTokens<Token>,
@@ -142,7 +146,9 @@ export function HostThemeScope<Token extends `--${string}`>({
   ...props
 }: { tokens: DesignTokens<Token>; children?: ReactNode } & Omit<
   HTMLAttributes<HTMLDivElement>,
-  "children"
+  // Its inline style is the theme's: React writing one too would be erased
+  // by the applier's removals and not written again.
+  "children" | "style"
 >) {
   const [element, setElement] = useState<HTMLDivElement | null>(null)
   useHostTheme(tokens, element)

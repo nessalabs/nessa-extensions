@@ -37,6 +37,8 @@ import {
 } from "../protocol/messages.ts"
 import {
   isRecord,
+  member,
+  own,
   narrowInitializeParams,
   narrowLogParams,
   narrowMessageParams,
@@ -315,7 +317,7 @@ export function createFakeHost(options: FakeHostOptions): FakeHost {
 
   /** A field `params` holds itself, never one it inherits. */
   function field(params: unknown, key: string): unknown {
-    return isRecord(params) && Object.hasOwn(params, key) ? params[key] : undefined
+    return isRecord(params) ? own(params, key) : undefined
   }
 
   function stringField(params: unknown, key: string): string | undefined {
@@ -380,7 +382,7 @@ export function createFakeHost(options: FakeHostOptions): FakeHost {
         return answer(id, () => handlers.openLink({ url }))
       }
       case "ui/request-display-mode": {
-        const mode = displayModes.find((entry) => entry === stringField(params, "mode"))
+        const mode = member(displayModes, field(params, "mode"))
         if (mode === undefined) return malformed("mode is not a display mode")
         if (!(app?.capabilities.availableDisplayModes ?? []).includes(mode)) {
           violations.push({ kind: "undeclared-display-mode", mode })
@@ -411,7 +413,12 @@ export function createFakeHost(options: FakeHostOptions): FakeHost {
     if (method === "ui/notifications/size-changed") {
       const width = field(params, "width")
       const height = field(params, "height")
-      if (typeof width !== "number" || typeof height !== "number") {
+      if (
+        typeof width !== "number" ||
+        typeof height !== "number" ||
+        !Number.isFinite(width) ||
+        !Number.isFinite(height)
+      ) {
         violations.push({
           kind: "malformed-params",
           method,

@@ -5,7 +5,7 @@
  * open, and stops when it is torn down or closed; the bridge leaves out a
  * size equal to the last one it sent.
  */
-import type { Bridge } from "./bridge.ts"
+import { isOpen, type Bridge } from "./bridge.ts"
 
 /** Watches `element`'s size, calling `changed` on each change; returns what stops it. */
 export type ObserveSize = (element: Element, changed: () => void) => () => void
@@ -28,11 +28,15 @@ export function autoResize(
   let stopObserving: (() => void) | null = null
   const report = () => {
     const { width, height } = element.getBoundingClientRect()
-    bridge.reportSize({ width: Math.ceil(width), height: Math.ceil(height) })
+    try {
+      bridge.reportSize({ width: Math.ceil(width), height: Math.ceil(height) })
+    } catch (error) {
+      // A size that could not be sent leaves the host's size as it was.
+      console.error("[app-shell] could not report the app's size:", error)
+    }
   }
   const follow = () => {
-    const status = bridge.getState().connection.status
-    const open = status === "connected" || status === "tearing-down"
+    const open = isOpen(bridge.getState().connection)
     if (open && stopObserving === null) {
       stopObserving = observe(element, report)
       report()

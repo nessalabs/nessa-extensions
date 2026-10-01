@@ -40,12 +40,18 @@ export type Narrowed<T> =
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
-/** `record[key]`, only when `record` itself holds it. */
-const own = (record: Record<string, unknown>, key: string): unknown =>
+/**
+ * `record[key]`, only when `record` itself holds it: the one reader of a
+ * field from the other side, so an inherited field is never read.
+ */
+export const own = (record: Record<string, unknown>, key: string): unknown =>
   Object.hasOwn(record, key) ? record[key] : undefined
 
-const member = <T extends string>(set: readonly T[], value: unknown): T | undefined =>
-  set.find((entry) => entry === value)
+/** `value` narrowed into the closed set `set`, or undefined. */
+export const member = <T extends string>(
+  set: readonly T[],
+  value: unknown,
+): T | undefined => set.find((entry) => entry === value)
 
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value)
@@ -363,11 +369,13 @@ function readSandbox(value: unknown) {
 
 function readExperimental(value: unknown) {
   if (!isRecord(value)) return undefined
-  const read: Record<string, object> = {}
-  for (const [name, entry] of Object.entries(value)) {
-    if (isRecord(entry)) read[name] = entry
-  }
-  return read
+  // Built from entries, not by assignment: a key the host names `__proto__`
+  // stays an own key rather than setting the object's prototype.
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, Record<string, unknown>] =>
+      isRecord(entry[1]),
+    ),
+  )
 }
 
 const readModalities = (value: unknown) => readFlagSet(modalityNames, value)

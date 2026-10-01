@@ -84,6 +84,12 @@ describe("withPolicy", () => {
     expect(withPolicy("<p>hi</p>", 'x"<')).toBe(`${meta("x&quot;&lt;")}<p>hi</p>`)
   })
 
+  it("keeps a doctype first when there is no head, so the document stays in standards mode", () => {
+    expect(withPolicy("<!DOCTYPE html><p>hi</p>", "p")).toBe(
+      `<!DOCTYPE html>${meta("p")}<p>hi</p>`,
+    )
+  })
+
   it("does not take a <header> for the head", () => {
     expect(withPolicy("<header></header>", "p")).toBe(`${meta("p")}<header></header>`)
   })

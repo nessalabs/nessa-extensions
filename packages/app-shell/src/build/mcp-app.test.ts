@@ -64,6 +64,15 @@ describe("mcpApp", () => {
     expect(html).not.toMatch(/\shref="\.?\//)
   })
 
+  it("refuses a build whose script would not end where it is written inline", async () => {
+    const root = app({
+      "index.html":
+        '<!doctype html><html><head></head><body><script type="module" src="./main.ts"></script></body></html>',
+      "main.ts": 'document.body.innerHTML = "<!--" + String(Math.random()) + "<script>"',
+    })
+    await expect(buildApp(root)).rejects.toThrow('hold both "<!--" and "<script"')
+  })
+
   it("refuses a build whose HTML names a script it did not make", async () => {
     const root = app({
       "index.html":

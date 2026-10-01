@@ -77,6 +77,11 @@ export function mcpApp(): Plugin {
           `the HTML names files the build did not make: ${result.unresolved.join(", ")}`,
         )
       }
+      if (result.unsafe.length > 0) {
+        this.error(
+          `these scripts hold both "<!--" and "<script", which would keep them from ending where written inline: ${result.unsafe.join(", ")}`,
+        )
+      }
       const left = Object.keys(bundle).filter(
         (name) => name !== page.fileName && !result.inlined.has(name),
       )

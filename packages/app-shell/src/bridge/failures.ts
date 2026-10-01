@@ -23,6 +23,11 @@ export type BridgeFailure =
   | { kind: "refused"; method: string }
   /** The host answered with something that is not the method's result. */
   | { kind: "malformed-result"; method: string; reason: string }
+  /**
+   * The message could not be sent: there is no host window (the app is not in
+   * an iframe), or what the app passed cannot cross `postMessage`.
+   */
+  | { kind: "not-sent"; method: string; reason: string }
   /** The call was made when the connection could not carry it. */
   | { kind: "not-connected"; method: string; status: ConnectionStatus }
   /** The host tore the app down before it answered. */
@@ -49,6 +54,8 @@ export function describeFailure(failure: BridgeFailure): string {
       return `${failure.method}: the host refused`
     case "malformed-result":
       return `${failure.method}: the host's answer is malformed: ${failure.reason}`
+    case "not-sent":
+      return `${failure.method}: could not be sent: ${failure.reason}`
     case "not-connected":
       return `${failure.method}: the bridge is ${failure.status}, not connected`
     case "torn-down":

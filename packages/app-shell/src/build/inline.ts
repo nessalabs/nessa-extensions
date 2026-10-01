@@ -12,11 +12,23 @@ export interface Inlined {
   inlined: Set<string>
   /** Each `src` or `href` of a script or stylesheet that names no file of the bundle. */
   unresolved: string[]
+  /**
+   * Each script that holds both `<!--` and `<script`: written inline, the
+   * HTML parser would read it into a state where `</script>` does not end
+   * it. Left in place, for the build to refuse.
+   */
+  unsafe: string[]
 }
 
-/** Text that cannot end the element it is written into, nor open a comment state. */
-const inScript = (code: string) =>
-  code.replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "<\\!--")
+/**
+ * Code that cannot end its element early. `</script` becomes `<\/script`,
+ * which reads the same inside a string, a template, a comment or a regular
+ * expression (where a bare `/` could not stand anyway). `<!--` is not
+ * rewritten — it means something in code (`a<!--b`, a regular expression) —
+ * so a script that also holds `<script` is refused instead (`unsafe`).
+ */
+const inScript = (code: string) => code.replace(/<\/(script)/gi, "<\\/$1")
+const opensDoubleEscape = (code: string) => code.includes("<!--") && /<script/i.test(code)
 const inStyle = (css: string) => css.replace(/<\/(style)/gi, "<\\/$1")
 
 const attribute = (tag: string, name: string): string | undefined => {
@@ -41,6 +53,7 @@ export function inlineIntoHtml(
 ): Inlined {
   const inlined = new Set<string>()
   const unresolved: string[] = []
+  const unsafe: string[] = []
   const take = (reference: string | undefined): string | undefined => {
     if (reference === undefined) return undefined
     const name = fileName(reference)
@@ -54,6 +67,10 @@ export function inlineIntoHtml(
     if (src === undefined) return tag
     const code = take(src)
     if (code === undefined) return tag
+    if (opensDoubleEscape(code)) {
+      unsafe.push(src)
+      return tag
+    }
     const module = /\stype\s*=\s*["']?module/i.test(tag) ? ' type="module"' : ""
     return `<script${module}>${inScript(code)}</script>`
   })
@@ -68,5 +85,5 @@ export function inlineIntoHtml(
     }
     return tag
   })
-  return { html: out, inlined, unresolved }
+  return { html: out, inlined, unresolved, unsafe }
 }

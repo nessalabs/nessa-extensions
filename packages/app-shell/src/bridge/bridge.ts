@@ -73,6 +73,13 @@ export type Connection =
   | { status: "failed"; failure: BridgeFailure }
   | { status: "closed" }
 
+/**
+ * Whether a connection carries the app's calls: connected, or tearing down
+ * (when the app may still save through the host before it goes).
+ */
+export const isOpen = (connection: Connection): boolean =>
+  connection.status === "connected" || connection.status === "tearing-down"
+
 /** Everything an app renders from. Replaced, never changed in place. */
 export interface BridgeState {
   readonly connection: Connection
@@ -183,22 +190,57 @@ export function createBridge(options: BridgeOptions): Bridge {
   let teardown: Promise<void> | null = null
   let lastSize: SizeParams | null = null
 
+  /**
+   * Replaces the state and tells each subscriber. A subscriber that throws is
+   * logged and the rest still hear: the state machine never stops part way
+   * through a transition because of one.
+   */
   const update = (next: Partial<BridgeState>) => {
     state = { ...state, ...next }
-    for (const listener of [...listeners]) listener()
+    for (const listener of [...listeners]) {
+      try {
+        listener()
+      } catch (error) {
+        console.error("[app-shell] a bridge subscriber threw:", error)
+      }
+    }
   }
   const status = (): ConnectionStatus => state.connection.status
+  const open = () => isOpen(state.connection)
 
-  /** Whether the connection carries the app's calls: connected, or tearing down. */
-  const open = () => status() === "connected" || status() === "tearing-down"
+  /**
+   * Ids whose calls were settled here before the host answered — aborted,
+   * closed, torn down — so a late answer to one is expected and not reported.
+   */
+  const abandoned = new Set<RequestId>()
 
   const settleAll = (failure: (method: string) => BridgeFailure) => {
-    const unanswered = [...pending.values()]
+    const unanswered = [...pending.entries()]
     pending.clear()
-    for (const call of unanswered) call.reject(failure(call.method))
+    for (const [id, call] of unanswered) {
+      abandoned.add(id)
+      call.reject(failure(call.method))
+    }
   }
 
-  const send = (message: JsonRpcMessage) => transport.send(message)
+  /** Sends, or says why it could not as the typed failure `not-sent`. */
+  const send = (message: JsonRpcMessage, method: string): BridgeFailure | null => {
+    try {
+      transport.send(message)
+      return null
+    } catch (error) {
+      return {
+        kind: "not-sent",
+        method,
+        reason: error instanceof Error ? error.message : String(error),
+      }
+    }
+  }
+  /** Sends an answer to the host; if it cannot be sent there is no one to tell. */
+  const answer = (message: JsonRpcMessage) => {
+    const failure = send(message, "answer")
+    if (failure !== null) console.error("[app-shell] could not answer the host:", failure)
+  }
 
   /**
    * Sends a request and resolves with its result, read by `narrow`. Refused
@@ -221,7 +263,10 @@ export function createBridge(options: BridgeOptions): Bridge {
     const id = nextId++
     return new Promise<T>((resolve, reject) => {
       const onAbort = () => {
-        if (pending.delete(id)) reject(new BridgeError({ kind: "aborted", method }))
+        if (pending.delete(id)) {
+          abandoned.add(id)
+          reject(new BridgeError({ kind: "aborted", method }))
+        }
       }
       signal?.addEventListener("abort", onAbort, { once: true })
       pending.set(id, {
@@ -245,7 +290,12 @@ export function createBridge(options: BridgeOptions): Bridge {
           reject(new BridgeError(failure))
         },
       })
-      send({ jsonrpc: "2.0", id, method, params })
+      const failure = send({ jsonrpc: "2.0", id, method, params }, method)
+      if (failure !== null) {
+        pending.delete(id)
+        signal?.removeEventListener("abort", onAbort)
+        reject(new BridgeError(failure))
+      }
     })
   }
 
@@ -258,7 +308,8 @@ export function createBridge(options: BridgeOptions): Bridge {
   function notify(method: string, params: object) {
     if (!open())
       throw new BridgeError({ kind: "not-connected", method, status: status() })
-    send({ jsonrpc: "2.0", method, params })
+    const failure = send({ jsonrpc: "2.0", method, params }, method)
+    if (failure !== null) throw new BridgeError(failure)
   }
 
   // ---- what the host sends
@@ -323,11 +374,11 @@ export function createBridge(options: BridgeOptions): Bridge {
 
   function onRequest(id: RequestId, method: string, params: unknown) {
     if (method === "ping") {
-      send({ jsonrpc: "2.0", id, result: {} })
+      answer({ jsonrpc: "2.0", id, result: {} })
       return
     }
     if (method !== "ui/resource-teardown") {
-      send({
+      answer({
         jsonrpc: "2.0",
         id,
         error: {
@@ -341,9 +392,9 @@ export function createBridge(options: BridgeOptions): Bridge {
     const reason = read.ok ? read.value.reason : undefined
     if (!read.ok) report({ kind: "malformed-params", method, reason: read.reason })
     tearDown(reason).then(
-      () => send({ jsonrpc: "2.0", id, result: {} }),
+      () => answer({ jsonrpc: "2.0", id, result: {} }),
       () =>
-        send({
+        answer({
           jsonrpc: "2.0",
           id,
           error: { code: errorCodes.refused, message: "Teardown error" },
@@ -371,7 +422,10 @@ export function createBridge(options: BridgeOptions): Bridge {
     const handlers = [...teardownHandlers]
     teardown = Promise.allSettled(handlers.map(async (handler) => handler(reason))).then(
       (outcomes) => {
-        if (status() !== "closed") {
+        // A closed bridge stays closed, and a failed one keeps its failure;
+        // either way nothing is left pending to reject but by teardown.
+        if (status() === "failed") settleAll((method) => ({ kind: "torn-down", method }))
+        else if (status() !== "closed") {
           update({
             connection:
               reason === undefined
@@ -395,11 +449,9 @@ export function createBridge(options: BridgeOptions): Bridge {
   ) {
     const call = pending.get(id)
     if (call === undefined) {
-      // An answer to a call the caller abandoned is expected; one to an id
-      // this bridge never sent is not.
-      if (typeof id !== "number" || id >= nextId || id < 1) {
-        report({ kind: "unknown-response", id })
-      }
+      // A late answer to a call settled here is expected; any other — to an
+      // id never sent, or a second answer to one — is not.
+      if (!abandoned.delete(id)) report({ kind: "unknown-response", id })
       return
     }
     pending.delete(id)
@@ -463,7 +515,11 @@ export function createBridge(options: BridgeOptions): Bridge {
       true,
     ).then(
       (result) => {
-        // Being torn down while the host answered: the connection never opens.
+        // Closed, or being torn down, after the host's answer arrived and
+        // before this ran: the connection never opens.
+        if (status() === "closed") {
+          throw new BridgeError({ kind: "closed", method: "ui/initialize" })
+        }
         if (teardown !== null)
           throw new BridgeError({ kind: "torn-down", method: "ui/initialize" })
         if (result.protocolVersion !== PROTOCOL_VERSION) {
@@ -477,7 +533,14 @@ export function createBridge(options: BridgeOptions): Bridge {
         }
         // `initialized` goes before anything else the app sends: subscribers
         // that hear "connected" may send at once (a first size, a call).
-        send({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} })
+        const failure = send(
+          { jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} },
+          "ui/notifications/initialized",
+        )
+        if (failure !== null) {
+          update({ connection: { status: "failed", failure } })
+          throw new BridgeError(failure)
+        }
         update({
           connection: {
             status: "connected",
