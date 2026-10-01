@@ -1,17 +1,36 @@
 #!/usr/bin/env node
 /**
- * Builds every extension with Vite and refuses any build that reads a file
- * the extension may not use (`allow-list.mjs`). After `pnpm install`.
+ * Builds every extension with Vite, each in a copy of the repository that
+ * holds only what the extension may use, and refuses any build whose modules
+ * come from anywhere else (`allow-list.mjs`). After `pnpm install`.
  *
- * What a build reads is taken from the toolchain, not from source text: the
- * bundler's module graph, which holds every module it resolved and loaded,
- * and every file Vite reads through Node's `fs` (`reads.mjs`), which holds the
- * assets and inlined styles that never enter the graph. Each is followed to
- * its real path, so a symbolic link counts where it leads, and is checked
- * there.
+ * - **The stage.** An extension is built in a new directory laid out as the
+ *   repository but holding only the extension, the workspace packages it
+ *   declares (`units.mjs`), pnpm's store (`node_modules/.pnpm`, linked), and
+ *   the shared compiler settings (`sharedFiles`).
+ *   Whatever the build reads by a relative path — a module, an asset, a
+ *   stylesheet `@import`, an `.env` file, the public directory, the Vite
+ *   configuration's own imports — can only find what is there. A sibling
+ *   extension, an undeclared package, and a file at the repository's root
+ *   are not there, so the build fails to find them, however they are spelled
+ *   and whichever part of the toolchain looks.
+ * - **The module graph.** Every module each environment's bundler loaded,
+ *   and each worker's, is followed to its real path and checked against the
+ *   allow-list. That catches what the stage cannot: a module reached by an
+ *   absolute path or through a link that leads back into the repository. A
+ *   module that is neither a virtual one (`\0…`) nor a file on disk is
+ *   refused, since where it came from cannot be checked.
  *
- * An extension is built from its `vite.config.ts`, with its folder as the
- * working directory, as `vite build` there would. One without that file has
+ * Not held here, and so held by review: a file outside the module graph — an
+ * asset, a stylesheet, an `.env` file — named by an absolute path into the
+ * repository; and anything the Vite configuration's own code does, which runs
+ * with Node's full access. A symbolic link in a unit is refused before install
+ * (`scripts/check-architecture.mjs`), and copied into the stage as it is.
+ *
+ * An extension is built from its `vite.config.ts`, with its folder in the
+ * stage as the working directory, so it must declare what that file imports,
+ * Vite included. Its output is its `dist`, copied back only when the build
+ * passes; a refused build leaves none. One without `vite.config.ts` has
  * nothing to build and is said so on stderr.
  *
  * Refusals, and builds that fail, are printed as `unit: what` lines on
@@ -19,74 +38,139 @@
  *
  *   node scripts/boundary/build.mjs [root]   build root's extensions, or this repository's
  */
-import { existsSync, realpathSync } from "node:fs"
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs"
+import { tmpdir } from "node:os"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { stripVTControlCharacters } from "node:util"
 
 import { createBuilder } from "vite"
 
-import { readRefusal } from "./allow-list.mjs"
-import { watchReads } from "./reads.mjs"
+import { moduleRefusal } from "./allow-list.mjs"
 import { declaredPackages, units } from "./units.mjs"
 
 const configFile = "vite.config.ts"
+const output = "dist"
 
 /**
- * Builds `unit` and returns one line for each file its build read but may
- * not, and one if the build failed.
+ * The repository's own files a build may read: the shared compiler settings,
+ * which every unit's `tsconfig.json` extends and Vite reads to transform it.
+ */
+const sharedFiles = ["tsconfig.base.json"]
+
+/**
+ * A new directory laid out as the repository at `root`, holding copies of
+ * `paths` and `sharedFiles` and a link to pnpm's store; its real path.
+ * Links are copied as they are, so pnpm's relative ones resolve in the stage.
+ */
+function stage(root, paths) {
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "nessa-extensions-build-")))
+  for (const path of paths) {
+    const from = join(root, path)
+    cpSync(from, join(directory, path), { recursive: true, verbatimSymlinks: true })
+  }
+  for (const file of sharedFiles) {
+    if (existsSync(join(root, file))) cpSync(join(root, file), join(directory, file))
+  }
+  const store = join(root, "node_modules", ".pnpm")
+  if (existsSync(store)) {
+    mkdirSync(join(directory, "node_modules"))
+    symlinkSync(store, join(directory, "node_modules", ".pnpm"))
+  }
+  return directory
+}
+
+/** A plugin that hands every module of a build to `check` when it ends. */
+const moduleGraph = (check) => ({
+  name: "nessa:boundary-modules",
+  buildEnd() {
+    for (const id of this.getModuleIds()) check(id)
+  },
+})
+
+/**
+ * Builds `unit` and returns one line for each module its build may not use,
+ * and one if the build failed.
  *
  * @param {string} root the repository, as a real path
  * @param {string} unit `extensions/<name>`
  */
 export async function buildExtension(root, unit) {
   const declared = declaredPackages(root, unit)
+  const staged = stage(root, [unit, ...declared])
   const refused = new Map()
-  const check = (path) => {
-    let real
+  const check = (id) => {
+    if (id.startsWith("\0")) return
+    const file = id.split("?")[0]
+    let real = null
     try {
-      real = realpathSync(path instanceof URL ? fileURLToPath(path) : String(path))
+      if (isAbsolute(file)) real = realpathSync(file)
     } catch {
-      return // nothing there; the read fails by itself
+      // not on disk: refused below
     }
-    const at = relative(root, real).split(sep).join("/")
-    const why = readRefusal(at, unit, declared)
+    if (real === null) {
+      refused.set(
+        id,
+        "which is not a file on disk, so where it comes from cannot be checked",
+      )
+      return
+    }
+    const inStage = real === staged || real.startsWith(`${staged}${sep}`)
+    const at = relative(inStage ? staged : root, real)
+      .split(sep)
+      .join("/")
+    const why = moduleRefusal(at, unit, declared)
     if (why !== null && !refused.has(at)) refused.set(at, why)
   }
-  const graph = {
-    name: "nessa:boundary",
-    buildEnd() {
-      for (const id of this.getModuleIds()) {
-        const file = id.split("?")[0]
-        if (isAbsolute(file)) check(file)
+  const boundary = {
+    ...moduleGraph(check),
+    // Workers are built separately, with `worker.plugins` only.
+    config(config) {
+      const own = config.worker?.plugins
+      return {
+        worker: { plugins: () => [...(own ? own() : []), moduleGraph(check)] },
       }
     },
   }
 
   const failures = []
-  const directory = join(root, unit)
+  const directory = join(staged, unit)
   const previous = process.cwd()
-  const stop = watchReads(check)
   try {
     process.chdir(directory)
     const builder = await createBuilder({
       configFile: join(directory, configFile),
       logLevel: "warn",
-      plugins: [graph],
+      plugins: [boundary],
     })
     await builder.buildApp()
   } catch (error) {
-    const why = error.message
-      .split("\n")
-      .map((line) => line.trim())
-      .find((line) => line !== "" && !/^Build failed with \d+ errors?:$/.test(line))
+    // One line, so each failure stays one `unit: what` line.
+    const why = stripVTControlCharacters(String(error?.message ?? error))
+      .replace(/^\s*Build failed with \d+ errors?:/, "")
+      .replace(/\s+/g, " ")
+      .trim()
     failures.push(`${unit}: the build failed: ${why}`)
   } finally {
-    stop()
     process.chdir(previous)
   }
   for (const [path, why] of refused) {
-    failures.push(`${unit}: its build reads ${path}, ${why}`)
+    failures.push(`${unit}: its build uses ${path}, ${why}`)
   }
+  const built = join(root, unit, output)
+  rmSync(built, { recursive: true, force: true })
+  if (failures.length === 0 && existsSync(join(directory, output))) {
+    cpSync(join(directory, output), built, { recursive: true })
+  }
+  rmSync(staged, { recursive: true, force: true })
   return failures
 }
 

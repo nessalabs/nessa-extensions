@@ -1,15 +1,15 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import { readRefusal } from "./allow-list.mjs"
+import { moduleRefusal } from "./allow-list.mjs"
 
 const unit = "extensions/notes"
 const declared = new Set(["packages/common"])
-const refusal = (path) => readRefusal(path, unit, declared)
+const refusal = (path) => moduleRefusal(path, unit, declared)
 
-test("its own folder, a declared package, and anything in node_modules are allowed", () => {
-  assert.equal(refusal("extensions/notes"), null)
+test("its own folder, a declared package, and an npm package are allowed", () => {
   assert.equal(refusal("extensions/notes/app/index.html"), null)
+  assert.equal(refusal("extensions/notes/node_modules/x/index.js"), null)
   assert.equal(refusal("packages/common/src/index.ts"), null)
   assert.equal(refusal("node_modules/.pnpm/zod@4.0.0/node_modules/zod/index.js"), null)
   assert.equal(refusal("../elsewhere/node_modules/vite/dist/client.mjs"), null)
@@ -26,6 +26,17 @@ test("a folder whose name only begins with an allowed one is refused", () => {
   )
 })
 
+test("a node_modules directory inside another unit is still that unit's", () => {
+  assert.equal(
+    refusal("extensions/experiments/src/node_modules/leak.ts"),
+    "which is in extensions/experiments; extensions never import one another",
+  )
+  assert.equal(
+    refusal("packages/app-shell/node_modules/x/index.js"),
+    "which is in packages/app-shell, and extensions/notes does not declare it",
+  )
+})
+
 test("everything else is refused, saying where it is", () => {
   assert.equal(
     refusal("extensions/experiments/x.ts"),
@@ -36,10 +47,6 @@ test("everything else is refused, saying where it is", () => {
     "which is in packages/app-shell, and extensions/notes does not declare it",
   )
   assert.equal(refusal("scripts/x.mjs"), "which is outside every extension and package")
-  assert.equal(
-    refusal("tsconfig.base.json"),
-    "which is outside every extension and package",
-  )
   assert.equal(
     refusal("extensions/README.md"),
     "which is outside every extension and package",

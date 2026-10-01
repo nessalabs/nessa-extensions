@@ -57,8 +57,8 @@ extensions/<name>/     one extension, one package @nessalabs/<name>
 ```
 
 **The boundary is an allow-list.** Code in an extension comes only from its
-own folder, the workspace packages under `packages/` its manifest declares,
-and npm packages. Never another extension, never a path outside its folder:
+own folder, the workspace packages under `packages/` its manifest declares
+(and those they declare), and npm packages. Never another extension, never a path outside its folder:
 extensions never talk to each other. What two extensions share becomes a
 package — logic in `packages/common`, UI in `nessa_ui`.
 
@@ -74,10 +74,13 @@ review:
 - **Typecheck** runs `tsc` on each package and extension separately, with
   `rootDir` set to its folder on the command line, so `tsc` refuses any source
   file outside it.
-- **Build** runs each extension's Vite build and refuses it if it read
-  anything outside the allow-list: every module in the bundler's graph, and
-  every file Vite read through Node's `fs` (assets and inlined styles never
-  enter the graph), each followed to its real path.
+- **Build** runs each extension's Vite build in a staged copy of the
+  repository that holds only what the extension may use — itself, the
+  packages it declares, pnpm's store, and the shared compiler settings — so
+  nothing else can be found, by any part of the toolchain. It then refuses the
+  build if any module in the bundler's graph, workers' included, really lies
+  outside the allow-list, which catches an absolute path or a link back into
+  the repository.
 
 The earlier check read source and manifests as text to find paths into other
 units. Two review cycles each found new spellings it missed — backslashes,
@@ -147,10 +150,12 @@ into it — is refused by the pinned layout. Publishing it is nessa_ui's work.
 - The standards are one link away rather than one directory away, and a change
   to them for extensions is a nessa-agent pull request.
 - The boundary holds in typecheck and build. What none of the three checks
-  sees — a type-only import of another extension's declaration file, for one
-  — is named in their module comments and held by review.
-- A build reads only its extension's folder, its declared packages, and npm,
-  so a configuration shared from the repository's root is refused too.
+  sees — a type-only import of another extension's declaration file, a
+  non-module file named by an absolute path, what the Vite configuration's own
+  code does — is named in their module comments and held by review.
+- A build sees only its extension, its declared packages, npm, and the shared
+  compiler settings, so it must declare what its configuration imports, and a
+  configuration shared from the repository's root is not there to use.
 - Remaining work: #2 and #3 (the packages, with `nessa_ui` from npm), #4–#7 (the
   experiments extension and its release workflow); the `@nessalabs` npm scope
   must be held by Nessa Labs before anything is published.

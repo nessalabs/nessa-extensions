@@ -37,10 +37,12 @@ extensions/<name>/
   that (see [AGENTS.md](../AGENTS.md#layout)). A tool that needs a declared
   package's files, such as Tailwind's `@source`, reaches them through
   `node_modules` (`@source "../node_modules/@nessalabs/app-shell/src"`).
-- `pnpm build` runs each extension's `vite.config.ts` in its folder, and the
-  build may read only what that allow-list allows — so a configuration shared
-  from the repository's root, which the extension would not have on its own,
-  is refused too.
+- `pnpm build` runs each extension's `vite.config.ts` in a copy of the
+  repository holding only the extension, the packages it declares, pnpm's
+  store, and `tsconfig.base.json`. So the extension declares what its
+  configuration imports, Vite and its plugins included, and a configuration
+  shared from the repository's root is not there. The build's output is the
+  extension's `dist`, copied back only when it passes.
 - One `tsconfig.json` types both sides of an extension, so nothing yet stops
   `server/` using `window` or `app/` using `process`; that is held by review
   until the first extension gives each side a configuration of its own, which

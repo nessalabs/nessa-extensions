@@ -36,8 +36,9 @@ const manifest = (root, unit) =>
   JSON.parse(readFileSync(join(root, unit, "package.json"), "utf8"))
 
 /**
- * The workspace packages `unit` declares, as `packages/<dir>`: each package
- * whose name its manifest lists in `dependencyFields`.
+ * The workspace packages `unit` may use, as `packages/<dir>`: each package
+ * its manifest lists in `dependencyFields`, and in turn each one those
+ * declare, as an npm dependency's own dependencies come with it.
  */
 export function declaredPackages(root, unit) {
   const byName = new Map()
@@ -45,14 +46,20 @@ export function declaredPackages(root, unit) {
     const { name } = manifest(root, pkg)
     if (typeof name === "string") byName.set(name, pkg)
   }
-  const own = manifest(root, unit)
   const declared = new Set()
-  for (const field of dependencyFields) {
-    const entries = Object.hasOwn(own, field) ? own[field] : undefined
-    if (entries === null || typeof entries !== "object") continue
-    for (const name of Object.keys(entries)) {
-      if (byName.has(name)) declared.add(byName.get(name))
+  const visit = (from) => {
+    const own = manifest(root, from)
+    for (const field of dependencyFields) {
+      const entries = Object.hasOwn(own, field) ? own[field] : undefined
+      if (entries === null || typeof entries !== "object") continue
+      for (const name of Object.keys(entries)) {
+        const pkg = byName.get(name)
+        if (pkg === undefined || pkg === unit || declared.has(pkg)) continue
+        declared.add(pkg)
+        visit(pkg)
+      }
     }
   }
+  visit(unit)
   return declared
 }
