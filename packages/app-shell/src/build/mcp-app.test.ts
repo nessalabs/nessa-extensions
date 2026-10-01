@@ -71,7 +71,7 @@ describe("mcpApp", () => {
       "main.ts": 'document.body.innerHTML = "<!--" + String(Math.random()) + "<script>"',
     })
     await expect(buildApp(root)).rejects.toThrow(
-      "these would not end where written inline",
+      "these cannot be written inline as they are",
     )
   })
 

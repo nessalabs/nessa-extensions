@@ -547,7 +547,16 @@ export function createBridge(options: BridgeOptions): Bridge {
   // ---- the app's calls
 
   function connect({ signal }: CallOptions = {}): Promise<void> {
-    if (connecting !== null) return connecting.promise
+    // Called again, it answers from the state as it is now: the first call's
+    // promise while that is still deciding, or once it connected and the
+    // connection holds; otherwise the connection is not one to connect.
+    const connection = state.connection
+    const deciding =
+      connection.status === "connecting" ||
+      (connection.status === "tearing-down" && connection.opened === undefined)
+    if (connecting !== null && (deciding || connection.status === "connected")) {
+      return connecting.promise
+    }
     if (status() !== "idle") {
       return Promise.reject(
         new BridgeError({

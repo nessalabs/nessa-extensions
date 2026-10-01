@@ -300,7 +300,7 @@ describe("the connection", () => {
     expect(bridge.connect()).toBe(bridge.connect())
   })
 
-  it("failed or closed + connect: not-connected", async () => {
+  it("closed before connecting + connect: not-connected", async () => {
     const { bridge } = setup()
     bridge.close()
     expect(await failure(bridge.connect())).toEqual({
@@ -308,6 +308,59 @@ describe("the connection", () => {
       method: "ui/initialize",
       status: "closed",
     })
+  })
+
+  it("connect again answers from the state as it is now", async () => {
+    // Connected: the same promise, resolved.
+    const first = await connected()
+    await expect(first.bridge.connect()).resolves.toBeUndefined()
+    // Connected, then closed: not-connected, never a resolution.
+    first.bridge.close()
+    expect(await failure(first.bridge.connect())).toEqual({
+      kind: "not-connected",
+      method: "ui/initialize",
+      status: "closed",
+    })
+
+    // Connected, then torn down: not-connected.
+    const second = await connected()
+    second.host.send({
+      jsonrpc: "2.0",
+      id: "t",
+      method: "ui/resource-teardown",
+      params: {},
+    })
+    await flush()
+    expect(await failure(second.bridge.connect())).toMatchObject({
+      kind: "not-connected",
+      status: "torn-down",
+    })
+
+    // Failed: not-connected, not the first call's failure again.
+    const third = setup()
+    const connecting = third.bridge.connect()
+    await flush()
+    third.host.refuse("ui/initialize")
+    await connecting.catch(() => {})
+    expect(await failure(third.bridge.connect())).toEqual({
+      kind: "not-connected",
+      method: "ui/initialize",
+      status: "failed",
+    })
+  })
+
+  it("a first connect while tearing down, before any connect: not-connected", async () => {
+    const { bridge, host } = setup()
+    let release: () => void = () => {}
+    bridge.onTeardown(() => new Promise<void>((resolve) => (release = resolve)))
+    host.send({ jsonrpc: "2.0", id: "t", method: "ui/resource-teardown", params: {} })
+    await flush()
+    expect(await failure(bridge.connect())).toEqual({
+      kind: "not-connected",
+      method: "ui/initialize",
+      status: "tearing-down",
+    })
+    release()
   })
 
   it("idle + a call: not-connected, and nothing is sent", async () => {

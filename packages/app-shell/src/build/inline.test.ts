@@ -67,6 +67,39 @@ describe("inlineIntoHtml", () => {
     expect(result.unresolved).toEqual([])
   })
 
+  it("leaves the page's own inline scripts, styles and comments exactly as they are", () => {
+    const html =
+      '<!-- <link rel="stylesheet" href="./a.css"> -->' +
+      '<script>var s = \'<link rel="stylesheet" href="./a.css">\'</script>' +
+      '<style>p::after{content:"<link rel=stylesheet href=./a.css>"}</style>'
+    const result = inlineIntoHtml(html, new Map([["a.css", "p{}"]]))
+    expect(result.html).toBe(html)
+    expect(result.inlined.size).toBe(0)
+  })
+
+  it("refuses a tag whose attributes would mean nothing written inline", () => {
+    const files = new Map([
+      ["a.js", "1"],
+      ["a.css", "p{}"],
+    ])
+    for (const [tag, why] of [
+      ['<script nomodule src="a.js"></script>', "a.js (its nomodule attribute)"],
+      ['<script defer src="a.js"></script>', "a.js (its defer attribute)"],
+      [
+        '<script type="text/javascript" src="a.js"></script>',
+        "a.js (its type text/javascript)",
+      ],
+      [
+        '<link rel="stylesheet" href="a.css" integrity="sha-x">',
+        "a.css (its integrity attribute)",
+      ],
+    ] as const) {
+      const result = inlineIntoHtml(tag, files)
+      expect(result.unsafe).toEqual([why])
+      expect(result.html).toBe(tag)
+    }
+  })
+
   it("keeps a stylesheet's media", () => {
     const result = inlineIntoHtml(
       '<link rel="stylesheet" href="p.css" media="print">',

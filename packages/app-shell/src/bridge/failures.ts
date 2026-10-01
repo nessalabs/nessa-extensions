@@ -10,11 +10,11 @@
  *   reports it and carries on.
  */
 import type { DisplayMode } from "../protocol/messages.ts"
+import type { Connection } from "./bridge.ts"
 import type { RequestId } from "../protocol/json-rpc.ts"
 
 /** Where the bridge's connection stands, as a failure can name it. */
-export type ConnectionStatus =
-  "idle" | "connecting" | "connected" | "tearing-down" | "torn-down" | "failed" | "closed"
+export type ConnectionStatus = Connection["status"]
 
 export type BridgeFailure =
   /** The host answered with a JSON-RPC error. */

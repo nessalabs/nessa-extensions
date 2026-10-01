@@ -15,7 +15,8 @@ export interface Inlined {
   unresolved: string[]
   /**
    * Each script or stylesheet that cannot be written inline as it is, left in
-   * place for the build to refuse (`endsEarly`).
+   * place for the build to refuse: its text would end early (`endsEarly`), or
+   * its tag carries an attribute that would mean nothing inline.
    */
   unsafe: string[]
 }
@@ -42,6 +43,29 @@ const attribute = (tag: string, name: string): string | undefined => {
   return match === null ? undefined : (match[1] ?? match[2] ?? match[3])
 }
 
+/** Every attribute name in `tag`, lower-cased. */
+const attributeNames = (tag: string): string[] =>
+  [
+    ...tag
+      .replace(/^<[a-z]+/i, "")
+      .matchAll(/([^\s=>/]+)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?/g),
+  ].map((match) => (match[1] ?? "").toLowerCase())
+
+/**
+ * The attributes the inliner carries over or that mean nothing once inlined
+ * (`crossorigin`, `href`, `src`, `rel`), by element. A tag with any other —
+ * `defer`, `nomodule`, `integrity`, a classic `type` — is refused, since its
+ * meaning would be lost written inline.
+ */
+const understood = {
+  script: new Set(["src", "type", "crossorigin"]),
+  stylesheet: new Set(["rel", "href", "media", "crossorigin"]),
+  modulepreload: new Set(["rel", "href", "crossorigin"]),
+}
+
+const unknownAttribute = (tag: string, known: ReadonlySet<string>) =>
+  attributeNames(tag).find((name) => !known.has(name))
+
 /** A built file's name from how the HTML refers to it: `./assets/x.js` or `/assets/x.js`. */
 const fileName = (reference: string) => reference.replace(/^\.?\//, "")
 
@@ -65,41 +89,55 @@ export function inlineIntoHtml(
     else inlined.add(name)
     return contents
   }
-  const script = (tag: string) => {
+  const refuse = (tag: string, why: string) => {
+    unsafe.push(why)
+    return tag
+  }
+  const script = (element: string, tag: string, body: string) => {
     const src = attribute(tag, "src")
-    if (src === undefined) return tag
+    // An inline script is the page's own: left exactly as it is.
+    if (src === undefined || body.trim() !== "") return element
     const code = take(src)
-    if (code === undefined) return tag
-    if (endsEarly(code, "script")) {
-      unsafe.push(src)
-      return tag
+    if (code === undefined) return element
+    const extra = unknownAttribute(tag, understood.script)
+    if (extra !== undefined) return refuse(element, `${src} (its ${extra} attribute)`)
+    const type = attribute(tag, "type")
+    if (type !== undefined && type.toLowerCase() !== "module") {
+      return refuse(element, `${src} (its type ${type})`)
     }
-    const module = /\stype\s*=\s*["']?module/i.test(tag) ? ' type="module"' : ""
-    return `<script${module}>${code}</script>`
+    if (endsEarly(code, "script")) return refuse(element, src)
+    return `<script${type === undefined ? "" : ' type="module"'}>${code}</script>`
   }
   const link = (tag: string) => {
     const rel = attribute(tag, "rel")?.toLowerCase()
+    const href = attribute(tag, "href")
     if (rel === "stylesheet") {
-      const href = attribute(tag, "href")
       const css = take(href)
       if (css === undefined || href === undefined) return tag
-      if (endsEarly(css, "style")) {
-        unsafe.push(href)
-        return tag
-      }
+      const extra = unknownAttribute(tag, understood.stylesheet)
+      if (extra !== undefined) return refuse(tag, `${href} (its ${extra} attribute)`)
+      if (endsEarly(css, "style")) return refuse(tag, href)
       const media = attribute(tag, "media")
       const scoped = media === undefined ? "" : ` media="${escapeAttribute(media)}"`
       return `<style${scoped}>${css}</style>`
     }
     if (rel === "modulepreload") {
-      return take(attribute(tag, "href")) === undefined ? tag : ""
+      if (take(href) === undefined) return tag
+      const extra = unknownAttribute(tag, understood.modulepreload)
+      return extra === undefined ? "" : refuse(tag, `${href} (its ${extra} attribute)`)
     }
     return tag
   }
-  // One pass over the page as built, so what is written in — the app's own
-  // code, which may hold text like a tag — is never read as the page.
-  const out = html.replace(/<script\b[^>]*>\s*<\/script>|<link\b[^>]*>/gi, (tag) =>
-    /^<script/i.test(tag) ? script(tag) : link(tag),
+  // One pass over the page as built. A comment, an inline script and an
+  // inline style are matched whole and kept as they are, so text inside them
+  // that looks like a tag is never read as one; and what is written in is
+  // never read again.
+  const out = html.replace(
+    /<!--[\s\S]*?-->|(<script\b[^>]*>)([\s\S]*?)<\/script\s*>|<style\b[^>]*>[\s\S]*?<\/style\s*>|<link\b[^>]*>/gi,
+    (element, scriptTag: string | undefined, body: string | undefined) => {
+      if (scriptTag !== undefined) return script(element, scriptTag, body ?? "")
+      return /^<link/i.test(element) ? link(element) : element
+    },
   )
   return { html: out, inlined, unresolved, unsafe }
 }

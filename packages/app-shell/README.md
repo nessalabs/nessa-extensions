@@ -127,7 +127,9 @@ torn-down reject), and by nothing else, so what the caller is told and what
 | connecting | `close()` — before or after the answer arrives, or from a subscriber hearing "connecting" | closed | `connect` rejects `closed`; `initialized` is never sent |
 | idle, connecting | `ui/resource-teardown` | tearing-down, never opened | the teardown handlers run; no call is carried; a result arriving meanwhile, or an abort, does not change it |
 | tearing-down, never opened | the handlers settle | torn-down | `connect` rejects `torn-down`, together with the state; the host is answered |
-| any | `connect()` again | — | the same promise; after failed or closed, `not-connected` |
+| connecting, tearing-down (never opened), connected | `connect()` again | — | the first call's promise: still deciding, or resolved |
+| failed, closed, torn-down, tearing-down (opened) | `connect()` again | — | rejects `not-connected` with the status as it is now |
+| tearing-down, torn-down, before any connect | `connect()` | — | rejects `not-connected` with the status |
 | idle, connecting | a call or notification | — | refused `not-connected`; nothing sent |
 | idle, connecting | a host notification | — | reported `before-initialized`, ignored |
 | connected | `ui/resource-teardown` | tearing-down | the teardown handlers run; the app's calls are still carried, so it can save |

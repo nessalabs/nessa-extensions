@@ -79,7 +79,7 @@ export function mcpApp(): Plugin {
       }
       if (result.unsafe.length > 0) {
         this.error(
-          `these would not end where written inline — they hold their closing tag, or "<!--" with "<script" — so write it as "<\\/script" in them: ${result.unsafe.join(", ")}`,
+          `these cannot be written inline as they are — their text holds its closing tag, or "<!--" with "<script" (write "<\\/script"), or their tag carries an attribute that would mean nothing inline: ${result.unsafe.join(", ")}`,
         )
       }
       const left = Object.keys(bundle).filter(
