@@ -53,7 +53,12 @@
  */
 
 /** The keys `pnpm-workspace.yaml` may hold. None of them moves an install. */
-export const workspaceKeys = ["packages", "allowBuilds", "verifyDepsBeforeRun"]
+export const workspaceKeys = [
+  "packages",
+  "allowBuilds",
+  "verifyDepsBeforeRun",
+  "hoistWorkspacePackages",
+]
 
 /** The workspace's projects: each package, and each extension as one package. */
 export const workspaceGlobs = ["packages/*", "extensions/*"]
@@ -145,6 +150,10 @@ const unquote = (text) => text.trim().replace(/^(["'])(.*)\1$/, "$2")
  * - `packages:`, then `  - <glob>` lines
  * - `allowBuilds:`, then `  <package>: true|false` lines
  * - `verifyDepsBeforeRun: true|false`
+ * - `hoistWorkspacePackages: false`, which is required: left to its default,
+ *   pnpm links every workspace project, each extension included, into
+ *   `node_modules/.pnpm/node_modules`, where a path through the store reaches
+ *   any of them
  *
  * @param {string} text the file's contents
  */
@@ -180,6 +189,8 @@ export function workspaceViolations(text) {
         violations.push("allowBuilds is written as `<package>: true|false` lines")
       } else if (key === "verifyDepsBeforeRun" && !/^(true|false)$/.test(value)) {
         violations.push("verifyDepsBeforeRun is true or false")
+      } else if (key === "hoistWorkspacePackages" && value !== "false") {
+        violations.push("hoistWorkspacePackages is false")
       }
       seen.add(key)
       return
@@ -192,6 +203,9 @@ export function workspaceViolations(text) {
     else
       violations.push(`${at} is not a line this layout allows under ${key ?? "no key"}`)
   })
+  if (!seen.has("hoistWorkspacePackages")) {
+    violations.push("hoistWorkspacePackages: false is required")
+  }
   const expected = JSON.stringify(workspaceGlobs)
   if (JSON.stringify(globs) !== expected) {
     violations.push(`packages is ${JSON.stringify(globs)}, not exactly ${expected}`)

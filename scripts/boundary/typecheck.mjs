@@ -13,28 +13,27 @@
  * `noCheck` off. So a unit cannot narrow what is checked or widen where it
  * may reach.
  *
- * A workspace package the unit declares is reached through its
- * `node_modules`, which TypeScript treats as a library rather than a source of
- * the unit, and passes. One it does not declare is not linked there, so it
- * does not resolve.
- *
- * What `rootDir` does not see, and so what is held elsewhere: a symbolic link
- * inside the unit, which TypeScript does not follow to its real path for a
- * relative import — `pnpm architecture` refuses one before install — and a
- * declaration file (`.d.ts`) outside the unit, which is not a source and is
- * held by review. Neither is bundled unchecked: see `build.mjs`.
+ * Then every file in the program — every source, every module it resolved,
+ * JSON included, every declaration file — is followed to its real path and
+ * checked against the same allow-list as the build (`allow-list.mjs`): the
+ * unit, the packages it declares, and npm. That catches what `rootDir` does
+ * not: TypeScript takes any path through a `node_modules` directory for a
+ * library and exempts it from `rootDir`, and it never applies `rootDir` to
+ * declaration or JSON files, and does not follow a symbolic link to where it
+ * leads.
  *
  * Diagnostics go to stderr; the exit status is 1 if any unit fails.
  *
  *   node scripts/boundary/typecheck.mjs [root]   typecheck root's units, or this repository's
  */
 import { readdirSync, realpathSync } from "node:fs"
-import { dirname, join, resolve } from "node:path"
+import { dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 import ts from "typescript"
 
-import { units } from "./units.mjs"
+import { moduleRefusal } from "./allow-list.mjs"
+import { declaredPackages, units } from "./units.mjs"
 
 const sources = /\.(?:[cm]?[jt]s|[jt]sx)$/
 
@@ -81,11 +80,20 @@ export function typecheckUnit(root, unit) {
     ...config.errors.filter((d) => d.code !== 18003), // "no inputs": the files are ours
     ...ts.getPreEmitDiagnostics(program),
   ]
-  return ts.formatDiagnostics(diagnostics, host)
+  const declared = declaredPackages(root, unit)
+  const refusals = program
+    .getSourceFiles()
+    .map((file) => relative(root, realpathSync(file.fileName)).split(sep).join("/"))
+    .flatMap((path) => {
+      const why = moduleRefusal(path, unit, declared)
+      return why === null ? [] : [`${unit}: its program uses ${path}, ${why}\n`]
+    })
+  return ts.formatDiagnostics(diagnostics, host) + refusals.join("")
 }
 
 /** The units under `root` that fail to typecheck, after printing why. */
-export function typecheckAll(root) {
+export function typecheckAll(given) {
+  const root = realpathSync(given)
   const failed = []
   for (const unit of units(root)) {
     const report = typecheckUnit(root, unit)

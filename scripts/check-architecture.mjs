@@ -27,9 +27,10 @@ import {
 const skipped = new Set(["node_modules", "dist"])
 
 /**
- * Every symbolic link under `directory`, not followed. TypeScript does not
- * follow one to its real path for a relative import, so a link in a unit
- * would let `rootDir` pass a file in another (scripts/boundary/typecheck.mjs).
+ * Every symbolic link under `directory`, not followed. The build copies a
+ * unit into its stage links and all, and a link that leads back into the
+ * repository could carry an asset or a stylesheet there, outside the module
+ * graph the build checks (scripts/boundary/build.mjs).
  */
 function links(directory, atUnitRoot = true) {
   const found = []

@@ -10,14 +10,17 @@ import {
   workspaceViolations,
 } from "./layout.mjs"
 
-const pinned = 'packages:\n  - "packages/*"\n  - "extensions/*"\n'
+const pinned =
+  'packages:\n  - "packages/*"\n  - "extensions/*"\nhoistWorkspacePackages: false\n'
 
 test("the pinned workspace passes, with the settings that move nothing", () => {
   assert.deepEqual(workspaceViolations(pinned), [])
   const withSettings = `# a comment\n${pinned}\nallowBuilds:\n  esbuild: true\n\nverifyDepsBeforeRun: false\n`
   assert.deepEqual(workspaceViolations(withSettings), [])
   assert.deepEqual(
-    workspaceViolations("packages:\n  - packages/*\n  - 'extensions/*'\n"),
+    workspaceViolations(
+      "packages:\n  - packages/*\n  - 'extensions/*'\nhoistWorkspacePackages: false\n",
+    ),
     [],
   )
 })
@@ -54,7 +57,8 @@ test("every setting that moves an install or a link is refused, one by one", () 
 test("the pinned workspace passes with CRLF line endings and trailing comments", () => {
   const text =
     'packages:\r\n  - "packages/*" # each package\r\n  - "extensions/*"\r\n' +
-    "allowBuilds:\r\n  esbuild: true # vitest needs it\r\nverifyDepsBeforeRun: false\r\n"
+    "allowBuilds:\r\n  esbuild: true # vitest needs it\r\nverifyDepsBeforeRun: false\r\n" +
+    "hoistWorkspacePackages: false # keep extensions out of the store\r\n"
   assert.deepEqual(workspaceViolations(text), [])
 })
 
@@ -63,24 +67,24 @@ test("a line of any other YAML shape is refused, one by one", () => {
     [
       "? overrides\n:\n  a: link:./extensions/notes",
       [
-        "line 4 is not a setting this layout allows",
         "line 5 is not a setting this layout allows",
-        "line 6 is not a line this layout allows under no key",
+        "line 6 is not a setting this layout allows",
+        "line 7 is not a line this layout allows under no key",
       ],
     ],
     [
       "? nodeLinker\n: hoisted",
       [
-        "line 4 is not a setting this layout allows",
         "line 5 is not a setting this layout allows",
+        "line 6 is not a setting this layout allows",
       ],
     ],
-    ["---", ["line 4 is not a setting this layout allows"]],
-    ["...", ["line 4 is not a setting this layout allows"]],
-    ["%YAML 1.2", ["line 4 is not a setting this layout allows"]],
-    ["{nodeLinker: hoisted}", ["line 4 is not a setting this layout allows"]],
-    ["&a nodeLinker: hoisted", ["line 4 is not a setting this layout allows"]],
-    ["*a : x", ["line 4 is not a setting this layout allows"]],
+    ["---", ["line 5 is not a setting this layout allows"]],
+    ["...", ["line 5 is not a setting this layout allows"]],
+    ["%YAML 1.2", ["line 5 is not a setting this layout allows"]],
+    ["{nodeLinker: hoisted}", ["line 5 is not a setting this layout allows"]],
+    ["&a nodeLinker: hoisted", ["line 5 is not a setting this layout allows"]],
+    ["*a : x", ["line 5 is not a setting this layout allows"]],
     [
       "allowBuilds: {esbuild: true}",
       ["allowBuilds is written as `<package>: true|false` lines"],
@@ -88,8 +92,8 @@ test("a line of any other YAML shape is refused, one by one", () => {
     [
       "allowBuilds:\n  x:\n    nodeLinker: hoisted",
       [
-        "line 5 is not a line this layout allows under allowBuilds",
         "line 6 is not a line this layout allows under allowBuilds",
+        "line 7 is not a line this layout allows under allowBuilds",
       ],
     ],
     ["verifyDepsBeforeRun: maybe", ["verifyDepsBeforeRun is true or false"]],
@@ -102,6 +106,16 @@ test("a line of any other YAML shape is refused, one by one", () => {
   }
 })
 
+test("hoistWorkspacePackages must be there, and false", () => {
+  const globs = 'packages:\n  - "packages/*"\n  - "extensions/*"\n'
+  assert.deepEqual(workspaceViolations(globs), [
+    "hoistWorkspacePackages: false is required",
+  ])
+  assert.deepEqual(workspaceViolations(`${globs}hoistWorkspacePackages: true\n`), [
+    "hoistWorkspacePackages is false",
+  ])
+})
+
 test("any other set of workspace globs is refused", () => {
   for (const globs of [
     ["packages/*"],
@@ -110,14 +124,19 @@ test("any other set of workspace globs is refused", () => {
     ["packages/**", "extensions/*"],
     ["extensions/*", "packages/*"],
   ]) {
-    const text = `packages:\n${globs.map((glob) => `  - "${glob}"`).join("\n")}\n`
+    const text = `packages:\n${globs.map((glob) => `  - "${glob}"`).join("\n")}\nhoistWorkspacePackages: false\n`
     assert.equal(workspaceViolations(text).length, 1, globs.join(" "))
     assert.match(workspaceViolations(text)[0], /^packages is .*, not exactly/)
   }
-  assert.deepEqual(workspaceViolations('packages: ["packages/*", "extensions/*"]\n'), [
-    "packages is written as a list of `- glob` lines",
-    'packages is [], not exactly ["packages/*","extensions/*"]',
-  ])
+  assert.deepEqual(
+    workspaceViolations(
+      'packages: ["packages/*", "extensions/*"]\nhoistWorkspacePackages: false\n',
+    ),
+    [
+      "packages is written as a list of `- glob` lines",
+      'packages is [], not exactly ["packages/*","extensions/*"]',
+    ],
+  )
 })
 
 test("a dependency may be workspace:*, a semver range, or a dist-tag", () => {

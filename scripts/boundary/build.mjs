@@ -13,24 +13,31 @@
  *   configuration's own imports — can only find what is there. A sibling
  *   extension, an undeclared package, and a file at the repository's root
  *   are not there, so the build fails to find them, however they are spelled
- *   and whichever part of the toolchain looks.
+ *   and whichever part of the toolchain looks. The store holds no workspace
+ *   project, because the pinned layout requires `hoistWorkspacePackages:
+ *   false` (`scripts/architecture/layout.mjs`).
  * - **The module graph.** Every module each environment's bundler loaded,
  *   and each worker's, is followed to its real path and checked against the
  *   allow-list. That catches what the stage cannot: a module reached by an
  *   absolute path or through a link that leads back into the repository. A
- *   module that is neither a virtual one (`\0…`) nor a file on disk is
- *   refused, since where it came from cannot be checked.
+ *   module named rather than pathed — a server build's `node:fs` or npm
+ *   dependency, left as an import — passes, and so does a virtual one
+ *   (`\0…`). Any other module that is not a file on disk, such as an import
+ *   left in the output by its path, is refused, since where it leads cannot
+ *   be checked.
  *
- * Not held here, and so held by review: a file outside the module graph — an
- * asset, a stylesheet, an `.env` file — named by an absolute path into the
- * repository; and anything the Vite configuration's own code does, which runs
- * with Node's full access. A symbolic link in a unit is refused before install
+ * Not held here: what the Vite configuration imports, which is bundled before
+ * the build and so is in no module graph — `typecheck.mjs` checks it, with
+ * every other file of the unit. Held by review: a file outside the module
+ * graph — an asset, a stylesheet, an `.env` file — named by an absolute path
+ * into the repository; and anything the Vite configuration's own code does
+ * when it runs, with Node's full access. A symbolic link in a unit is refused before install
  * (`scripts/check-architecture.mjs`), and copied into the stage as it is.
  *
  * An extension is built from its `vite.config.ts`, with its folder in the
  * stage as the working directory, so it must declare what that file imports,
  * Vite included. Its output is its `dist`, copied back only when the build
- * passes; a refused build leaves none. One without `vite.config.ts` has
+ * passes; a refused build leaves none, and a build that writes no `dist` fails. One without `vite.config.ts` has
  * nothing to build and is said so on stderr.
  *
  * Refusals, and builds that fail, are printed as `unit: what` lines on
@@ -97,6 +104,23 @@ const moduleGraph = (check) => ({
 })
 
 /**
+ * Whether a module id is a name rather than a path: a Node built-in, or an
+ * npm package a server build leaves as an import, resolved where the
+ * extension is installed. (A plugin's virtual module may be named so too;
+ * plugins come from the configuration, which review holds.)
+ */
+const isName = (id) =>
+  id.startsWith("node:") ||
+  !(id.startsWith(".") || isAbsolute(id) || /^[a-z]+:/i.test(id))
+
+/** One line, so each failure stays one `unit: what` line. */
+const oneLine = (error) =>
+  stripVTControlCharacters(String(error?.message ?? error))
+    .replace(/^\s*Build failed with \d+ errors?:/, "")
+    .replace(/\s+/g, " ")
+    .trim()
+
+/**
  * Builds `unit` and returns one line for each module its build may not use,
  * and one if the build failed.
  *
@@ -104,73 +128,79 @@ const moduleGraph = (check) => ({
  * @param {string} unit `extensions/<name>`
  */
 export async function buildExtension(root, unit) {
-  const declared = declaredPackages(root, unit)
-  const staged = stage(root, [unit, ...declared])
-  const refused = new Map()
-  const check = (id) => {
-    if (id.startsWith("\0")) return
-    const file = id.split("?")[0]
-    let real = null
-    try {
-      if (isAbsolute(file)) real = realpathSync(file)
-    } catch {
-      // not on disk: refused below
-    }
-    if (real === null) {
-      refused.set(
-        id,
-        "which is not a file on disk, so where it comes from cannot be checked",
-      )
-      return
-    }
-    const inStage = real === staged || real.startsWith(`${staged}${sep}`)
-    const at = relative(inStage ? staged : root, real)
-      .split(sep)
-      .join("/")
-    const why = moduleRefusal(at, unit, declared)
-    if (why !== null && !refused.has(at)) refused.set(at, why)
-  }
-  const boundary = {
-    ...moduleGraph(check),
-    // Workers are built separately, with `worker.plugins` only.
-    config(config) {
-      const own = config.worker?.plugins
-      return {
-        worker: { plugins: () => [...(own ? own() : []), moduleGraph(check)] },
-      }
-    },
-  }
-
   const failures = []
-  const directory = join(staged, unit)
+  const refused = new Map()
   const previous = process.cwd()
+  let staged = null
   try {
-    process.chdir(directory)
-    const builder = await createBuilder({
-      configFile: join(directory, configFile),
-      logLevel: "warn",
-      plugins: [boundary],
-    })
-    await builder.buildApp()
+    const declared = declaredPackages(root, unit)
+    staged = stage(root, [unit, ...declared])
+    const check = (id) => {
+      if (id.startsWith("\0") || isName(id)) return
+      const file = id.split("?")[0]
+      let real = null
+      try {
+        if (isAbsolute(file)) real = realpathSync(file)
+      } catch {
+        // not on disk: refused below
+      }
+      if (real === null) {
+        refused.set(
+          id,
+          "which is not a file on disk, so where it comes from cannot be checked",
+        )
+        return
+      }
+      const inStage = real === staged || real.startsWith(`${staged}${sep}`)
+      const at = relative(inStage ? staged : root, real)
+        .split(sep)
+        .join("/")
+      const why = moduleRefusal(at, unit, declared)
+      if (why !== null && !refused.has(at)) refused.set(at, why)
+    }
+    const boundary = {
+      ...moduleGraph(check),
+      // Workers are built separately, with `worker.plugins` only.
+      config(config) {
+        const own = config.worker?.plugins
+        return {
+          worker: { plugins: () => [...(own ? own() : []), moduleGraph(check)] },
+        }
+      },
+    }
+
+    const directory = join(staged, unit)
+    try {
+      process.chdir(directory)
+      const builder = await createBuilder({
+        configFile: join(directory, configFile),
+        logLevel: "warn",
+        plugins: [boundary],
+      })
+      await builder.buildApp()
+    } catch (error) {
+      failures.push(`${unit}: the build failed: ${oneLine(error)}`)
+    }
+    for (const [path, why] of refused) {
+      failures.push(`${unit}: its build uses ${path}, ${why}`)
+    }
+    const built = join(root, unit, output)
+    rmSync(built, { recursive: true, force: true })
+    if (failures.length === 0) {
+      if (existsSync(join(directory, output))) {
+        cpSync(join(directory, output), built, { recursive: true })
+      } else {
+        failures.push(
+          `${unit}: its build wrote no ${output}, which is where its output goes`,
+        )
+      }
+    }
   } catch (error) {
-    // One line, so each failure stays one `unit: what` line.
-    const why = stripVTControlCharacters(String(error?.message ?? error))
-      .replace(/^\s*Build failed with \d+ errors?:/, "")
-      .replace(/\s+/g, " ")
-      .trim()
-    failures.push(`${unit}: the build failed: ${why}`)
+    failures.push(`${unit}: could not be built: ${oneLine(error)}`)
   } finally {
     process.chdir(previous)
+    if (staged !== null) rmSync(staged, { recursive: true, force: true })
   }
-  for (const [path, why] of refused) {
-    failures.push(`${unit}: its build uses ${path}, ${why}`)
-  }
-  const built = join(root, unit, output)
-  rmSync(built, { recursive: true, force: true })
-  if (failures.length === 0 && existsSync(join(directory, output))) {
-    cpSync(join(directory, output), built, { recursive: true })
-  }
-  rmSync(staged, { recursive: true, force: true })
   return failures
 }
 

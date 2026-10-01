@@ -68,12 +68,16 @@ review:
 
 - **Before install, the install layout is pinned** (`scripts/architecture/`):
   `pnpm-workspace.yaml`, the manifests' keys and dependency specs, and the
-  files pnpm reads settings from are held to allow-lists, and no dependency
-  names an extension, so pnpm links into a unit exactly the packages it
-  declares. No symbolic link sits in a unit.
-- **Typecheck** runs `tsc` on each package and extension separately, with
-  `rootDir` set to its folder on the command line, so `tsc` refuses any source
-  file outside it.
+  files pnpm reads settings from are held to allow-lists, no dependency
+  names an extension, and `hoistWorkspacePackages` is off, so pnpm links a
+  workspace project only into the units that declare it — never into its
+  store. No symbolic link sits in a unit.
+- **Typecheck** checks each package and extension as one TypeScript program
+  of every file in its folder, with `rootDir` forced to that folder, so
+  TypeScript refuses any source outside it; then follows every file the
+  program resolved to its real path and checks it against the allow-list,
+  which catches what `rootDir` exempts (paths through `node_modules`, JSON,
+  declaration files, links).
 - **Build** runs each extension's Vite build in a staged copy of the
   repository that holds only what the extension may use — itself, the
   packages it declares, pnpm's store, and the shared compiler settings — so
@@ -150,9 +154,9 @@ into it — is refused by the pinned layout. Publishing it is nessa_ui's work.
 - The standards are one link away rather than one directory away, and a change
   to them for extensions is a nessa-agent pull request.
 - The boundary holds in typecheck and build. What none of the three checks
-  sees — a type-only import of another extension's declaration file, a
-  non-module file named by an absolute path, what the Vite configuration's own
-  code does — is named in their module comments and held by review.
+  sees — a non-module file named by an absolute path into the repository,
+  what the Vite configuration's own code does when it runs — is named in their
+  module comments and held by review.
 - A build sees only its extension, its declared packages, npm, and the shared
   compiler settings, so it must declare what its configuration imports, and a
   configuration shared from the repository's root is not there to use.

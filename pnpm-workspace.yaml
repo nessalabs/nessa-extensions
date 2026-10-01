@@ -10,3 +10,8 @@ allowBuilds:
 # one, and CI's architecture step — which runs before `pnpm install` to show the
 # check needs nothing but Node — would install first and show nothing.
 verifyDepsBeforeRun: false
+
+# Link a workspace project only where a manifest names it. Left to its default,
+# pnpm also links every one, each extension included, into
+# node_modules/.pnpm/node_modules, where a path through the store reaches it.
+hoistWorkspacePackages: false

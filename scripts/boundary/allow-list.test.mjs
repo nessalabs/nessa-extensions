@@ -18,7 +18,7 @@ test("its own folder, a declared package, and an npm package are allowed", () =>
 test("a folder whose name only begins with an allowed one is refused", () => {
   assert.equal(
     refusal("extensions/notes-extra/x.ts"),
-    "which is in extensions/notes-extra; extensions never import one another",
+    "which is in extensions/notes-extra; nothing imports an extension",
   )
   assert.equal(
     refusal("packages/common-ui/x.ts"),
@@ -29,7 +29,7 @@ test("a folder whose name only begins with an allowed one is refused", () => {
 test("a node_modules directory inside another unit is still that unit's", () => {
   assert.equal(
     refusal("extensions/experiments/src/node_modules/leak.ts"),
-    "which is in extensions/experiments; extensions never import one another",
+    "which is in extensions/experiments; nothing imports an extension",
   )
   assert.equal(
     refusal("packages/app-shell/node_modules/x/index.js"),
@@ -40,7 +40,7 @@ test("a node_modules directory inside another unit is still that unit's", () => 
 test("everything else is refused, saying where it is", () => {
   assert.equal(
     refusal("extensions/experiments/x.ts"),
-    "which is in extensions/experiments; extensions never import one another",
+    "which is in extensions/experiments; nothing imports an extension",
   )
   assert.equal(
     refusal("packages/app-shell/src/index.ts"),

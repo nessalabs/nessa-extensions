@@ -22,6 +22,8 @@ import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 
+import { buildExtension } from "./build.mjs"
+
 const script = (name) => fileURLToPath(new URL(`./${name}`, import.meta.url))
 
 const manifest = (name, fields = {}) =>
@@ -135,8 +137,11 @@ function repository(t, files = {}, extra = {}) {
  * Runs a guard on `root`. `stderr` is what it printed, less the line saying
  * the sibling extension has nothing to build.
  */
-function run(name, root) {
-  const result = spawnSync(process.execPath, [script(name), root], { encoding: "utf8" })
+function run(name, root, env = {}) {
+  const result = spawnSync(process.execPath, [script(name), root], {
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  })
   const quiet = "extensions/notes: no vite.config.ts, so nothing to build\n"
   return { status: result.status, stderr: result.stderr.replace(quiet, "") }
 }
@@ -151,7 +156,7 @@ function built(root) {
     .join("\n")
 }
 
-const sibling = "which is in extensions/notes; extensions never import one another"
+const sibling = "which is in extensions/notes; nothing imports an extension"
 const refused = (path, why = sibling) =>
   `extensions/experiments: its build uses ${path}, ${why}`
 
@@ -429,11 +434,19 @@ test("a workspace package the extension does not declare is refused", (t) => {
     assert.match(typecheck.stderr, /Cannot find module '@nessalabs\/common'/)
     failsFinding(root, `failed to resolve import "@nessalabs/common"`)
   })
-  t.test("linked where another manifest put it, it is not in the build", (t) => {
+  t.test("linked where another manifest put it, neither check takes it", (t) => {
     const root = repository(t, without({}), {
       "extensions/experiments/node_modules/@nessalabs/common": null,
       "node_modules/@nessalabs/common": "../../packages/common",
     })
+    const typecheck = run("typecheck.mjs", root)
+    assert.equal(typecheck.status, 1)
+    assert.ok(
+      typecheck.stderr.includes(
+        "extensions/experiments: its program uses packages/common/src/index.ts, which is in packages/common, and extensions/experiments does not declare it",
+      ),
+      typecheck.stderr,
+    )
     failsFinding(root, `failed to resolve import "@nessalabs/common"`)
   })
   t.test("named only as a peer or optional dependency, it is not declared", (t) => {
@@ -467,6 +480,14 @@ test("a symbolic link out of the folder is refused where it leads", (t) => {
         "extensions/experiments/src/own.ts": `export { secret as own } from "./borrowed/index.ts"\n`,
       },
       { "extensions/experiments/src/borrowed": "../../notes/src" },
+    )
+    const typecheck = run("typecheck.mjs", root)
+    assert.equal(typecheck.status, 1)
+    assert.ok(
+      typecheck.stderr.includes(
+        "extensions/experiments: its program uses extensions/notes/src/index.ts, which is in extensions/notes; nothing imports an extension",
+      ),
+      typecheck.stderr,
     )
     failsFinding(root, "./borrowed/index.ts")
   })
@@ -529,4 +550,151 @@ test("a unit's tsconfig cannot narrow what is typechecked or widen where it reac
       outsideRootDir(root, "extensions/notes/src/types.ts")
     })
   }
+})
+
+test("a path through node_modules or to JSON does not slip past typecheck", (t) => {
+  const program = (path) =>
+    `extensions/experiments: its program uses ${path}, which is in extensions/notes; nothing imports an extension`
+  t.test("through a store that links every workspace project", (t) => {
+    const root = repository(
+      t,
+      {
+        "extensions/experiments/src/leak.test.ts": `export { secret } from "../../../node_modules/.pnpm/node_modules/@nessalabs/notes/src/index.ts"\n`,
+      },
+      {
+        "node_modules/.pnpm/node_modules/@nessalabs/notes":
+          "../../../../extensions/notes",
+      },
+    )
+    const typecheck = run("typecheck.mjs", root)
+    assert.equal(typecheck.status, 1)
+    assert.ok(
+      typecheck.stderr.includes(program("extensions/notes/src/index.ts")),
+      typecheck.stderr,
+    )
+  })
+  t.test("a sibling's JSON", (t) => {
+    const root = repository(t, {
+      "tsconfig.base.json": JSON.stringify({
+        ...JSON.parse(legitimate["tsconfig.base.json"]),
+        compilerOptions: {
+          ...JSON.parse(legitimate["tsconfig.base.json"]).compilerOptions,
+          resolveJsonModule: true,
+        },
+      }),
+      "extensions/notes/assets/d.json": `{ "secret": "sibling secret" }\n`,
+      "extensions/experiments/src/leak.test.ts": `export { default } from "../../notes/assets/d.json"\n`,
+    })
+    const typecheck = run("typecheck.mjs", root)
+    assert.equal(typecheck.status, 1)
+    assert.ok(
+      typecheck.stderr.includes(program("extensions/notes/assets/d.json")),
+      typecheck.stderr,
+    )
+  })
+  t.test("a sibling's declaration file", (t) => {
+    const root = repository(t, {
+      "extensions/notes/src/types.d.ts": `export type Secret = string\n`,
+      "extensions/experiments/src/own.ts": `import type { Secret } from "../../notes/src/types.d.ts"\nexport const own: Secret = "x"\n`,
+    })
+    const typecheck = run("typecheck.mjs", root)
+    assert.equal(typecheck.status, 1)
+    assert.ok(
+      typecheck.stderr.includes(program("extensions/notes/src/types.d.ts")),
+      typecheck.stderr,
+    )
+  })
+})
+
+test("a dist or node_modules deeper in a unit is typechecked like any source", (t) => {
+  const root = repository(t, {
+    "extensions/experiments/src/dist/leak.ts": `export { secret } from "../../../notes/src/index.ts"\n`,
+  })
+  outsideRootDir(root, "extensions/notes/src/index.ts")
+})
+
+test("a server build beside the app may leave Node built-ins and npm packages as imports", (t) => {
+  const root = repository(t, {
+    "extensions/experiments/vite.config.ts": [
+      `export default {`,
+      `  builder: {},`,
+      `  environments: {`,
+      `    client: { build: { outDir: "dist/app" } },`,
+      `    ssr: { build: { outDir: "dist/server", ssr: "server/index.ts" } },`,
+      `  },`,
+      `}`,
+    ].join("\n"),
+    "extensions/experiments/server/index.ts": `import { readFileSync } from "node:fs"\nimport pad from "left-pad"\nexport const x = [readFileSync, pad]\n`,
+  })
+  const build = run("build.mjs", root)
+  assert.equal(build.status, 0, build.stderr)
+  assert.match(built(root), /node:fs/)
+})
+
+test("an import left in the output by its path is still checked", (t) => {
+  const root = repository(t, {
+    "extensions/experiments/vite.config.ts": [
+      `export default {`,
+      `  builder: {},`,
+      `  environments: {`,
+      `    ssr: { build: { outDir: "dist", ssr: "server/index.ts", rolldownOptions: { external: (id) => id.includes("notes") } } },`,
+      `  },`,
+      `}`,
+    ].join("\n"),
+    "extensions/experiments/server/index.ts": `export { secret } from "../../notes/src/index.ts"\n`,
+  })
+  const build = run("build.mjs", root)
+  assert.equal(build.status, 1)
+  assert.match(
+    build.stderr,
+    /its build uses \S*notes\/src\/index\.ts, which is not a file on disk/,
+  )
+  assert.equal(built(root), "")
+})
+
+test("a build that writes its output anywhere but dist fails", (t) => {
+  const root = repository(t, {
+    "extensions/experiments/vite.config.ts": `export default { build: { outDir: "out" } }\n`,
+  })
+  const build = run("build.mjs", root)
+  assert.equal(build.status, 1)
+  assert.equal(
+    build.stderr,
+    "extensions/experiments: its build wrote no dist, which is where its output goes\n",
+  )
+})
+
+test("the stage is removed, after a build that passes or one refused", (t) => {
+  const temp = realpathSync(mkdtempSync(join(tmpdir(), "nessa-extensions-temp-")))
+  t.after(() => rmSync(temp, { recursive: true, force: true }))
+  const env = { TMPDIR: temp, TMP: temp, TEMP: temp }
+  assert.equal(run("build.mjs", repository(t), env).status, 0)
+  const refusedRoot = repository(t, {
+    "extensions/experiments/src/own.ts": `export { secret as own } from "../../notes/src/index.ts"\n`,
+  })
+  assert.equal(run("build.mjs", refusedRoot, env).status, 1)
+  assert.deepEqual(
+    readdirSync(temp).filter((name) => name.startsWith("nessa-extensions-build-")),
+    [],
+  )
+})
+
+test("a build that cannot start says so in one line, and leaves the working directory", async (t) => {
+  const root = realpathSync(
+    repository(t, { "extensions/experiments/package.json": "{broken" }),
+  )
+  const before = process.cwd()
+  const failures = await buildExtension(root, "extensions/experiments")
+  assert.equal(process.cwd(), before)
+  assert.equal(failures.length, 1)
+  assert.match(failures[0], /^extensions\/experiments: could not be built: .*JSON/)
+  const refusedRoot = realpathSync(
+    repository(t, {
+      "extensions/experiments/src/own.ts": (real) =>
+        `export { secret as own } from "${real}/extensions/notes/src/index.ts"\n`,
+    }),
+  )
+  const refusals = await buildExtension(refusedRoot, "extensions/experiments")
+  assert.equal(process.cwd(), before)
+  assert.equal(refusals.length, 1)
 })

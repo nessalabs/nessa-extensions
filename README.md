@@ -131,7 +131,7 @@ pull request and on `main`; run the ones your change touches before pushing.
 | --- | --- |
 | `pnpm format:check` | Prettier |
 | `pnpm lint` | ESLint, with typescript-eslint |
-| `pnpm typecheck` | TypeScript, strict, each package and extension on its own with its folder as `rootDir` ([`scripts/boundary/typecheck.mjs`](scripts/boundary/typecheck.mjs)) |
+| `pnpm typecheck` | TypeScript, strict, each package and extension on its own: every file in its folder, `rootDir` its folder, and every file it resolves within what it may use ([`scripts/boundary/typecheck.mjs`](scripts/boundary/typecheck.mjs)) |
 | `pnpm build` | Builds each extension with Vite, in a copy of the repository holding only what it may use, and refuses any build with a module from elsewhere ([`scripts/boundary/build.mjs`](scripts/boundary/build.mjs)) |
 | `pnpm test` | Vitest, over every package and extension, then the guards' own tests |
 | `pnpm architecture` | The pinned install layout and the dependencies in it ([`scripts/check-architecture.mjs`](scripts/check-architecture.mjs)), after its own tests. Bare Node: CI runs it before installing anything |

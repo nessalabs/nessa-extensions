@@ -10,7 +10,8 @@ import { checkRepository } from "../check-architecture.mjs"
 
 const script = fileURLToPath(new URL("../check-architecture.mjs", import.meta.url))
 
-const pinnedWorkspace = 'packages:\n  - "packages/*"\n  - "extensions/*"\n'
+const pinnedWorkspace =
+  'packages:\n  - "packages/*"\n  - "extensions/*"\nhoistWorkspacePackages: false\n'
 
 /**
  * A repository on disk made of `files`, over a pinned `pnpm-workspace.yaml`
@@ -53,7 +54,7 @@ test("a workspace setting off the list fails", (t) => {
     "pnpm-workspace.yaml": `${pinnedWorkspace}nodeLinker: hoisted\n`,
   })
   assert.deepEqual(checkRepository(root), [
-    "pnpm-workspace.yaml: nodeLinker is not one of packages, allowBuilds, verifyDepsBeforeRun",
+    "pnpm-workspace.yaml: nodeLinker is not one of packages, allowBuilds, verifyDepsBeforeRun, hoistWorkspacePackages",
   ])
 })
 
