@@ -1017,3 +1017,90 @@ test("a dependency pnpm installed from a sibling's path is refused, not taken fo
   )
   assert.equal(built(root), "")
 })
+
+test("JavaScript under a node_modules path the configuration imports is judged too", (t) => {
+  const root = repository(t, {
+    "extensions/notes/vendor/node_modules/evil/index.js": `export default {}\n`,
+    "extensions/experiments/vite.config.ts": (real) =>
+      `// @ts-expect-error untyped\nimport evil from "${real}/extensions/notes/vendor/node_modules/evil/index.js"\nexport default { plugins: [evil] }\n`,
+  })
+  const typecheck = run("typecheck.mjs", root)
+  assert.equal(typecheck.status, 1)
+  assert.ok(
+    typecheck.stderr.includes(
+      `extensions/experiments: its program uses extensions/notes/vendor/node_modules/evil/index.js, ${sibling}`,
+    ),
+    typecheck.stderr,
+  )
+})
+
+test("an external left as a file: URL is judged as the file it names", (t) => {
+  const root = repository(t, {
+    "extensions/experiments/vite.config.ts": [
+      `export default {`,
+      `  builder: {},`,
+      `  environments: {`,
+      `    ssr: { build: { outDir: "dist", ssr: "server/index.ts", rolldownOptions: { external: (id) => id.startsWith("file:") } } },`,
+      `  },`,
+      `}`,
+    ].join("\n"),
+    "extensions/experiments/server/index.ts": (real) =>
+      `export { secret } from "file://${real}/extensions/notes/src/index.ts"\n`,
+  })
+  const build = run("build.mjs", root)
+  assert.equal(build.status, 1)
+  assert.ok(build.stderr.includes(refused("extensions/notes/src/index.ts")), build.stderr)
+  assert.equal(built(root), "")
+})
+
+test("a scoped link in a unit's node_modules is judged where it leads", (t) => {
+  const root = repository(
+    t,
+    {
+      "extensions/notes/src/b.css": `.sibling-secret { color: red }\n`,
+      "extensions/experiments/src/style.css": `@import "@evil/sib/src/b.css";\n`,
+    },
+    { "extensions/experiments/node_modules/@evil/sib": "../../../notes" },
+  )
+  const build = run("build.mjs", root)
+  assert.equal(build.status, 1)
+  assert.ok(
+    build.stderr.includes(
+      `its build uses extensions/experiments/node_modules/@evil/sib, which links to extensions/notes, ${sibling}`,
+    ),
+    build.stderr,
+  )
+  assert.equal(built(root), "")
+})
+
+test("a link in a unit's node_modules that leads nowhere reads nothing, and passes", (t) => {
+  const root = repository(
+    t,
+    {},
+    { "extensions/experiments/node_modules/gone": "../nowhere" },
+  )
+  const build = run("build.mjs", root)
+  assert.equal(build.status, 0, build.stderr)
+})
+
+test("an external left as a URL of another scheme is refused, not taken for a name", (t) => {
+  const root = repository(t, {
+    "extensions/experiments/vite.config.ts": [
+      `export default {`,
+      `  builder: {},`,
+      `  environments: {`,
+      `    ssr: { build: { outDir: "dist", ssr: "server/index.ts", rolldownOptions: { external: (id) => id.startsWith("https:") } } },`,
+      `  },`,
+      `}`,
+    ].join("\n"),
+    "extensions/experiments/server/index.ts": `export { x } from "https://example.com/x.js"\n`,
+  })
+  const build = run("build.mjs", root)
+  assert.equal(build.status, 1)
+  assert.ok(
+    build.stderr.includes(
+      "its build uses https://example.com/x.js, which is not a file on disk",
+    ),
+    build.stderr,
+  )
+})

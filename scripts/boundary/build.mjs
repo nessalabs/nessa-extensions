@@ -88,7 +88,9 @@ const sharedFiles = ["tsconfig.base.json"]
  * Links are copied as they are, so pnpm's relative ones resolve in the stage.
  */
 function stage(root, paths) {
-  const directory = realpathSync(mkdtempSync(join(tmpdir(), "nessa-extensions-build-")))
+  const directory = realpathSync.native(
+    mkdtempSync(join(tmpdir(), "nessa-extensions-build-")),
+  )
   for (const path of paths) {
     const from = join(root, path)
     cpSync(from, join(directory, path), { recursive: true, verbatimSymlinks: true })
@@ -223,7 +225,7 @@ export async function buildExtension(root, unit) {
 
 /** Builds every extension under `root`; every failure, as `unit: what` lines. */
 export async function buildAll(root) {
-  const real = realpathSync(root)
+  const real = realpathSync.native(root)
   const failures = []
   for (const unit of units(real).filter((path) => path.startsWith("extensions/"))) {
     if (!existsSync(join(real, unit, configFile))) {

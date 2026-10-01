@@ -3,7 +3,6 @@ import { test } from "node:test"
 
 import {
   allowedSpec,
-  installScripts,
   manifestKeys,
   manifestViolations,
   workspaceKeys,
@@ -242,7 +241,15 @@ test("publishConfig may say where to publish, and nothing else", () => {
 })
 
 test("a script pnpm runs on install is refused, one by one", () => {
-  for (const name of installScripts) {
+  for (const name of [
+    "preinstall",
+    "install",
+    "postinstall",
+    "preprepare",
+    "prepare",
+    "postprepare",
+    "prepublish",
+  ]) {
     assert.deepEqual(
       manifestViolations({ scripts: { [name]: "true", test: "vitest" } }, new Set()),
       [`scripts.${name} runs on install, and could link anything`],
@@ -266,6 +273,9 @@ test("packageManager names a pnpm version and nothing else", () => {
     "yarn@4.0.0",
     "pnpm@https://example.com/pnpm.tgz",
     "pnpm@latest",
+    "pnpm@11.9.0-evil",
+    "pnpm@11.9.0+sha256.zz",
+    "pnpm@11.9.0 && curl x",
   ]) {
     assert.equal(
       manifestViolations({ packageManager: value }, new Set()).length,

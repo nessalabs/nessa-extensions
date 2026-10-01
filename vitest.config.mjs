@@ -9,6 +9,8 @@ import { unitProjects } from "./scripts/boundary/vitest.mjs"
 // use (scripts/boundary/vitest.mjs).
 export default defineConfig({
   test: {
-    projects: unitProjects(realpathSync(fileURLToPath(new URL(".", import.meta.url)))),
+    projects: unitProjects(
+      realpathSync.native(fileURLToPath(new URL(".", import.meta.url))),
+    ),
   },
 })

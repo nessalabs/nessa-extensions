@@ -89,19 +89,25 @@ export function typecheckUnit(root, unit) {
     ...ts.getPreEmitDiagnostics(program),
   ]
   const declared = declaredPackages(root, unit)
-  const refusals = program
-    .getSourceFiles()
-    .map((file) => repositoryPath(root, realOrNull(file.fileName) ?? file.fileName))
-    .flatMap((path) => {
-      const why = moduleRefusal(path, unit, declared)
-      return why === null ? [] : [`${unit}: its program uses ${path}, ${why}\n`]
-    })
+  // What the program loaded, and every module it resolved: TypeScript
+  // resolves JavaScript under a node_modules path without loading it
+  // (maxNodeModuleJsDepth 0), so a configuration could import one unseen.
+  const loaded = new Set(program.getSourceFiles().map((file) => file.fileName))
+  program.forEachResolvedModule(({ resolvedModule }) => {
+    if (resolvedModule?.resolvedFileName) loaded.add(resolvedModule.resolvedFileName)
+  })
+  const refusals = [
+    ...new Set([...loaded].map((file) => repositoryPath(root, realOrNull(file) ?? file))),
+  ].flatMap((path) => {
+    const why = moduleRefusal(path, unit, declared)
+    return why === null ? [] : [`${unit}: its program uses ${path}, ${why}\n`]
+  })
   return ts.formatDiagnostics(diagnostics, host) + refusals.join("")
 }
 
 /** The units under `root` that fail to typecheck, after printing why. */
 export function typecheckAll(given) {
-  const root = realpathSync(given)
+  const root = realpathSync.native(given)
   const failed = []
   for (const unit of units(root)) {
     const report = typecheckUnit(root, unit)

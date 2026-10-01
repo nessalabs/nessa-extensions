@@ -163,7 +163,9 @@ into it — is refused by the pinned layout. Publishing it is nessa_ui's work.
   one that climbs out through a link; what the Vite configuration's code, or
   a test's, does with Node's full access when it runs; what Vitest leaves to
   Node under `node_modules`; the dev server — is named in their module
-  comments and held by review.
+  comments and held by review. Lint narrows the second: `createRequire`,
+  `process.getBuiltinModule` and `data:` imports are refused in every file of
+  a unit.
 - A build sees only its extension, its declared packages, npm, and the shared
   compiler settings, so it must declare what its configuration imports, and a
   configuration shared from the repository's root is not there to use.

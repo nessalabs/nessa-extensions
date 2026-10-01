@@ -22,6 +22,52 @@ export default tseslint.config(
     },
   },
   {
+    // Ways Node code reaches a file without the module graph seeing it, so
+    // without the boundary guard judging it (docs/adr/todo/1-extensions-repo.md).
+    // Held here for every file in a unit: source, tests, and vite.config.ts.
+    files: [
+      "packages/**/*.{ts,tsx,mts,cts,js,mjs,cjs}",
+      "extensions/**/*.{ts,tsx,mts,cts,js,mjs,cjs}",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: ["module", "node:module"].map((name) => ({
+            name,
+            importNames: ["createRequire"],
+            message: "createRequire loads a file the boundary guard never sees.",
+          })),
+        },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "MemberExpression[property.name='getBuiltinModule']",
+          message: "process.getBuiltinModule reaches Node past the boundary guard.",
+        },
+        {
+          selector: "ImportDeclaration[source.value=/^data:/i]",
+          message: "A data: import is code the boundary guard cannot place.",
+        },
+        {
+          selector:
+            ":matches(ExportAllDeclaration, ExportNamedDeclaration)[source.value=/^data:/i]",
+          message: "A data: import is code the boundary guard cannot place.",
+        },
+        {
+          selector: "ImportExpression[source.value=/^data:/i]",
+          message: "A data: import is code the boundary guard cannot place.",
+        },
+        {
+          selector:
+            "ImportExpression > TemplateLiteral.source[quasis.0.value.raw=/^data:/i]",
+          message: "A data: import is code the boundary guard cannot place.",
+        },
+      ],
+    },
+  },
+  {
     files: ["scripts/**/*.mjs", "*.mjs"],
     languageOptions: {
       globals: { ...globals.node },
