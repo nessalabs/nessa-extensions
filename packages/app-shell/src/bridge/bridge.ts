@@ -1,0 +1,576 @@
+/**
+ * The app's side of the MCP Apps bridge: one connection to the host that
+ * renders it, over a `Transport`.
+ *
+ * It owns the connection's lifecycle — the table "The connection" in this
+ * package's README, one test per row in `bridge.test.ts` — and the state an
+ * app renders from: the connection, the host context, and the tool call. It
+ * publishes that state as an immutable snapshot (`getState`, `subscribe`), the
+ * shape `useSyncExternalStore` reads.
+ *
+ * ```
+ *   app code ──calls──▶ Bridge ──send──▶ Transport ──postMessage──▶ host
+ *   app code ◀─state──  Bridge ◀─listen─ Transport ◀──────────────  host
+ * ```
+ *
+ * The host decides what it allows. The bridge refuses a call itself only where
+ * the standard makes the app check first: a display mode the app did not
+ * declare or the host does not offer. Every other refusal is the host's, and
+ * reaches the caller as a `BridgeError`.
+ */
+import {
+  errorCodes,
+  readEnvelope,
+  type JsonRpcMessage,
+  type RequestId,
+} from "../protocol/json-rpc.ts"
+import {
+  PROTOCOL_VERSION,
+  type CallToolResult,
+  type ContentBlock,
+  type DisplayMode,
+  type HostCapabilities,
+  type HostContext,
+  type Implementation,
+  type LogParams,
+  type ModelContextParams,
+  type OpenAiMessageOptions,
+  type ReadResourceResult,
+  type SizeParams,
+} from "../protocol/messages.ts"
+import {
+  narrowAcknowledgement,
+  narrowCallToolResult,
+  narrowDisplayModeResult,
+  narrowHostContext,
+  narrowInitializeResult,
+  narrowReadResourceResult,
+  narrowReason,
+  narrowToolArguments,
+  type Narrowed,
+} from "../protocol/narrow.ts"
+import type { Transport } from "../protocol/transport.ts"
+import {
+  BridgeError,
+  type BridgeFailure,
+  type ConnectionStatus,
+  type HostViolation,
+} from "./failures.ts"
+import { nextToolCall, type ToolCall, type ToolEvent } from "./tool-call.ts"
+
+/** Where the connection stands, with what each stage knows. */
+export type Connection =
+  | { status: "idle" }
+  | { status: "connecting" }
+  | { status: "connected"; host: Implementation; capabilities: HostCapabilities }
+  | {
+      status: "tearing-down"
+      host: Implementation
+      capabilities: HostCapabilities
+      reason?: string
+    }
+  | { status: "torn-down"; reason?: string }
+  | { status: "failed"; failure: BridgeFailure }
+  | { status: "closed" }
+
+/** Everything an app renders from. Replaced, never changed in place. */
+export interface BridgeState {
+  readonly connection: Connection
+  /** The host context so far: `{}` until connected, then merged with each change. */
+  readonly hostContext: HostContext
+  readonly toolCall: ToolCall
+}
+
+export interface BridgeOptions {
+  transport: Transport
+  /** The app's name and version, sent in `ui/initialize`. */
+  app: Implementation
+  /**
+   * The display modes the app supports, declared in `ui/initialize`. The
+   * standard has the app declare every mode it supports; `inline` alone if
+   * not given.
+   */
+  displayModes?: DisplayMode[]
+  /** Where host violations are reported. By default, `console.warn`. */
+  onViolation?: (violation: HostViolation) => void
+}
+
+/** A call's options: a signal that abandons waiting for the host's answer. */
+export interface CallOptions {
+  signal?: AbortSignal
+}
+
+export interface Bridge {
+  /** The current state. */
+  getState(): BridgeState
+  /** Calls `listener` after each change of state; returns what unsubscribes it. */
+  subscribe(listener: () => void): () => void
+  /**
+   * Opens the connection: `ui/initialize`, then
+   * `ui/notifications/initialized`. Resolves when connected; rejects with the
+   * failure the connection ended in. Called again, it returns the same
+   * promise: a bridge connects once.
+   */
+  connect(options?: CallOptions): Promise<void>
+  /** `tools/call` on the app's own server, through the host. */
+  callTool(
+    name: string,
+    args?: Record<string, unknown>,
+    options?: CallOptions,
+  ): Promise<CallToolResult>
+  /** `resources/read` on the app's own server, through the host. */
+  readResource(uri: string, options?: CallOptions): Promise<ReadResourceResult>
+  /** `ui/message`: adds a user message to the conversation. */
+  sendMessage(
+    content: ContentBlock[],
+    options?: CallOptions & { openai?: OpenAiMessageOptions },
+  ): Promise<void>
+  /** `ui/update-model-context`: replaces what the app has told the model. */
+  updateModelContext(context: ModelContextParams, options?: CallOptions): Promise<void>
+  /** `ui/request-display-mode`: resolves to the mode the host chose, which may differ. */
+  requestDisplayMode(mode: DisplayMode, options?: CallOptions): Promise<DisplayMode>
+  /** `ui/open-link`: asks the host to open `url`. */
+  openLink(url: string, options?: CallOptions): Promise<void>
+  /** `notifications/message`: a log line for the host. */
+  log(params: LogParams): void
+  /** `ui/notifications/size-changed`, when the size differs from the last one sent. */
+  reportSize(size: SizeParams): void
+  /**
+   * Runs `handler` when the host tears the app down, before the bridge
+   * answers it; the app may still call the host meanwhile. Returns what
+   * removes it.
+   */
+  onTeardown(handler: (reason: string | undefined) => void | Promise<void>): () => void
+  /** Stops listening, and rejects every unanswered call with `closed`. */
+  close(): void
+}
+
+interface Pending {
+  method: string
+  resolve: (result: unknown) => void
+  reject: (failure: BridgeFailure) => void
+}
+
+const warn = (violation: HostViolation) =>
+  console.warn("[app-shell] the host broke MCP Apps:", violation)
+
+/** The notifications the bridge reads, and the tool event each one is. */
+const toolNotifications = {
+  "ui/notifications/tool-input-partial": "input-partial",
+  "ui/notifications/tool-input": "input",
+  "ui/notifications/tool-result": "result",
+  "ui/notifications/tool-cancelled": "cancelled",
+} as const
+type ToolNotification = keyof typeof toolNotifications
+const isToolNotification = (method: string): method is ToolNotification =>
+  Object.hasOwn(toolNotifications, method)
+
+export function createBridge(options: BridgeOptions): Bridge {
+  const { transport } = options
+  const declaredModes: DisplayMode[] = options.displayModes ?? ["inline"]
+  const report = options.onViolation ?? warn
+
+  let state: BridgeState = {
+    connection: { status: "idle" },
+    hostContext: {},
+    toolCall: { phase: "awaiting-input" },
+  }
+  const listeners = new Set<() => void>()
+  const pending = new Map<RequestId, Pending>()
+  const teardownHandlers = new Set<(reason: string | undefined) => void | Promise<void>>()
+  let nextId = 1
+  let connecting: Promise<void> | null = null
+  let teardown: Promise<void> | null = null
+  let lastSize: SizeParams | null = null
+
+  const update = (next: Partial<BridgeState>) => {
+    state = { ...state, ...next }
+    for (const listener of [...listeners]) listener()
+  }
+  const status = (): ConnectionStatus => state.connection.status
+
+  /** Whether the connection carries the app's calls: connected, or tearing down. */
+  const open = () => status() === "connected" || status() === "tearing-down"
+
+  const settleAll = (failure: (method: string) => BridgeFailure) => {
+    const unanswered = [...pending.values()]
+    pending.clear()
+    for (const call of unanswered) call.reject(failure(call.method))
+  }
+
+  const send = (message: JsonRpcMessage) => transport.send(message)
+
+  /**
+   * Sends a request and resolves with its result, read by `narrow`. Refused
+   * at once unless `allowed`, which is whether the connection carries it.
+   */
+  function request<T>(
+    method: string,
+    params: object,
+    narrow: (result: unknown) => Narrowed<T>,
+    { signal }: CallOptions = {},
+    allowed = open(),
+  ): Promise<T> {
+    if (!allowed) {
+      return Promise.reject(
+        new BridgeError({ kind: "not-connected", method, status: status() }),
+      )
+    }
+    if (signal?.aborted)
+      return Promise.reject(new BridgeError({ kind: "aborted", method }))
+    const id = nextId++
+    return new Promise<T>((resolve, reject) => {
+      const onAbort = () => {
+        if (pending.delete(id)) reject(new BridgeError({ kind: "aborted", method }))
+      }
+      signal?.addEventListener("abort", onAbort, { once: true })
+      pending.set(id, {
+        method,
+        resolve: (result) => {
+          signal?.removeEventListener("abort", onAbort)
+          const read = narrow(result)
+          if (!read.ok) {
+            reject(
+              new BridgeError({ kind: "malformed-result", method, reason: read.reason }),
+            )
+            return
+          }
+          if (read.dropped.length > 0) {
+            report({ kind: "dropped-fields", method, fields: read.dropped })
+          }
+          resolve(read.value)
+        },
+        reject: (failure) => {
+          signal?.removeEventListener("abort", onAbort)
+          reject(new BridgeError(failure))
+        },
+      })
+      send({ jsonrpc: "2.0", id, method, params })
+    })
+  }
+
+  /** A `ui/*` call whose result is an acknowledgement, possibly a refusal. */
+  async function acknowledged(method: string, params: object, options?: CallOptions) {
+    const { refused } = await request(method, params, narrowAcknowledgement, options)
+    if (refused) throw new BridgeError({ kind: "refused", method })
+  }
+
+  function notify(method: string, params: object) {
+    if (!open())
+      throw new BridgeError({ kind: "not-connected", method, status: status() })
+    send({ jsonrpc: "2.0", method, params })
+  }
+
+  // ---- what the host sends
+
+  function onNotification(method: string, params: unknown) {
+    if (!open()) {
+      report({ kind: "before-initialized", method })
+      return
+    }
+    if (method === "ui/notifications/host-context-changed") {
+      const read = narrowHostContext(params, "params")
+      if (!read.ok) {
+        report({ kind: "malformed-params", method, reason: read.reason })
+        return
+      }
+      if (read.dropped.length > 0)
+        report({ kind: "dropped-fields", method, fields: read.dropped })
+      // A partial update: each field it carries replaces the one held; the
+      // rest stay ("the View SHOULD merge received fields with its current
+      // context state", SEP-1865, `ui/notifications/host-context-changed`).
+      update({ hostContext: { ...state.hostContext, ...read.value } })
+      return
+    }
+    if (!isToolNotification(method)) return // not one the app reads
+    const event = toolEvent(toolNotifications[method], method, params)
+    if (event === null) return
+    const next = nextToolCall(state.toolCall, event)
+    if (next.outOfOrder)
+      report({ kind: "tool-order", method, phase: state.toolCall.phase })
+    if (next.call !== state.toolCall) update({ toolCall: next.call })
+  }
+
+  function toolEvent(
+    type: (typeof toolNotifications)[ToolNotification],
+    method: string,
+    params: unknown,
+  ): ToolEvent | null {
+    const malformed = (reason: string) => {
+      report({ kind: "malformed-params", method, reason })
+      return null
+    }
+    if (type === "result") {
+      const read = narrowCallToolResult(params)
+      if (!read.ok) return malformed(read.reason)
+      if (read.dropped.length > 0)
+        report({ kind: "dropped-fields", method, fields: read.dropped })
+      return { type, result: read.value }
+    }
+    if (type === "cancelled") {
+      const read = narrowReason(params)
+      if (!read.ok) return malformed(read.reason)
+      if (read.dropped.length > 0)
+        report({ kind: "dropped-fields", method, fields: read.dropped })
+      return read.value.reason === undefined
+        ? { type }
+        : { type, reason: read.value.reason }
+    }
+    const read = narrowToolArguments(params)
+    if (!read.ok) return malformed(read.reason)
+    return { type, arguments: read.value.arguments }
+  }
+
+  function onRequest(id: RequestId, method: string, params: unknown) {
+    if (method === "ping") {
+      send({ jsonrpc: "2.0", id, result: {} })
+      return
+    }
+    if (method !== "ui/resource-teardown") {
+      send({
+        jsonrpc: "2.0",
+        id,
+        error: {
+          code: errorCodes.methodNotFound,
+          message: `the app does not answer ${method}`,
+        },
+      })
+      return
+    }
+    const read = narrowReason(params)
+    const reason = read.ok ? read.value.reason : undefined
+    if (!read.ok) report({ kind: "malformed-params", method, reason: read.reason })
+    tearDown(reason).then(
+      () => send({ jsonrpc: "2.0", id, result: {} }),
+      () =>
+        send({
+          jsonrpc: "2.0",
+          id,
+          error: { code: errorCodes.refused, message: "Teardown error" },
+        }),
+    )
+  }
+
+  /**
+   * Runs the teardown handlers once, however many times the host asks; then
+   * the connection is torn down and every unanswered call rejected. Rejects
+   * if a handler failed, which the host is told; torn down all the same.
+   */
+  function tearDown(reason: string | undefined): Promise<void> {
+    if (teardown !== null) return teardown
+    const connection = state.connection
+    if (connection.status === "connected") {
+      update({
+        connection: {
+          ...connection,
+          status: "tearing-down",
+          ...(reason === undefined ? {} : { reason }),
+        },
+      })
+    }
+    const handlers = [...teardownHandlers]
+    teardown = Promise.allSettled(handlers.map(async (handler) => handler(reason))).then(
+      (outcomes) => {
+        if (status() !== "closed") {
+          update({
+            connection:
+              reason === undefined
+                ? { status: "torn-down" }
+                : { status: "torn-down", reason },
+          })
+          settleAll((method) => ({ kind: "torn-down", method }))
+        }
+        if (outcomes.some((outcome) => outcome.status === "rejected")) {
+          throw new Error("a teardown handler failed")
+        }
+      },
+    )
+    return teardown
+  }
+
+  function onResponse(
+    id: RequestId,
+    outcome:
+      { result: unknown } | { error: { code: number; message: string; data?: unknown } },
+  ) {
+    const call = pending.get(id)
+    if (call === undefined) {
+      // An answer to a call the caller abandoned is expected; one to an id
+      // this bridge never sent is not.
+      if (typeof id !== "number" || id >= nextId || id < 1) {
+        report({ kind: "unknown-response", id })
+      }
+      return
+    }
+    pending.delete(id)
+    if ("result" in outcome) call.resolve(outcome.result)
+    else {
+      const { code, message, data } = outcome.error
+      call.reject({
+        kind: "host-error",
+        method: call.method,
+        code,
+        message,
+        ...(data === undefined ? {} : { data }),
+      })
+    }
+  }
+
+  const stopListening = transport.listen((data) => {
+    const envelope = readEnvelope(data)
+    switch (envelope.kind) {
+      case "invalid":
+        report({ kind: "invalid-message", reason: envelope.reason })
+        return
+      case "notification":
+        onNotification(envelope.method, envelope.params)
+        return
+      case "request":
+        onRequest(envelope.id, envelope.method, envelope.params)
+        return
+      case "result":
+        onResponse(envelope.id, { result: envelope.result })
+        return
+      case "error":
+        onResponse(envelope.id, { error: envelope.error })
+        return
+    }
+  })
+
+  // ---- the app's calls
+
+  function connect({ signal }: CallOptions = {}): Promise<void> {
+    if (connecting !== null) return connecting
+    if (status() !== "idle") {
+      return Promise.reject(
+        new BridgeError({
+          kind: "not-connected",
+          method: "ui/initialize",
+          status: status(),
+        }),
+      )
+    }
+    update({ connection: { status: "connecting" } })
+    connecting = request(
+      "ui/initialize",
+      {
+        appInfo: options.app,
+        appCapabilities: { availableDisplayModes: declaredModes },
+        protocolVersion: PROTOCOL_VERSION,
+      },
+      narrowInitializeResult,
+      signal === undefined ? {} : { signal },
+      true,
+    ).then(
+      (result) => {
+        // Being torn down while the host answered: the connection never opens.
+        if (teardown !== null)
+          throw new BridgeError({ kind: "torn-down", method: "ui/initialize" })
+        if (result.protocolVersion !== PROTOCOL_VERSION) {
+          const failure: BridgeFailure = {
+            kind: "protocol-version",
+            offered: result.protocolVersion,
+            spoken: PROTOCOL_VERSION,
+          }
+          update({ connection: { status: "failed", failure } })
+          throw new BridgeError(failure)
+        }
+        update({
+          connection: {
+            status: "connected",
+            host: result.hostInfo,
+            capabilities: result.hostCapabilities,
+          },
+          hostContext: result.hostContext,
+        })
+        send({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} })
+      },
+      (error: unknown) => {
+        // Closing and teardown say where the connection ended themselves.
+        if (
+          error instanceof BridgeError &&
+          status() === "connecting" &&
+          teardown === null
+        ) {
+          update({ connection: { status: "failed", failure: error.failure } })
+        }
+        throw error
+      },
+    )
+    return connecting
+  }
+
+  return {
+    getState: () => state,
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    connect,
+    callTool: (name, args, callOptions) =>
+      request(
+        "tools/call",
+        args === undefined ? { name } : { name, arguments: args },
+        narrowCallToolResult,
+        callOptions,
+      ),
+    readResource: (uri, callOptions) =>
+      request("resources/read", { uri }, narrowReadResourceResult, callOptions),
+    sendMessage(content, { openai, ...callOptions } = {}) {
+      const params =
+        openai === undefined
+          ? { role: "user", content }
+          : { role: "user", content, _meta: { "openai/message": openai } }
+      return acknowledged("ui/message", params, callOptions)
+    },
+    updateModelContext: (context, callOptions) =>
+      acknowledged("ui/update-model-context", context, callOptions),
+    async requestDisplayMode(mode, callOptions) {
+      const method = "ui/request-display-mode"
+      if (!declaredModes.includes(mode)) {
+        throw new BridgeError({
+          kind: "display-mode-undeclared",
+          mode,
+          declared: declaredModes,
+        })
+      }
+      const available = state.hostContext.availableDisplayModes
+      if (open() && available !== undefined && !available.includes(mode)) {
+        throw new BridgeError({ kind: "display-mode-unavailable", mode, available })
+      }
+      const { mode: chosen } = await request(
+        method,
+        { mode },
+        narrowDisplayModeResult,
+        callOptions,
+      )
+      if (open() && state.hostContext.displayMode !== chosen) {
+        update({ hostContext: { ...state.hostContext, displayMode: chosen } })
+      }
+      return chosen
+    },
+    openLink: (url, callOptions) => acknowledged("ui/open-link", { url }, callOptions),
+    log: (params) => notify("notifications/message", params),
+    reportSize(size) {
+      if (
+        lastSize !== null &&
+        lastSize.width === size.width &&
+        lastSize.height === size.height
+      ) {
+        return
+      }
+      notify("ui/notifications/size-changed", size)
+      lastSize = { width: size.width, height: size.height }
+    },
+    onTeardown(handler) {
+      teardownHandlers.add(handler)
+      return () => teardownHandlers.delete(handler)
+    },
+    close() {
+      if (status() === "closed") return
+      stopListening()
+      update({ connection: { status: "closed" } })
+      settleAll((method) => ({ kind: "closed", method }))
+    },
+  }
+}
