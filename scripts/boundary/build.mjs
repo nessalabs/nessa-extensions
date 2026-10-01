@@ -31,7 +31,8 @@
  * Not held here: what the Vite configuration imports, which is bundled before
  * the build and so is in no module graph — `typecheck.mjs` checks it, with
  * every other file of the unit. Held by review: a file outside the module
- * graph — an asset, a stylesheet, an `.env` file — named by an absolute path
+ * graph — an asset, a stylesheet, an `.env` file, or code a stylesheet tool
+ * loads, such as Tailwind's `@plugin` or `@config` — named by an absolute path
  * into the repository, or by one that climbs out through the store's link
  * (Vite resolves the `..` in those as text, so today it finds nothing there);
  * anything the Vite configuration's own code does when it runs, with Node's
@@ -105,7 +106,7 @@ function stage(root, paths) {
 
 /**
  * The links pnpm makes in `directory`'s `node_modules`: each entry, each
- * entry of a `@scope`, and each command in `.bin`.
+ * entry of a `@scope`. (pnpm writes `.bin` as scripts, not links.)
  */
 function installedLinks(directory) {
   const modules = join(directory, "node_modules")
@@ -113,8 +114,7 @@ function installedLinks(directory) {
   return readdirSync(modules)
     .flatMap((name) => {
       const path = join(modules, name)
-      const nested =
-        (name.startsWith("@") || name === ".bin") && !lstatSync(path).isSymbolicLink()
+      const nested = name.startsWith("@") && !lstatSync(path).isSymbolicLink()
       return nested ? readdirSync(path).map((inner) => join(path, inner)) : [path]
     })
     .filter((path) => lstatSync(path).isSymbolicLink())
@@ -178,13 +178,9 @@ export async function buildExtension(root, unit) {
     }
     const boundary = {
       ...moduleGraph(check),
-      // Workers are built separately, with `worker.plugins` only.
-      config(config) {
-        const own = config.worker?.plugins
-        return {
-          worker: { plugins: () => [...(own ? own() : []), moduleGraph(check)] },
-        }
-      },
+      // Workers are built separately, with `worker.plugins` only. Vite adds
+      // these to the configuration's own.
+      config: () => ({ worker: { plugins: () => [moduleGraph(check)] } }),
     }
 
     const directory = join(staged, unit)

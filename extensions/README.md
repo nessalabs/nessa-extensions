@@ -33,7 +33,7 @@ extensions/<name>/
 - An extension's code comes from its own folder, the workspace packages its
   manifest declares, and npm — never another extension. What two share
   belongs in a package under [`packages/`](../packages): logic in
-  `@nessalabs/common`, UI in `nessa_ui`. The typecheck and build guards hold
+  `@nessalabs/common`, UI in `nessa_ui`. The typecheck, build, and test guards hold
   that (see [AGENTS.md](../AGENTS.md#layout)). A tool that needs a declared
   package's files, such as Tailwind's `@source`, reaches them through
   `node_modules` (`@source "../node_modules/@nessalabs/app-shell/src"`).

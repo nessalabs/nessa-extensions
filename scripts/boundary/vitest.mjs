@@ -6,9 +6,12 @@
  *
  * This is Vitest's own module graph, so it holds however the module was
  * named — an import TypeScript could not resolve, a `#` import whose types
- * point elsewhere than its code, `import.meta.glob`, `vi.importActual`, a
- * computed `import()`. Not judged: what Vitest leaves to Node to load — a
- * dependency in `node_modules`, which is npm's.
+ * point elsewhere than its code, `import.meta.glob`, `vi.importActual`, an
+ * `import()` of a computed path. Not judged, and so held by review: what
+ * Vitest leaves to Node to load — anything under a `node_modules` directory,
+ * a unit's own nested one included, and what it imports in turn — and what a
+ * test's code does with Node's full access, such as `createRequire` or an
+ * `import()` of a `data:` URL, as for the Vite configuration's code.
  *
  *   export default defineConfig({ test: { projects: unitProjects(root) } })
  */
@@ -33,7 +36,6 @@ export function unitProjects(root) {
       plugins: [
         {
           name: "nessa:boundary-tests",
-          enforce: "pre",
           transform(_code, id) {
             const refusal = judge(id)
             if (refusal !== null) {

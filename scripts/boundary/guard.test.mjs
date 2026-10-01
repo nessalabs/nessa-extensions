@@ -867,7 +867,7 @@ test("the configuration's own worker plugins still run", (t) => {
     "extensions/experiments/vite.config.ts": [
       `export default {`,
       `  build: { outDir: "dist" },`,
-      `  worker: { plugins: () => [{ name: "mark", transform: (code) => code.replace("WORKER_MARK", "worker plugin ran") }] },`,
+      `  worker: { plugins: () => [{ name: "mark", transform: (code) => code.replace("WORKER_MARK", "WORKER_MARK worker plugin ran") }] },`,
       `}`,
     ].join("\n"),
     "extensions/experiments/src/own.ts": `export const own = new Worker(new URL("./worker.js", import.meta.url), { type: "module" })\n`,
@@ -875,7 +875,8 @@ test("the configuration's own worker plugins still run", (t) => {
   })
   const build = run("build.mjs", root)
   assert.equal(build.status, 0, build.stderr)
-  assert.match(built(root), /worker plugin ran/)
+  // Exactly once: run twice, the plugin would leave its mark twice.
+  assert.equal(built(root).match(/worker plugin ran/g)?.length, 1)
 })
 
 test("a dot-directory under extensions is not an extension", (t) => {
@@ -946,4 +947,26 @@ test("a refused build removes the output an earlier build left", (t) => {
   const build = run("build.mjs", root)
   assert.equal(build.status, 1)
   assert.equal(built(root), "")
+})
+
+test("two packages that declare each other come with each other, once", (t) => {
+  const root = repository(
+    t,
+    {
+      "packages/common/package.json": manifest("@nessalabs/common", {
+        exports: { ".": "./src/index.ts" },
+        dependencies: { "@nessalabs/server-kit": "workspace:*" },
+      }),
+      "packages/server-kit/package.json": manifest("@nessalabs/server-kit", {
+        exports: { ".": "./src/index.ts" },
+        dependencies: { "@nessalabs/common": "workspace:*" },
+      }),
+    },
+    {
+      "packages/common/node_modules/@nessalabs/server-kit": "../../../server-kit",
+      "packages/server-kit/node_modules/@nessalabs/common": "../../../common",
+    },
+  )
+  const build = run("build.mjs", root)
+  assert.equal(build.status, 0, build.stderr)
 })

@@ -39,7 +39,7 @@ extensions/
     app/         its MCP App, built into one HTML file the server serves
 scripts/
   architecture/  the pinned install layout, checked before install
-  boundary/      the typecheck and build guards
+  boundary/      the typecheck, build, and test guards
 docs/adr/        decision records
 ```
 

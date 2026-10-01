@@ -55,8 +55,7 @@ export function moduleJudge({ root, unit, declared, base, copy }) {
       if (isName(id)) return null
       return [id, "which is not a file on disk, so where it comes from cannot be checked"]
     }
-    const inCopy =
-      copy !== undefined && (real === copy || real.startsWith(`${copy}${sep}`))
+    const inCopy = copy !== undefined && real.startsWith(`${copy}${sep}`)
     const path = repositoryPath(inCopy ? copy : root, real)
     const why = moduleRefusal(path, unit, declared)
     return why === null ? null : [path, why]

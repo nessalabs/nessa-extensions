@@ -88,7 +88,7 @@ review:
   link.
 - **Tests** run as one Vitest project per unit, and a plugin judges every
   module Vitest loads for it against the same allow-list, however it was
-  named — so a test cannot run another extension's code either.
+  named.
 
 The earlier check read source and manifests as text to find paths into other
 units. Two review cycles each found new spellings it missed — backslashes,
@@ -158,10 +158,12 @@ into it — is refused by the pinned layout. Publishing it is nessa_ui's work.
 - The standards are one link away rather than one directory away, and a change
   to them for extensions is a nessa-agent pull request.
 - The boundary holds in typecheck, build, and tests. What none of the checks
-  sees — a non-module file named by an absolute path into the repository or
-  by one that climbs out through a link, what the Vite configuration's own
-  code does when it runs, the dev server — is named in their module comments
-  and held by review.
+  sees — a file outside the module graph (an asset, a stylesheet, code a
+  stylesheet tool loads) named by an absolute path into the repository or by
+  one that climbs out through a link; what the Vite configuration's code, or
+  a test's, does with Node's full access when it runs; what Vitest leaves to
+  Node under `node_modules`; the dev server — is named in their module
+  comments and held by review.
 - A build sees only its extension, its declared packages, npm, and the shared
   compiler settings, so it must declare what its configuration imports, and a
   configuration shared from the repository's root is not there to use.
