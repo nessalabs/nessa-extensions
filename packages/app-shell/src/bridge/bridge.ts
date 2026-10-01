@@ -367,7 +367,12 @@ export function createBridge(options: BridgeOptions): Bridge {
 
   function onNotification(method: string, params: unknown) {
     if (!open()) {
-      report({ kind: "before-initialized", method })
+      const now = status()
+      report(
+        now === "idle" || now === "connecting"
+          ? { kind: "before-initialized", method }
+          : { kind: "not-open", method, status: now },
+      )
       return
     }
     if (method === "ui/notifications/host-context-changed") {

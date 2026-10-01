@@ -147,12 +147,13 @@ test.describe("in the fake host", () => {
     report("theme-mode", { light, dark: await cardStyle(page, "backgroundColor") })
   })
 
+  // A custom property takes url(), so only the shell keeps it out here.
   test("ignores an unsafe value and keeps the default", async ({ page }) => {
     const { errors } = await startFake(page, {
       context: {
         styles: {
           variables: {
-            "--color-background-primary": "red; background: url(https://evil.example/x)",
+            "--color-background-primary": "url(https://evil.example/x.png)",
           },
         },
       },

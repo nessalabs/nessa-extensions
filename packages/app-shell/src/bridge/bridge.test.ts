@@ -349,6 +349,33 @@ describe("the connection", () => {
     })
   })
 
+  it("connect again while tearing down a connection never opened: the first call's promise", async () => {
+    const { bridge, host } = setup()
+    const first = bridge.connect()
+    await flush()
+    let release: () => void = () => {}
+    bridge.onTeardown(() => new Promise<void>((resolve) => (release = resolve)))
+    host.send({ jsonrpc: "2.0", id: "t", method: "ui/resource-teardown", params: {} })
+    await flush()
+    expect(bridge.connect()).toBe(first)
+    release()
+    expect(await failure(first)).toMatchObject({ kind: "torn-down" })
+  })
+
+  it("connect again while tearing down a connection that opened: not-connected", async () => {
+    const { bridge, host } = await connected()
+    let release: () => void = () => {}
+    bridge.onTeardown(() => new Promise<void>((resolve) => (release = resolve)))
+    host.send({ jsonrpc: "2.0", id: "t", method: "ui/resource-teardown", params: {} })
+    await flush()
+    expect(await failure(bridge.connect())).toEqual({
+      kind: "not-connected",
+      method: "ui/initialize",
+      status: "tearing-down",
+    })
+    release()
+  })
+
   it("a first connect while tearing down, before any connect: not-connected", async () => {
     const { bridge, host } = setup()
     let release: () => void = () => {}
@@ -613,6 +640,39 @@ describe("races and faults", () => {
     host.send({ jsonrpc: "2.0", id: 2, result: { content: [] } })
     await flush()
     expect(violations).toEqual([{ kind: "unknown-response", id: 2 }])
+  })
+
+  it("initialized cannot be sent: failed not-sent, and connect rejects with it", async () => {
+    const { channel, transport, fail } = breakable()
+    const host = scriptedHost(channel.host)
+    const bridge = createBridge({
+      transport,
+      app: { name: "a", version: "1" },
+      onViolation: () => {},
+    })
+    const connecting = bridge.connect()
+    await flush()
+    fail()
+    host.answer("ui/initialize", initializeResult())
+    const expected = {
+      kind: "not-sent",
+      method: "ui/notifications/initialized",
+      reason: "DataCloneError: could not be cloned",
+    }
+    expect(await failure(connecting)).toEqual(expected)
+    expect(bridge.getState().connection).toEqual({ status: "failed", failure: expected })
+  })
+
+  it("a host notification once the connection ended: reported not-open", async () => {
+    const { bridge, host, violations } = await connected()
+    host.send({ jsonrpc: "2.0", id: "t", method: "ui/resource-teardown", params: {} })
+    await flush()
+    host.notify("ui/notifications/tool-input", { arguments: {} })
+    await flush()
+    expect(violations).toEqual([
+      { kind: "not-open", method: "ui/notifications/tool-input", status: "torn-down" },
+    ])
+    expect(bridge.getState().toolCall.phase).toBe("awaiting-input")
   })
 
   it("outside a host window, connect fails not-sent instead of waiting forever", async () => {

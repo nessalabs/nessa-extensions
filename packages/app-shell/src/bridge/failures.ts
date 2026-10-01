@@ -92,6 +92,8 @@ export type HostViolation =
   | { kind: "dropped-fields"; method: string; fields: string[] }
   /** A notification before the app's `ui/notifications/initialized`. */
   | { kind: "before-initialized"; method: string }
+  /** A notification once the connection has ended, or is tearing down one never opened. */
+  | { kind: "not-open"; method: string; status: ConnectionStatus }
   /** A response to no request the app made. */
   | { kind: "unknown-response"; id: RequestId }
   /** The tool's notifications in an order the standard does not allow. */

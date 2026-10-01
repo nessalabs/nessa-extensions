@@ -66,76 +66,105 @@ const understood = {
 const unknownAttribute = (tag: string, known: ReadonlySet<string>) =>
   attributeNames(tag).find((name) => !known.has(name))
 
-/** A built file's name from how the HTML refers to it: `./assets/x.js` or `/assets/x.js`. */
-const fileName = (reference: string) => reference.replace(/^\.?\//, "")
+const bundleOrigin = "https://bundle.invalid"
 
 /**
- * `html` with each `<script src>` and `<link rel="stylesheet">` that names a
- * file in `files` replaced by the file's contents, and each
- * `<link rel="modulepreload">` of one removed.
+ * The bundle file a reference in the page names, resolved against the page's
+ * own place in the bundle (`./x.js`, `../assets/x.js`, `/assets/x.js`), or
+ * undefined for one outside the bundle (another origin, a query, a hash).
+ */
+function fileName(reference: string, page: string): string | undefined {
+  let url: URL
+  try {
+    url = new URL(reference, `${bundleOrigin}/${page}`)
+  } catch {
+    return undefined
+  }
+  if (url.origin !== bundleOrigin || url.search !== "" || url.hash !== "")
+    return undefined
+  return decodeURIComponent(url.pathname.slice(1))
+}
+
+/**
+ * `html`, the bundle's file `page`, with each `<script src>` and
+ * `<link rel="stylesheet">` that names a file in `files` replaced by the
+ * file's contents, and each `<link rel="modulepreload">` of one removed.
  */
 export function inlineIntoHtml(
   html: string,
   files: ReadonlyMap<string, string>,
+  page = "index.html",
 ): Inlined {
   const inlined = new Set<string>()
   const unresolved: string[] = []
   const unsafe: string[] = []
-  const take = (reference: string | undefined): string | undefined => {
+  /** The file a reference names, and its contents; listed unresolved if none. */
+  const find = (reference: string | undefined) => {
     if (reference === undefined) return undefined
-    const name = fileName(reference)
-    const contents = files.get(name)
-    if (contents === undefined) unresolved.push(reference)
-    else inlined.add(name)
-    return contents
+    const name = fileName(reference, page)
+    const contents = name === undefined ? undefined : files.get(name)
+    if (name === undefined || contents === undefined) {
+      unresolved.push(reference)
+      return undefined
+    }
+    return { name, contents }
+  }
+  /** Writes a file in: it is in the page now, and leaves the bundle. */
+  const written = (name: string, element: string) => {
+    inlined.add(name)
+    return element
   }
   const refuse = (tag: string, why: string) => {
     unsafe.push(why)
     return tag
   }
-  const script = (element: string, tag: string, body: string) => {
+  const script = (element: string, tag: string) => {
     const src = attribute(tag, "src")
     // An inline script is the page's own: left exactly as it is.
-    if (src === undefined || body.trim() !== "") return element
-    const code = take(src)
-    if (code === undefined) return element
+    if (src === undefined) return element
+    // With a `src`, a script's own text never runs; it is not kept.
+    const file = find(src)
+    if (file === undefined) return element
     const extra = unknownAttribute(tag, understood.script)
     if (extra !== undefined) return refuse(element, `${src} (its ${extra} attribute)`)
     const type = attribute(tag, "type")
     if (type !== undefined && type.toLowerCase() !== "module") {
       return refuse(element, `${src} (its type ${type})`)
     }
-    if (endsEarly(code, "script")) return refuse(element, src)
-    return `<script${type === undefined ? "" : ' type="module"'}>${code}</script>`
+    if (endsEarly(file.contents, "script")) return refuse(element, src)
+    const module = type === undefined ? "" : ' type="module"'
+    return written(file.name, `<script${module}>${file.contents}</script>`)
   }
   const link = (tag: string) => {
     const rel = attribute(tag, "rel")?.toLowerCase()
     const href = attribute(tag, "href")
     if (rel === "stylesheet") {
-      const css = take(href)
-      if (css === undefined || href === undefined) return tag
+      const file = find(href)
+      if (file === undefined || href === undefined) return tag
       const extra = unknownAttribute(tag, understood.stylesheet)
       if (extra !== undefined) return refuse(tag, `${href} (its ${extra} attribute)`)
-      if (endsEarly(css, "style")) return refuse(tag, href)
+      if (endsEarly(file.contents, "style")) return refuse(tag, href)
       const media = attribute(tag, "media")
       const scoped = media === undefined ? "" : ` media="${escapeAttribute(media)}"`
-      return `<style${scoped}>${css}</style>`
+      return written(file.name, `<style${scoped}>${file.contents}</style>`)
     }
     if (rel === "modulepreload") {
-      if (take(href) === undefined) return tag
+      const file = find(href)
+      if (file === undefined) return tag
       const extra = unknownAttribute(tag, understood.modulepreload)
-      return extra === undefined ? "" : refuse(tag, `${href} (its ${extra} attribute)`)
+      return extra === undefined
+        ? written(file.name, "")
+        : refuse(tag, `${href} (its ${extra} attribute)`)
     }
     return tag
   }
-  // One pass over the page as built. A comment, an inline script and an
-  // inline style are matched whole and kept as they are, so text inside them
-  // that looks like a tag is never read as one; and what is written in is
-  // never read again.
+  // One pass over the page as built. A comment, a script and an inline style
+  // are matched whole, so text inside them that looks like a tag is never
+  // read as one; and what is written in is never read again.
   const out = html.replace(
-    /<!--[\s\S]*?-->|(<script\b[^>]*>)([\s\S]*?)<\/script\s*>|<style\b[^>]*>[\s\S]*?<\/style\s*>|<link\b[^>]*>/gi,
-    (element, scriptTag: string | undefined, body: string | undefined) => {
-      if (scriptTag !== undefined) return script(element, scriptTag, body ?? "")
+    /<!--[\s\S]*?-->|(<script\b[^>]*>)[\s\S]*?<\/script\s*>|<style\b[^>]*>[\s\S]*?<\/style\s*>|<link\b[^>]*>/gi,
+    (element, scriptTag: string | undefined) => {
+      if (scriptTag !== undefined) return script(element, scriptTag)
       return /^<link/i.test(element) ? link(element) : element
     },
   )

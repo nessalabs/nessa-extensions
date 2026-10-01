@@ -71,10 +71,10 @@ export function mcpApp(): Plugin {
         typeof page.source === "string"
           ? page.source
           : new TextDecoder().decode(page.source)
-      const result = inlineIntoHtml(html, files)
+      const result = inlineIntoHtml(html, files, page.fileName)
       if (result.unresolved.length > 0) {
         this.error(
-          `the HTML names files the build did not make: ${result.unresolved.join(", ")}`,
+          `the HTML names what is not a file of the build: ${result.unresolved.join(", ")}. A page's tags can name only the app's own files: a host's default policy fetches nothing, and a resource from an origin the app declares in _meta.ui.csp is loaded at run time, not by the page's tags`,
         )
       }
       if (result.unsafe.length > 0) {

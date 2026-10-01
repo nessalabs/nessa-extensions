@@ -100,6 +100,48 @@ describe("inlineIntoHtml", () => {
     }
   })
 
+  it("resolves ./ against the page's own folder", () => {
+    const result = inlineIntoHtml(
+      '<script type="module" src="./b.js"></script>',
+      new Map([
+        ["app/b.js", "2"],
+        ["b.js", "wrong"],
+      ]),
+      "app/index.html",
+    )
+    expect(result.html).toBe('<script type="module">2</script>')
+  })
+
+  it("resolves references against the page's own place in the bundle", () => {
+    const result = inlineIntoHtml(
+      '<script type="module" src="../assets/a.js"></script><link rel="stylesheet" href="/assets/a.css">',
+      new Map([
+        ["assets/a.js", "1"],
+        ["assets/a.css", "p{}"],
+      ]),
+      "app/index.html",
+    )
+    expect(result.html).toBe('<script type="module">1</script><style>p{}</style>')
+    expect([...result.inlined]).toEqual(["assets/a.js", "assets/a.css"])
+    expect(result.unresolved).toEqual([])
+  })
+
+  it("lists an outside script as unresolved even when it has text inside", () => {
+    const tag = '<script src="https://cdn.example/x.js">/* fallback */</script>'
+    const result = inlineIntoHtml(tag, new Map())
+    expect(result.unresolved).toEqual(["https://cdn.example/x.js"])
+    expect(result.html).toBe(tag)
+  })
+
+  it("does not count a refused tag's file as written in", () => {
+    const result = inlineIntoHtml(
+      '<script defer src="a.js"></script>',
+      new Map([["a.js", "1"]]),
+    )
+    expect(result.unsafe).toEqual(["a.js (its defer attribute)"])
+    expect(result.inlined.size).toBe(0)
+  })
+
   it("keeps a stylesheet's media", () => {
     const result = inlineIntoHtml(
       '<link rel="stylesheet" href="p.css" media="print">',

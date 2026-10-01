@@ -64,6 +64,31 @@ describe("mcpApp", () => {
     expect(html).not.toMatch(/\shref="\.?\//)
   })
 
+  it("builds a page that is not at the top of the root", async () => {
+    const root = app({
+      "app/index.html":
+        '<!doctype html><html><head><link rel="stylesheet" href="./style.css"></head>' +
+        '<body><script type="module" src="./main.ts"></script></body></html>',
+      "app/style.css": "body { color: red }",
+      "app/main.ts": "document.body.append('hi')",
+    })
+    await build({
+      root,
+      configFile: false,
+      logLevel: "silent",
+      plugins: [mcpApp()],
+      build: {
+        outDir: join(root, "dist"),
+        rolldownOptions: { input: join(root, "app", "index.html") },
+      },
+    })
+    expect(readdirSync(join(root, "dist"))).toEqual(["app"])
+    expect(readdirSync(join(root, "dist", "app"))).toEqual(["index.html"])
+    const html = readFileSync(join(root, "dist", "app", "index.html"), "utf8")
+    expect(html).toMatch(/<script type="module">[\s\S]*hi[\s\S]*<\/script>/)
+    expect(html).toMatch(/<style>[\s\S]*red[\s\S]*<\/style>/)
+  })
+
   it("refuses a build whose script would not end where it is written inline", async () => {
     const root = app({
       "index.html":
@@ -83,7 +108,7 @@ describe("mcpApp", () => {
       "main.ts": "export {}",
     })
     await expect(buildApp(root)).rejects.toThrow(
-      "the HTML names files the build did not make: https://cdn.example/x.js",
+      "the HTML names what is not a file of the build: https://cdn.example/x.js",
     )
   })
 
