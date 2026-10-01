@@ -5,6 +5,43 @@
   "type": "module",
   "license": "MIT",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./react": "./src/react/index.ts",
+    "./fake-host": "./src/fake-host/index.ts",
+    "./build": "./src/build/index.ts"
+  },
+  "scripts": {
+    "verify": "playwright test -c verification/playwright.config.ts"
+  },
+  "peerDependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "vite": "^8.3.1"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "vite": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.2.0",
+    "@modelcontextprotocol/core": "^2.2.0",
+    "@modelcontextprotocol/ext-apps": "2.0.3",
+    "@playwright/test": "1.63.0",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "happy-dom": "^20.14.5",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "vite": "^8.3.1",
+    "vitest": "^3.2.7",
+    "zod": "^4.6.5"
   }
 }
