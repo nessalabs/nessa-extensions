@@ -46,13 +46,15 @@ docs/adr/        decision records
 - The boundary is the [decision record](docs/adr/todo/1-extensions-repo.md)'s
   allow-list: an extension's code comes from its own folder, the workspace
   packages it declares, and npm, and nowhere else. Extensions never import
-  one another. Three checks hold it, and each states what it allows, refuses,
+  one another. Four checks hold it, and each states what it allows, refuses,
   and leaves to review once, in its module comment:
   [`scripts/architecture/layout.mjs`](scripts/architecture/layout.mjs)
   (`pnpm architecture`, bare Node, before install),
   [`scripts/boundary/typecheck.mjs`](scripts/boundary/typecheck.mjs)
-  (`pnpm typecheck`), and
-  [`scripts/boundary/build.mjs`](scripts/boundary/build.mjs) (`pnpm build`).
+  (`pnpm typecheck`),
+  [`scripts/boundary/build.mjs`](scripts/boundary/build.mjs) (`pnpm build`),
+  and [`scripts/boundary/vitest.mjs`](scripts/boundary/vitest.mjs)
+  (`pnpm test`).
   Everything else in this section is held by review.
 - An extension's own layout, below `server/` and `app/`, follows the standards'
   [organization][organization] and [domain-driven design][ddd] sections, and is

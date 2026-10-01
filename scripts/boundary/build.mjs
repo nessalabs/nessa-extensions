@@ -53,20 +53,23 @@
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   realpathSync,
   rmSync,
   symlinkSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, isAbsolute, join, resolve, sep } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { stripVTControlCharacters } from "node:util"
 
 import { createBuilder } from "vite"
 
 import { moduleRefusal, repositoryPath } from "./allow-list.mjs"
+import { moduleJudge, realOrNull } from "./modules.mjs"
 import { declaredPackages, units } from "./units.mjs"
 
 const configFile = "vite.config.ts"
@@ -100,6 +103,23 @@ function stage(root, paths) {
   return directory
 }
 
+/**
+ * The links pnpm makes in `directory`'s `node_modules`: each entry, each
+ * entry of a `@scope`, and each command in `.bin`.
+ */
+function installedLinks(directory) {
+  const modules = join(directory, "node_modules")
+  if (!existsSync(modules)) return []
+  return readdirSync(modules)
+    .flatMap((name) => {
+      const path = join(modules, name)
+      const nested =
+        (name.startsWith("@") || name === ".bin") && !lstatSync(path).isSymbolicLink()
+      return nested ? readdirSync(path).map((inner) => join(path, inner)) : [path]
+    })
+    .filter((path) => lstatSync(path).isSymbolicLink())
+}
+
 /** A plugin that hands every module of a build to `check` when it ends. */
 const moduleGraph = (check) => ({
   name: "nessa:boundary-modules",
@@ -107,16 +127,6 @@ const moduleGraph = (check) => ({
     for (const id of this.getModuleIds()) check(id)
   },
 })
-
-/**
- * Whether a module id that is no file is a name — a Node built-in, or an npm
- * package a server build leaves as an import, resolved where the extension is
- * installed — rather than a path to nothing. (A plugin's virtual module may be
- * named so too; plugins come from the configuration, which review holds.)
- */
-const isName = (id) =>
-  id.startsWith("node:") ||
-  !(id.startsWith(".") || isAbsolute(id) || /^[a-z]+:/i.test(id))
 
 /** One line, so each failure stays one `unit: what` line. */
 const oneLine = (error) =>
@@ -140,31 +150,31 @@ export async function buildExtension(root, unit) {
   try {
     const declared = declaredPackages(root, unit)
     staged = stage(root, [unit, ...declared])
+    const judge = moduleJudge({
+      root,
+      unit,
+      declared,
+      base: join(staged, unit),
+      copy: staged,
+    })
     const check = (id) => {
-      if (id.startsWith("\0")) return
-      // Whatever its shape, an id that is a file — relative ones from the
-      // working directory, the staged extension, as the bundler reads them —
-      // is judged by where it really is. Only one that is no file may be a name.
-      // The system's realpath follows each link before the `..` after it, as
-      // the bundler's read does; Node's own resolves `..` first, as text.
-      let real = null
-      try {
-        real = realpathSync.native(id.split("?")[0])
-      } catch {
-        // no file: a name, or refused below
+      const refusal = judge(id)
+      if (refusal !== null && !refused.has(refusal[0])) refused.set(...refusal)
+    }
+    // What the stage copies of each unit's node_modules is followed by more
+    // than the bundler — a stylesheet's @import, an asset — so each link pnpm
+    // made there must lead where the extension may reach, as it was installed.
+    for (const path of [unit, ...declared]) {
+      for (const link of installedLinks(join(root, path))) {
+        const real = realOrNull(link)
+        if (real === null) continue // leads nowhere, so nothing is read through it
+        const target = repositoryPath(root, real)
+        // A link to a directory is judged as what is in it.
+        const inside = lstatSync(real).isDirectory() ? `${target}/` : target
+        const why = moduleRefusal(inside, unit, declared)
+        if (why !== null)
+          refused.set(repositoryPath(root, link), `which links to ${target}, ${why}`)
       }
-      if (real === null) {
-        if (isName(id)) return
-        refused.set(
-          id,
-          "which is not a file on disk, so where it comes from cannot be checked",
-        )
-        return
-      }
-      const inStage = real === staged || real.startsWith(`${staged}${sep}`)
-      const at = repositoryPath(inStage ? staged : root, real)
-      const why = moduleRefusal(at, unit, declared)
-      if (why !== null && !refused.has(at)) refused.set(at, why)
     }
     const boundary = {
       ...moduleGraph(check),

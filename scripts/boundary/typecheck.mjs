@@ -20,24 +20,25 @@
  * not: TypeScript takes any path through a `node_modules` directory for a
  * library and exempts it from `rootDir`, and it never applies `rootDir` to
  * declaration or JSON files, and does not follow a symbolic link to where it
- * leads. So are the paths the unit's files import that TypeScript did not
- * resolve — a side-effect import, one with a `?query` a bundler reads — since
- * Vitest and Vite would still load them (`pathImports`).
+ * leads.
  *
- * Vitest and the dev server load what they import at run time, unguarded;
- * what holds them is that this checks every file they run from.
+ * What a unit's tests load when they run — including what TypeScript does
+ * not resolve, such as a `?query` import, `import.meta.glob`, or a `#` import
+ * whose types and code differ — is the test run's guard's to judge
+ * (`vitest.mjs`).
  *
  * Diagnostics go to stderr; the exit status is 1 if any unit fails.
  *
  *   node scripts/boundary/typecheck.mjs [root]   typecheck root's units, or this repository's
  */
-import { readFileSync, readdirSync, realpathSync } from "node:fs"
-import { dirname, isAbsolute, join, resolve } from "node:path"
+import { readdirSync, realpathSync } from "node:fs"
+import { dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 import ts from "typescript"
 
 import { moduleRefusal, repositoryPath } from "./allow-list.mjs"
+import { realOrNull } from "./modules.mjs"
 import { declaredPackages, units } from "./units.mjs"
 
 const sources = /\.(?:[cm]?[jt]s|[jt]sx)$/
@@ -52,41 +53,6 @@ function sourceFiles(directory, atUnitRoot = true) {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) return sourceFiles(path, false)
     return entry.isFile() && sources.test(entry.name) ? [path] : []
-  })
-}
-
-/**
- * The real path of `path`, or null if there is nothing there. The system's
- * own `realpath`, which follows each link before the `..` after it; Node's
- * own resolves `..` first, as text.
- */
-function realOrNull(path) {
-  try {
-    return realpathSync.native(path)
-  } catch {
-    return null
-  }
-}
-
-/**
- * Where each path import in `file` leads, as real paths: every import,
- * dynamic import, and `require` named by a relative or absolute path, with
- * any `?query` or `#hash` cut off. The path is joined unnormalised, so a `..`
- * after a link climbs from where the link leads, as the file system does.
- * When nothing is there — a file named without its extension — its directory
- * is followed instead, so where it would lead is still known.
- */
-function pathImports(file) {
-  const { importedFiles } = ts.preProcessFile(readFileSync(file, "utf8"), true, true)
-  return importedFiles.flatMap(({ fileName }) => {
-    if (!fileName.startsWith(".") && !isAbsolute(fileName)) return []
-    const spec = fileName.replace(/[?#].*$/, "")
-    const path = isAbsolute(spec) ? spec : `${dirname(file)}/${spec}`
-    const real = realOrNull(path)
-    if (real !== null) return [real]
-    const cut = path.lastIndexOf("/")
-    const directory = realOrNull(path.slice(0, cut))
-    return directory === null ? [] : [`${directory}/${path.slice(cut + 1)}`]
   })
 }
 
@@ -123,12 +89,9 @@ export function typecheckUnit(root, unit) {
     ...ts.getPreEmitDiagnostics(program),
   ]
   const declared = declaredPackages(root, unit)
-  const used = new Set([
-    ...program.getSourceFiles().map((file) => realpathSync(file.fileName)),
-    ...files.flatMap(pathImports),
-  ])
-  const refusals = [...used]
-    .map((real) => repositoryPath(root, real))
+  const refusals = program
+    .getSourceFiles()
+    .map((file) => repositoryPath(root, realOrNull(file.fileName) ?? file.fileName))
     .flatMap((path) => {
       const why = moduleRefusal(path, unit, declared)
       return why === null ? [] : [`${unit}: its program uses ${path}, ${why}\n`]

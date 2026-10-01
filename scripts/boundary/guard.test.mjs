@@ -6,6 +6,7 @@
  */
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
+import { createRequire } from "node:module"
 import {
   existsSync,
   mkdirSync,
@@ -144,6 +145,31 @@ function run(name, root, env = {}) {
   })
   const quiet = "extensions/notes: no vite.config.ts, so nothing to build\n"
   return { status: result.status, stderr: result.stderr.replace(quiet, "") }
+}
+
+const vitest = createRequire(import.meta.url).resolve("vitest/vitest.mjs")
+const guard = new URL("./vitest.mjs", import.meta.url).href
+
+/**
+ * Runs Vitest on `root` with this repository's test projects, globals on so a
+ * fixture's tests need not import Vitest; its exit status and all it printed.
+ */
+function runTests(root) {
+  const real = realpathSync(root)
+  writeFileSync(
+    join(root, "vitest.config.mjs"),
+    [
+      `import { unitProjects } from ${JSON.stringify(guard)}`,
+      `const projects = unitProjects(${JSON.stringify(real)})`,
+      `for (const project of projects) project.test.globals = true`,
+      `export default { test: { projects } }`,
+    ].join("\n"),
+  )
+  const result = spawnSync(process.execPath, [vitest, "run", "--root", real], {
+    encoding: "utf8",
+    env: { ...process.env, NO_COLOR: "1" },
+  })
+  return { status: result.status, output: result.stdout + result.stderr }
 }
 
 /** Everything the build left in the extension's `dist`, as text; "" if none. */
@@ -718,39 +744,64 @@ test("a path that climbs out through the store's link is judged where it lands",
   assert.equal(built(root), "")
 })
 
-test("an import TypeScript does not resolve is still followed by typecheck", (t) => {
-  const program = (path) =>
-    `extensions/experiments: its program uses ${path}, which is in extensions/notes; nothing imports an extension`
+test("whatever a unit's tests load is held to what the unit may use", (t) => {
+  const tests = (path) =>
+    `extensions/experiments: its tests use ${path}, which is in extensions/notes; nothing imports an extension`
   const cases = {
     "a side-effect import with a query": [
       {
-        "extensions/experiments/src/leak.test.ts": `import "../../notes/src/index.ts?x"\n`,
+        "extensions/experiments/src/leak.test.ts": `import "../../notes/src/index.ts?x"\ntest("x", () => {})\n`,
       },
       "extensions/notes/src/index.ts",
     ],
     "a path that climbs out through the store's link": [
       {
-        "extensions/experiments/src/leak.test.ts": `import "../node_modules/left-pad/../../../../../extensions/notes/src/index.ts?x"\n`,
+        "extensions/experiments/src/leak.test.ts": `import "../node_modules/left-pad/../../../../../extensions/notes/src/index.ts?x"\ntest("x", () => {})\n`,
+      },
+      null, // not found, so nothing of the sibling loads
+    ],
+    "a path through a directory that does not exist": [
+      {
+        "extensions/experiments/src/leak.test.ts": `import "./nope/../../../notes/src/index.ts?x"\ntest("x", () => {})\n`,
       },
       "extensions/notes/src/index.ts",
     ],
-    "a file named without its extension": [
-      { "extensions/experiments/src/leak.test.ts": `import "../../notes/src/index?x"\n` },
-      "extensions/notes/src/index",
-    ],
-    "an import a declaration matches": [
+    "a path from the repository's root": [
       {
-        "extensions/experiments/src/leak.test.ts": `import text from "../../notes/src/index.ts?raw"\nexport { text }\n`,
+        "extensions/experiments/src/leak.test.ts": `import "/extensions/notes/src/index.ts"\ntest("x", () => {})\n`,
       },
-      "extensions/notes/src/index.ts",
+      null, // not found, so nothing of the sibling loads
     ],
-    "noResolve in the unit's configuration": [
+    "a # import whose types are its own and its code a sibling's": [
       {
-        "extensions/experiments/tsconfig.json": JSON.stringify({
-          extends: "../../tsconfig.base.json",
-          compilerOptions: { noResolve: true },
+        "extensions/experiments/package.json": manifest("@nessalabs/experiments", {
+          dependencies: { "left-pad": "^1.0.0" },
+          devDependencies: { "@nessalabs/common": "workspace:*" },
+          imports: {
+            "#shared": { types: "./src/shared.d.ts", default: "./../notes/src/index.ts" },
+          },
         }),
-        "extensions/experiments/src/leak.test.ts": `export { secret } from "../../notes/src/index.ts"\n`,
+        "extensions/experiments/src/shared.d.ts": `export const secret: string\n`,
+        "extensions/experiments/src/leak.test.ts": `import { secret } from "#shared"\ntest("x", () => { void secret })\n`,
+      },
+      "extensions/notes/src/index.ts",
+    ],
+    "import.meta.glob": [
+      {
+        "extensions/experiments/src/leak.test.ts": `import.meta.glob("../../notes/src/*.ts", { eager: true })\ntest("x", () => {})\n`,
+      },
+      "extensions/notes/src/index.ts",
+    ],
+    "vi.importActual": [
+      {
+        "extensions/experiments/src/leak.test.ts": `test("x", async () => { await vi.importActual("../../notes/src/index.ts") })\n`,
+      },
+      "extensions/notes/src/index.ts",
+    ],
+    "an import in a file under the unit's dist": [
+      {
+        "extensions/experiments/dist/evil.js": `export * from "../../notes/src/index.ts"\n`,
+        "extensions/experiments/src/leak.test.ts": `test("x", async () => { await import("../dist/evil.js") })\n`,
       },
       "extensions/notes/src/index.ts",
     ],
@@ -758,11 +809,26 @@ test("an import TypeScript does not resolve is still followed by typecheck", (t)
   for (const [name, [files, path]] of Object.entries(cases)) {
     t.test(name, (t) => {
       const root = repository(t, files)
-      const typecheck = run("typecheck.mjs", root)
-      assert.equal(typecheck.status, 1)
-      assert.ok(typecheck.stderr.includes(program(path)), typecheck.stderr)
+      const result = runTests(root)
+      assert.equal(result.status, 1, result.output)
+      if (path !== null) assert.ok(result.output.includes(tests(path)), result.output)
+      assert.doesNotMatch(result.output, /sibling secret/)
     })
   }
+})
+
+test("a unit's own tests, with its declared package and npm, pass", (t) => {
+  const root = repository(t, {
+    "extensions/experiments/src/own.test.ts": [
+      `import { one } from "@nessalabs/common"`,
+      `import pad from "left-pad"`,
+      `import { own } from "./own.ts"`,
+      `test("own", () => { expect([one, pad("x"), own]).toEqual([1, " x", "own"]) })`,
+    ].join("\n"),
+  })
+  const result = runTests(root)
+  assert.equal(result.status, 0, result.output)
+  assert.match(result.output, /extensions\/experiments/)
 })
 
 test("a node_modules directory elsewhere in the repository is not npm", (t) => {
@@ -845,4 +911,39 @@ test("noResolve cannot hide a package the unit does not declare", (t) => {
     ),
     typecheck.stderr,
   )
+})
+
+test("a link in a unit's node_modules that leads to a sibling is refused", (t) => {
+  const root = repository(
+    t,
+    {
+      "extensions/notes/src/b.css": `.sibling-secret { color: red }\n`,
+      "extensions/experiments/src/style.css": `@import "evil/src/b.css";\n`,
+    },
+    {},
+  )
+  symlinkSync(
+    join(realpathSync(root), "extensions/notes"),
+    join(root, "extensions/experiments/node_modules/evil"),
+  )
+  const build = run("build.mjs", root)
+  assert.equal(build.status, 1)
+  assert.ok(
+    build.stderr.includes(
+      "extensions/experiments: its build uses extensions/experiments/node_modules/evil, which links to extensions/notes, which is in extensions/notes; nothing imports an extension",
+    ),
+    build.stderr,
+  )
+  assert.equal(built(root), "")
+})
+
+test("a refused build removes the output an earlier build left", (t) => {
+  const root = repository(t, {
+    "extensions/experiments/dist/index.html": `from an earlier build\n`,
+    "extensions/experiments/src/own.ts": (real) =>
+      `export { secret as own } from "${real}/extensions/notes/src/index.ts"\n`,
+  })
+  const build = run("build.mjs", root)
+  assert.equal(build.status, 1)
+  assert.equal(built(root), "")
 })

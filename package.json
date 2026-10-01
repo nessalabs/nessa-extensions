@@ -13,7 +13,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
-    "typecheck": "tsc -p tsconfig.json && node scripts/boundary/typecheck.mjs",
+    "typecheck": "node scripts/boundary/typecheck.mjs",
     "build": "node scripts/boundary/build.mjs",
     "test": "vitest run && node --test scripts/boundary/*.test.mjs",
     "architecture": "node --test scripts/architecture/*.test.mjs && node scripts/check-architecture.mjs"
