@@ -91,20 +91,6 @@ test("a manifest pnpm reads instead of package.json fails, and a unit needs pack
   ])
 })
 
-test("a dist or node_modules deeper in a unit is checked like any source", (t) => {
-  const root = repository(t, {
-    ...twoExtensions,
-    "extensions/experiments/src/dist/re.js": `export * from "../../../notes/src/index.js"`,
-    "extensions/experiments/src/node_modules/x.js": `import "../../../notes/x"`,
-    "extensions/experiments/dist/built.js": `import "../../notes/x"`,
-  })
-  const rule = (unit) => `a path stays in ${unit} — reach another unit by package name`
-  assert.deepEqual(checkRepository(root), [
-    `extensions/experiments/src/dist/re.js: "../../../notes/src/index.js" leads to extensions/notes/src/index.js; ${rule("extensions/experiments")}`,
-    `extensions/experiments/src/node_modules/x.js: "../../../notes/x" leads to extensions/notes/x; ${rule("extensions/experiments")}`,
-  ])
-})
-
 test("a manifest naming an extension, or off the pinned layout, fails", (t) => {
   const root = repository(t, {
     ...twoExtensions,
@@ -137,71 +123,44 @@ test("an extension's manifest must name it, and parse", (t) => {
   ])
 })
 
-test("finds a relative path into another unit, deep in any file", (t) => {
+test("a symbolic link in or as a unit fails, however deep, and is not followed", (t) => {
   const root = repository(t, {
     ...twoExtensions,
-    "packages/server-kit/package.json": manifest("@nessalabs/server-kit"),
-    "extensions/experiments/app/views/run.tsx": `import { n } from "../../../notes/app/n"`,
-    "extensions/experiments/app/index.html": `<script src="../../notes/app/x.js"></script>`,
-    "extensions/experiments/app/view.svelte": `<script>import "../../../packages/server-kit/src"</script>`,
-    "tsconfig.json": "{}",
-    "extensions/experiments/server/tsconfig.json": `{ "extends": "../../../tsconfig.json" }`,
-    "extensions/notes/server/index.ts": `import { own } from "./own"`,
-  })
-  const rule = (unit) => `a path stays in ${unit} — reach another unit by package name`
-  assert.deepEqual(checkRepository(root), [
-    `extensions/experiments/app/index.html: "../../notes/app/x.js" leads to extensions/notes/app/x.js; ${rule("extensions/experiments")}`,
-    `extensions/experiments/app/view.svelte: "../../../packages/server-kit/src" leads to packages/server-kit/src; ${rule("extensions/experiments")}`,
-    `extensions/experiments/app/views/run.tsx: "../../../notes/app/n" leads to extensions/notes/app/n; ${rule("extensions/experiments")}`,
-  ])
-})
-
-test("a path may name the shared tsconfig.json, nothing else outside its unit", (t) => {
-  const root = repository(t, {
-    ...twoExtensions,
-    "tsconfig.json": "{}",
-    "scripts/tool.mjs": "",
-    "extensions/notes/tsconfig.json": `{ "extends": "../../tsconfig.json" }`,
-    "extensions/notes/server/index.ts": `import "../../../scripts"`,
-  })
-  assert.deepEqual(checkRepository(root), [
-    `extensions/notes/server/index.ts: "../../../scripts" leads to scripts; a path stays in extensions/notes — reach another unit by package name`,
-  ])
-})
-
-test("skips a binary file", (t) => {
-  const root = repository(t, {
-    ...twoExtensions,
-    "extensions/experiments/app/icon.png": `\u0000"../../notes/x"`,
-  })
-  assert.deepEqual(checkRepository(root), [])
-})
-
-test("a symbolic link in or as a unit fails, and is not followed", (t) => {
-  const root = repository(t, {
-    ...twoExtensions,
-    "extensions/notes/server/index.ts": `import "../../experiments/x"`,
+    "extensions/notes/server/index.ts": "",
   })
   symlinkSync(
     join(root, "extensions/notes/server"),
     join(root, "extensions/experiments/borrowed"),
   )
+  mkdirSync(join(root, "extensions/experiments/src/dist"), { recursive: true })
+  symlinkSync("../../../notes", join(root, "extensions/experiments/src/dist/notes"))
+  mkdirSync(join(root, "extensions/experiments/src/node_modules"), { recursive: true })
+  symlinkSync("../../../notes", join(root, "extensions/experiments/src/node_modules/x"))
   symlinkSync(join(root, "extensions/notes"), join(root, "extensions/alias"))
   const rule = "a symbolic link in a unit can lead into another"
   assert.deepEqual(checkRepository(root), [
     `extensions/alias: ${rule}`,
     `extensions/experiments/borrowed: ${rule}`,
-    `extensions/notes/server/index.ts: "../../experiments/x" leads to extensions/experiments/x; a path stays in extensions/notes — reach another unit by package name`,
+    `extensions/experiments/src/dist/notes: ${rule}`,
+    `extensions/experiments/src/node_modules/x: ${rule}`,
   ])
 })
 
-test("skips installed and built files and dot-directories", (t) => {
+test("skips the links pnpm and the build write at a unit's root, and dot-directories", (t) => {
   const root = repository(t, {
     ...twoExtensions,
-    "extensions/experiments/node_modules/x/index.js": `require("../../../notes/x")`,
-    "extensions/experiments/dist/app.js": `import "../../notes/x"`,
-    "extensions/.cache/x.ts": `import "../notes/x"`,
+    "extensions/experiments/dist/app.js": "",
+    "extensions/.cache/x.ts": "",
   })
+  mkdirSync(join(root, "extensions/experiments/node_modules/@nessalabs"), {
+    recursive: true,
+  })
+  symlinkSync(
+    "../../../../packages/server-kit",
+    join(root, "extensions/experiments/node_modules/@nessalabs/server-kit"),
+  )
+  symlinkSync("../../notes", join(root, "extensions/experiments/dist/notes"))
+  symlinkSync("../notes", join(root, "extensions/.cache/notes"))
   assert.deepEqual(checkRepository(root), [])
 })
 
@@ -214,17 +173,21 @@ test("an extension without a manifest fails", (t) => {
   ])
 })
 
+/** A repository whose only failure is a link from experiments into notes. */
+function linked(t) {
+  const root = repository(t, twoExtensions)
+  symlinkSync("../notes", join(root, "extensions/experiments/notes"))
+  return root
+}
+
 test("the command exits 1 with each failure on stderr, and 0 when clean", (t) => {
-  const broken = repository(t, {
-    ...twoExtensions,
-    "extensions/experiments/server/index.ts": `import "../../notes/server"`,
-  })
+  const broken = linked(t)
   const failed = spawnSync(process.execPath, [script, broken], { encoding: "utf8" })
   assert.equal(failed.status, 1)
   assert.equal(failed.stdout, "")
-  assert.match(
+  assert.equal(
     failed.stderr,
-    /^extensions\/experiments\/server\/index\.ts: "\.\.\/\.\.\/notes\/server" leads to extensions\/notes\/server;/,
+    "extensions/experiments/notes: a symbolic link in a unit can lead into another\n",
   )
 
   const clean = repository(t, twoExtensions)
@@ -234,10 +197,7 @@ test("the command exits 1 with each failure on stderr, and 0 when clean", (t) =>
 })
 
 test("the command still checks when run through a symlink", (t) => {
-  const broken = repository(t, {
-    ...twoExtensions,
-    "extensions/experiments/server/index.ts": `import "../../notes/server"`,
-  })
+  const broken = linked(t)
   const link = join(broken, "linked-check.mjs")
   symlinkSync(script, link)
   const result = spawnSync(process.execPath, [link, broken], { encoding: "utf8" })

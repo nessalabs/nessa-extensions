@@ -131,25 +131,25 @@ pull request and on `main`; run the ones your change touches before pushing.
 | --- | --- |
 | `pnpm format:check` | Prettier |
 | `pnpm lint` | ESLint, with typescript-eslint |
-| `pnpm typecheck` | TypeScript, strict |
-| `pnpm test` | Vitest, over every package and extension |
-| `pnpm architecture` | The pinned install layout, the dependencies in it, and what an extension's and a package's files may reach ([`scripts/check-architecture.mjs`](scripts/check-architecture.mjs)), after its own tests. Bare Node: CI runs it before installing anything |
+| `pnpm typecheck` | TypeScript, strict, each package and extension on its own with its folder as `rootDir` ([`scripts/boundary/typecheck.mjs`](scripts/boundary/typecheck.mjs)) |
+| `pnpm build` | Builds each extension with Vite, refusing any build that reads a file outside what the extension may use ([`scripts/boundary/build.mjs`](scripts/boundary/build.mjs)) |
+| `pnpm test` | Vitest, over every package and extension, then the guards' own tests |
+| `pnpm architecture` | The pinned install layout and the dependencies in it ([`scripts/check-architecture.mjs`](scripts/check-architecture.mjs)), after its own tests. Bare Node: CI runs it before installing anything |
 
 ```
 packages/
+  common/        logic more than one extension needs
   app-shell/     the browser side of an app (#2)
   server-kit/    the server side of an extension (#3)
 extensions/      one directory per extension; see its README
-scripts/         the architecture check
+scripts/         the architecture check and the boundary guards
 docs/adr/        decision records
 ```
 
-`nessa_ui`, Nessa's design system, arrives with
+`nessa_ui`, Nessa's design system — its primitives, shared components, and
+reused UI composites — is taken from npm as `@nessalabs/ui`, by version, from
 [#2](https://github.com/nessalabs/nessa-extensions/issues/2), the first package
-to import it. nessa-agent's way of taking it (a vendored commit linked on
-install) is ruled out by this repository's pinned layout; the
-[decision record](docs/adr/todo/1-extensions-repo.md) says what #2 chooses
-between.
+to import it. Publishing it there is nessa_ui's work, not this repository's.
 
 ## License
 

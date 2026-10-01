@@ -48,6 +48,7 @@ that needs to change for extensions changes there.
 **Layout.** A pnpm workspace (pnpm 11.9.0, as nessa-agent and nessa_ui):
 
 ```
+packages/common        logic more than one extension needs: no UI, no DOM, no Node
 packages/app-shell     the browser side: the ui/* bridge client, host theming, a fake host (#2)
 packages/server-kit    the server side: tools with UI, ui:// resources, negotiation (#3)
 extensions/<name>/     one extension, one package @nessalabs/<name>
@@ -55,33 +56,40 @@ extensions/<name>/     one extension, one package @nessalabs/<name>
   app/                 its MCP App
 ```
 
-An arrow runs one way: extensions depend on packages. **An extension depends on
-nothing in another extension, and a package on nothing in any extension**; what
-two extensions share becomes a package, reached by its package name through a
-manifest. `pnpm architecture` enforces it, in bare Node before install:
+**The boundary is an allow-list.** Code in an extension comes only from its
+own folder, the workspace packages under `packages/` its manifest declares,
+and npm packages. Never another extension, never a path outside its folder:
+extensions never talk to each other. What two extensions share becomes a
+package — logic in `packages/common`, UI in `nessa_ui`.
 
-- **The install layout is pinned.** `pnpm-workspace.yaml`, the manifests'
-  keys, and the files pnpm reads settings and hooks from are held to
-  allow-lists, so nothing in the repository moves where packages install or
-  how they link.
-- **Dependencies are checked within it.** Every dependency is a workspace
-  package, a semver range, or a dist-tag, and none is named for an extension.
-- **Files stay in their unit**: a path written in one may lead only inside it
-  (or to the shared `tsconfig.json`), and no symbolic link sits in one.
+**The toolchain enforces it, not a reading of the source.** Three checks, each
+stating in its module comment exactly what it allows, refuses, and leaves to
+review:
 
-This is the owner's decision after five review rounds. Checking how a
-dependency was written, then the lockfile, then the install, each fell to a
-pnpm setting that moved the outcome somewhere the check did not look. Pinning
-the settings takes those away, so what remains to check is the manifest; the
-lockfile and the install are not read, since they would re-decide what the
-manifest check decides.
+- **Before install, the install layout is pinned** (`scripts/architecture/`):
+  `pnpm-workspace.yaml`, the manifests' keys and dependency specs, and the
+  files pnpm reads settings from are held to allow-lists, and no dependency
+  names an extension, so pnpm links into a unit exactly the packages it
+  declares. No symbolic link sits in a unit.
+- **Typecheck** runs `tsc` on each package and extension separately, with
+  `rootDir` set to its folder on the command line, so `tsc` refuses any source
+  file outside it.
+- **Build** runs each extension's Vite build and refuses it if it read
+  anything outside the allow-list: every module in the bundler's graph, and
+  every file Vite read through Node's `fs` (assets and inlined styles never
+  enter the graph), each followed to its real path.
 
-What exactly is allowed, what is refused, and what is held by review instead
-is stated once, in the module comments of `scripts/architecture/layout.mjs`
-and `dependencies.mjs`; this record does not restate it.
+The earlier check read source and manifests as text to find paths into other
+units. Two review cycles each found new spellings it missed — backslashes,
+escapes, HTML character references, quoting, the lockfile, hoisting — because
+every resolver decodes its own. Asking the resolvers what they resolved ends
+that: how a path is spelled no longer matters, only where it leads.
 
-Every extension directory must also be a package, with its own
-`package.json`.
+**Each extension stands alone.** It installs on its own and works in any MCP
+Apps host. Packages are bundled into it at build, so nothing it needs is
+another unpublished package. It is tested in two hosts before it ships: the
+fake host from `@nessalabs/app-shell`, which plays the standard and nothing
+more, and Nessa.
 
 **Conformance.** Every extension negotiates `io.modelcontextprotocol/ui` under
 `capabilities.extensions`, names its view in `_meta.ui.resourceUri`, serves it
@@ -100,23 +108,19 @@ brings its release workflow; nothing publishes from a pull request.
 
 **Checks.** TypeScript strict, ESLint with typescript-eslint, Prettier, and
 Vitest, configured as nessa-agent's are where the two repositories have the same
-needs; the architecture check in bare Node with no dependencies, which CI
-holds it to by running it before `pnpm install`. CI runs all of them on every pull
-request and on `main`, in one job. nessa-agent's own lint rules, such as
-`nessa/inherited-lookups`, are not copied here: a second copy of a rule's
-enforcer is gate 13's defect too, so until the rule is shared, what it enforces
-is held here by review. `main` is protected as
-every nessalabs repository is: conversations resolved before merge.
+needs; the layout check in bare Node with no dependencies, which CI holds it
+to by running it before `pnpm install`; then typecheck and build as above. CI
+runs all of them on every pull request and on `main`, in one job.
+nessa-agent's own lint rules, such as `nessa/inherited-lookups`, are not
+copied here: a second copy of a rule's enforcer is gate 13's defect too, so
+until the rule is shared, what it enforces is held here by review. `main` is
+protected as every nessalabs repository is: conversations resolved before
+merge.
 
-**`nessa_ui` arrives with #2, not here, and not the way nessa-agent takes
-it.** The app shell is the first code that imports it (#2 maps host context
-onto its theme tokens). nessa-agent consumes it through a `preinstall` script
-that vendors a pinned commit and `link:` dependencies into the vendored copy;
-the pinned layout refuses both, so that mechanism is ruled out here. #2
-chooses between `nessa_ui` published to a registry and taken by version, and
-a reviewed change to the allow-lists that admits one vendoring path — an owner
-decision, recorded when it is made. Pinning anything now would be a pin
-nothing reads.
+**`nessa_ui` is taken from npm,** as `@nessalabs/ui`, by version, from #2,
+the first package that imports it. nessa-agent's way of taking it — a
+`preinstall` script that vendors a pinned commit, and `link:` dependencies
+into it — is refused by the pinned layout. Publishing it is nessa_ui's work.
 
 ## Alternatives considered
 
@@ -125,7 +129,9 @@ nothing reads.
   discipline keeps the app from importing them.
 - **A standards document of this repository's own.** Faster to tailor, but two
   documents drift, and the second would be a copy of the first on day one.
-- **Publishing `app-shell` and `server-kit` to npm.** Useful once someone
+- **Reading source text for paths into other units.** Tried for two review
+  cycles; see above.
+- **Publishing `app-shell`, `server-kit`, and `common` to npm.** Useful once someone
   outside this repository builds on them; until then it is versions to keep in
   step with no one to benefit. It can be revisited with its own issue.
 - **One package per extension side** (`@nessalabs/<name>-server` and an app
@@ -140,11 +146,11 @@ nothing reads.
   bridge; ADR 344 records what that rules out for now.
 - The standards are one link away rather than one directory away, and a change
   to them for extensions is a nessa-agent pull request.
-- The architecture check covers the layout and dependencies only, as the
-  record states above. Everything else in `AGENTS.md`'s extensions section is
-  held by review — including, until the first extension gives
-  `server/` and `app/` a configuration each, that server code does not use
-  browser globals or app code Node's.
-- Remaining work: #2 and #3 (the packages, with `nessa_ui`), #4–#7 (the
+- The boundary holds in typecheck and build. What none of the three checks
+  sees — a type-only import of another extension's declaration file, for one
+  — is named in their module comments and held by review.
+- A build reads only its extension's folder, its declared packages, and npm,
+  so a configuration shared from the repository's root is refused too.
+- Remaining work: #2 and #3 (the packages, with `nessa_ui` from npm), #4–#7 (the
   experiments extension and its release workflow); the `@nessalabs` npm scope
   must be held by Nessa Labs before anything is published.

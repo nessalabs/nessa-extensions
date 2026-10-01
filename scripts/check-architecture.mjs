@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
  * The architecture check: the pinned install layout and the dependencies in it
- * (scripts/architecture/layout.mjs), and what an extension's and a package's
- * files may reach (scripts/architecture/dependencies.mjs). Bare Node, no
- * dependencies — CI runs it before `pnpm install`. Failures are printed as `path: rule`, one per line,
- * on stderr, and the exit status is 1.
+ * (scripts/architecture/layout.mjs), and no symbolic link in a unit. Bare
+ * Node, no dependencies — CI runs it before `pnpm install`. What a unit's
+ * files import is not read here: the typecheck and build guards ask the
+ * toolchain (scripts/boundary/). Failures are printed as `path: rule`, one per
+ * line, on stderr, and the exit status is 1.
  *
  *   node scripts/check-architecture.mjs [root]   check root, or this repository
  */
@@ -12,7 +13,6 @@ import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "
 import { dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
-import { relativePathViolations } from "./architecture/dependencies.mjs"
 import {
   manifestViolations,
   pnpmFiles,
@@ -20,37 +20,27 @@ import {
 } from "./architecture/layout.mjs"
 
 /**
- * What install and build write at a unit's root: not ours to check. Only
- * there — a `dist` or `node_modules` deeper in a unit is source like any other.
+ * What install and build write at a unit's root: pnpm's links and the build's
+ * output. Only there — a `dist` or `node_modules` deeper in a unit is source
+ * like any other.
  */
 const skipped = new Set(["node_modules", "dist"])
 
 /**
- * Every file under `directory`, and every symbolic link, which is not
- * followed. Every file, not a list of kinds: a quoted path in a config, an
- * HTML page, or a component format nobody listed reaches as far as one in
- * TypeScript.
+ * Every symbolic link under `directory`, not followed. TypeScript does not
+ * follow one to its real path for a relative import, so a link in a unit
+ * would let `rootDir` pass a file in another (scripts/boundary/typecheck.mjs).
  */
-function walk(directory, atUnitRoot = true) {
-  const found = { files: [], links: [] }
+function links(directory, atUnitRoot = true) {
+  const found = []
   for (const name of readdirSync(directory).sort()) {
     if (atUnitRoot && skipped.has(name)) continue
     const path = join(directory, name)
     const entry = lstatSync(path)
-    if (entry.isSymbolicLink()) found.links.push(path)
-    else if (entry.isDirectory()) {
-      const inner = walk(path, false)
-      found.files.push(...inner.files)
-      found.links.push(...inner.links)
-    } else found.files.push(path)
+    if (entry.isSymbolicLink()) found.push(path)
+    else if (entry.isDirectory()) found.push(...links(path, false))
   }
   return found
-}
-
-/** Text, or null for a binary file, which holds no paths to read. */
-function text(path) {
-  const contents = readFileSync(path)
-  return contents.includes(0) ? null : contents.toString("utf8")
 }
 
 /** The units under `extensions/` or `packages/`. A dot-directory is not one. */
@@ -157,17 +147,8 @@ export function checkRepository(root) {
     ),
   )
   for (const unit of unitNames) {
-    const { files, links } = walk(join(root, unit))
-    for (const link of links) {
+    for (const link of links(join(root, unit))) {
       failures.push(`${rel(link)}: a symbolic link in a unit can lead into another`)
-    }
-    for (const file of files) {
-      const path = rel(file)
-      const contents = text(file)
-      if (contents === null) continue
-      for (const violation of relativePathViolations(path, contents)) {
-        failures.push(`${path}: ${violation}`)
-      }
     }
   }
   return failures

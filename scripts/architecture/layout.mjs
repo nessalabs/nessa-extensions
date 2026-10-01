@@ -39,8 +39,8 @@
  * workspace packages its manifest (or the root's) names, and no install script
  * writes there, so a manifest that names no extension installs none, and an
  * import of one by name does not resolve. (A link committed into a unit's
- * `node_modules` would survive install; `.gitignore` keeps it out, and review
- * holds it — see dependencies.mjs.)
+ * `node_modules` would survive install; `.gitignore` keeps it out, and the
+ * build guard, scripts/boundary/build.mjs, follows it to its real path.)
  * That is why the install itself is not read: it would re-decide what the
  * manifest check already decided (gate 13).
  *

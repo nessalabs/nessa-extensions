@@ -30,26 +30,30 @@ and evidence and closure.
 
 ```
 packages/
+  common/        logic more than one extension needs; no UI, no DOM, no Node
   app-shell/     the browser side: the ui/* bridge client, host theming, the fake host (#2)
   server-kit/    the server side: tools with UI, ui:// resources, negotiation (#3)
 extensions/
   <name>/        one extension, one npm package: @nessalabs/<name>
     server/      its MCP server
     app/         its MCP App, built into one HTML file the server serves
-scripts/         developer tooling: the architecture check
+scripts/
+  architecture/  the pinned install layout, checked before install
+  boundary/      the typecheck and build guards
 docs/adr/        decision records
 ```
 
-- An extension depends on nothing in another extension, and a package on
-  nothing in any extension. What two extensions share goes in a package.
-  Another unit is reached only by package name, through a manifest.
-  `pnpm architecture` (`scripts/check-architecture.mjs`, bare Node, before
-  install) holds that by pinning pnpm's install layout, checking dependencies
-  within it, and refusing files that reach another unit by path. What it
-  allows, refuses, and leaves to review is stated once, in the module comments
-  of [`scripts/architecture/layout.mjs`](scripts/architecture/layout.mjs) and
-  [`dependencies.mjs`](scripts/architecture/dependencies.mjs). Everything else
-  in this section is held by review.
+- The boundary is the [decision record](docs/adr/todo/1-extensions-repo.md)'s
+  allow-list: an extension's code comes from its own folder, the workspace
+  packages it declares, and npm, and nowhere else. Extensions never import
+  one another. Three checks hold it, and each states what it allows, refuses,
+  and leaves to review once, in its module comment:
+  [`scripts/architecture/layout.mjs`](scripts/architecture/layout.mjs)
+  (`pnpm architecture`, bare Node, before install),
+  [`scripts/boundary/typecheck.mjs`](scripts/boundary/typecheck.mjs)
+  (`pnpm typecheck`), and
+  [`scripts/boundary/build.mjs`](scripts/boundary/build.mjs) (`pnpm build`).
+  Everything else in this section is held by review.
 - An extension's own layout, below `server/` and `app/`, follows the standards'
   [organization][organization] and [domain-driven design][ddd] sections, and is
   described in [extensions/README.md](extensions/README.md).
@@ -117,6 +121,10 @@ hosts it as any other ([nessa-agent ADR 344][adr-344], proposed in
 The standards' [browser verification][browser] and gate 17 apply to an app as
 to any UI: its scripts drive it in Chromium and WebKit, inside the fake host
 from `@nessalabs/app-shell` (#2) rather than the desktop window.
+
+An extension is tested in two hosts before it ships: that fake host, which
+plays the standard's messages and nothing more, and Nessa. Passing in one
+host only is not evidence that it works in any MCP Apps host.
 
 ### Publishing
 

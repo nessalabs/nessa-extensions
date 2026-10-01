@@ -13,8 +13,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json && node scripts/boundary/typecheck.mjs",
+    "build": "node scripts/boundary/build.mjs",
+    "test": "vitest run && node --test scripts/boundary/*.test.mjs",
     "architecture": "node --test scripts/architecture/*.test.mjs && node scripts/check-architecture.mjs"
   },
   "devDependencies": {
@@ -25,6 +26,7 @@
     "prettier": "^3.9.6",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.68.0",
+    "vite": "^8.3.1",
     "vitest": "^3.2.7"
   }
 }

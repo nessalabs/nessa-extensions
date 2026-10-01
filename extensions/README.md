@@ -6,10 +6,12 @@ experiments (#4–#7).
 
 ```
 extensions/<name>/
-  package.json   "name": "@nessalabs/<name>", its "bin", and its build
-  README.md      what it does, its tools, and what each tool's view shows
-  server/        the MCP server, built on @nessalabs/server-kit
-  app/           the MCP App, built on @nessalabs/app-shell
+  package.json     "name": "@nessalabs/<name>", its "bin", and the packages it declares
+  tsconfig.json    extends ../../tsconfig.base.json
+  vite.config.ts   its build: the app's HTML file and the server
+  README.md        what it does, its tools, and what each tool's view shows
+  server/          the MCP server, built on @nessalabs/server-kit
+  app/             the MCP App, built on @nessalabs/app-shell
 ```
 
 - **`server/`** runs in Node. It declares the extension's tools and serves the
@@ -28,16 +30,21 @@ extensions/<name>/
   standards' [organization](https://github.com/nessalabs/nessa-agent/blob/main/CODING_STANDARDS.md#organization-across-the-repository)
   and [domain-driven design](https://github.com/nessalabs/nessa-agent/blob/main/CODING_STANDARDS.md#domain-driven-design-boundaries)
   sections.
-- An extension depends on nothing in another extension. What two share
-  belongs in a package under [`packages/`](../packages), reached by its
-  package name; `pnpm architecture` holds that (see
-  [AGENTS.md](../AGENTS.md#layout)). A tool that needs another unit's files, such as
-  Tailwind's `@source`, reaches them through `node_modules`
-  (`@source "../node_modules/@nessalabs/app-shell/src"`), not by path.
-- Until the first extension, one `tsconfig.json` types every file with both
-  the DOM and Node, so nothing yet stops `server/` using `window` or `app/`
-  using `process`; that is held by review. The first extension gives each
-  side its own configuration.
+- An extension's code comes from its own folder, the workspace packages its
+  manifest declares, and npm — never another extension. What two share
+  belongs in a package under [`packages/`](../packages): logic in
+  `@nessalabs/common`, UI in `nessa_ui`. The typecheck and build guards hold
+  that (see [AGENTS.md](../AGENTS.md#layout)). A tool that needs a declared
+  package's files, such as Tailwind's `@source`, reaches them through
+  `node_modules` (`@source "../node_modules/@nessalabs/app-shell/src"`).
+- `pnpm build` runs each extension's `vite.config.ts` in its folder, and the
+  build may read only what that allow-list allows — so a configuration shared
+  from the repository's root, which the extension would not have on its own,
+  is refused too.
+- One `tsconfig.json` types both sides of an extension, so nothing yet stops
+  `server/` using `window` or `app/` using `process`; that is held by review
+  until the first extension gives each side a configuration of its own, which
+  `pnpm typecheck` must then check as it checks the extension's.
 
 Tests sit beside the code they test (`*.test.ts`, `*.test.tsx`), and `pnpm test` finds them.
 
