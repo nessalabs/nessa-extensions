@@ -698,3 +698,151 @@ test("a build that cannot start says so in one line, and leaves the working dire
   assert.equal(process.cwd(), before)
   assert.equal(refusals.length, 1)
 })
+
+test("a path that climbs out through the store's link is judged where it lands", (t) => {
+  const root = repository(t, {
+    "extensions/experiments/vite.config.ts": [
+      `export default {`,
+      `  build: { outDir: "dist" },`,
+      `  resolve: { alias: { sibling: "node_modules/left-pad/../../../../../extensions/notes/src/index.ts" } },`,
+      `}`,
+    ].join("\n"),
+    "extensions/experiments/src/own.ts": `// @ts-expect-error: only the alias knows it\nexport { secret as own } from "sibling"\n`,
+  })
+  const build = run("build.mjs", root)
+  assert.equal(build.status, 1, build.stderr)
+  assert.equal(
+    build.stderr.trim().split("\n").at(-1),
+    refused("extensions/notes/src/index.ts"),
+  )
+  assert.equal(built(root), "")
+})
+
+test("an import TypeScript does not resolve is still followed by typecheck", (t) => {
+  const program = (path) =>
+    `extensions/experiments: its program uses ${path}, which is in extensions/notes; nothing imports an extension`
+  const cases = {
+    "a side-effect import with a query": [
+      {
+        "extensions/experiments/src/leak.test.ts": `import "../../notes/src/index.ts?x"\n`,
+      },
+      "extensions/notes/src/index.ts",
+    ],
+    "a path that climbs out through the store's link": [
+      {
+        "extensions/experiments/src/leak.test.ts": `import "../node_modules/left-pad/../../../../../extensions/notes/src/index.ts?x"\n`,
+      },
+      "extensions/notes/src/index.ts",
+    ],
+    "a file named without its extension": [
+      { "extensions/experiments/src/leak.test.ts": `import "../../notes/src/index?x"\n` },
+      "extensions/notes/src/index",
+    ],
+    "an import a declaration matches": [
+      {
+        "extensions/experiments/src/leak.test.ts": `import text from "../../notes/src/index.ts?raw"\nexport { text }\n`,
+      },
+      "extensions/notes/src/index.ts",
+    ],
+    "noResolve in the unit's configuration": [
+      {
+        "extensions/experiments/tsconfig.json": JSON.stringify({
+          extends: "../../tsconfig.base.json",
+          compilerOptions: { noResolve: true },
+        }),
+        "extensions/experiments/src/leak.test.ts": `export { secret } from "../../notes/src/index.ts"\n`,
+      },
+      "extensions/notes/src/index.ts",
+    ],
+  }
+  for (const [name, [files, path]] of Object.entries(cases)) {
+    t.test(name, (t) => {
+      const root = repository(t, files)
+      const typecheck = run("typecheck.mjs", root)
+      assert.equal(typecheck.status, 1)
+      assert.ok(typecheck.stderr.includes(program(path)), typecheck.stderr)
+    })
+  }
+})
+
+test("a node_modules directory elsewhere in the repository is not npm", (t) => {
+  const root = repository(t, {
+    "vendor/node_modules/evil/index.ts": `export const secret = "sibling secret"\n`,
+    "extensions/experiments/src/own.ts": (real) =>
+      `export { secret as own } from "${real}/vendor/node_modules/evil/index.ts"\n`,
+  })
+  const why = "which is outside every extension and package"
+  const typecheck = run("typecheck.mjs", root)
+  assert.equal(typecheck.status, 1)
+  assert.ok(
+    typecheck.stderr.includes(
+      `extensions/experiments: its program uses vendor/node_modules/evil/index.ts, ${why}`,
+    ),
+    typecheck.stderr,
+  )
+  const build = run("build.mjs", root)
+  assert.equal(build.status, 1)
+  assert.equal(build.stderr, `${refused("vendor/node_modules/evil/index.ts", why)}\n`)
+})
+
+test("a unit whose configuration includes nothing still typechecks", (t) => {
+  const root = repository(t, {
+    "extensions/experiments/tsconfig.json": JSON.stringify({
+      extends: "../../tsconfig.base.json",
+      include: ["nothing"],
+    }),
+  })
+  const typecheck = run("typecheck.mjs", root)
+  assert.equal(typecheck.status, 0, typecheck.stderr)
+})
+
+test("the configuration's own worker plugins still run", (t) => {
+  const root = repository(t, {
+    "extensions/experiments/vite.config.ts": [
+      `export default {`,
+      `  build: { outDir: "dist" },`,
+      `  worker: { plugins: () => [{ name: "mark", transform: (code) => code.replace("WORKER_MARK", "worker plugin ran") }] },`,
+      `}`,
+    ].join("\n"),
+    "extensions/experiments/src/own.ts": `export const own = new Worker(new URL("./worker.js", import.meta.url), { type: "module" })\n`,
+    "extensions/experiments/src/worker.js": `postMessage("WORKER_MARK")\n`,
+  })
+  const build = run("build.mjs", root)
+  assert.equal(build.status, 0, build.stderr)
+  assert.match(built(root), /worker plugin ran/)
+})
+
+test("a dot-directory under extensions is not an extension", (t) => {
+  const root = repository(t, {
+    "extensions/.cache/vite.config.ts": `throw new Error("built a dot-directory")\n`,
+  })
+  const build = run("build.mjs", root)
+  assert.equal(build.status, 0, build.stderr)
+})
+
+test("noResolve cannot hide a package the unit does not declare", (t) => {
+  const root = repository(
+    t,
+    {
+      "extensions/experiments/package.json": manifest("@nessalabs/experiments", {
+        dependencies: { "left-pad": "^1.0.0" },
+      }),
+      "extensions/experiments/tsconfig.json": JSON.stringify({
+        extends: "../../tsconfig.base.json",
+        compilerOptions: { noResolve: true },
+      }),
+    },
+    {
+      "extensions/experiments/node_modules/@nessalabs/common": null,
+      "node_modules/@nessalabs/common": "../../packages/common",
+    },
+  )
+  const typecheck = run("typecheck.mjs", root)
+  assert.equal(typecheck.status, 1)
+  assert.ok(
+    typecheck.stderr.includes(
+      "extensions/experiments: its program uses packages/common/src/index.ts, which is in packages/common, and extensions/experiments does not declare it",
+    ),
+    typecheck.stderr,
+  )
+})

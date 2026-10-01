@@ -80,11 +80,12 @@ review:
   declaration files, links).
 - **Build** runs each extension's Vite build in a staged copy of the
   repository that holds only what the extension may use — itself, the
-  packages it declares, pnpm's store, and the shared compiler settings — so
-  nothing else can be found, by any part of the toolchain. It then refuses the
-  build if any module in the bundler's graph, workers' included, really lies
-  outside the allow-list, which catches an absolute path or a link back into
-  the repository.
+  packages it declares, pnpm's store, and the shared compiler settings — so a
+  relative path finds nothing else, whichever part of the toolchain follows
+  it. It then refuses the build if any module in the bundler's graph, workers'
+  included, really lies outside the allow-list, which catches an absolute
+  path, or a path that climbs back into the repository through the store's
+  link.
 
 The earlier check read source and manifests as text to find paths into other
 units. Two review cycles each found new spellings it missed — backslashes,
@@ -154,9 +155,11 @@ into it — is refused by the pinned layout. Publishing it is nessa_ui's work.
 - The standards are one link away rather than one directory away, and a change
   to them for extensions is a nessa-agent pull request.
 - The boundary holds in typecheck and build. What none of the three checks
-  sees — a non-module file named by an absolute path into the repository,
-  what the Vite configuration's own code does when it runs — is named in their
-  module comments and held by review.
+  sees — a non-module file named by an absolute path into the repository or
+  by one that climbs out through a link, what the Vite configuration's own
+  code does when it runs, what Vitest and the dev server load at run time
+  beyond the files typecheck covers — is named in their module comments and
+  held by review.
 - A build sees only its extension, its declared packages, npm, and the shared
   compiler settings, so it must declare what its configuration imports, and a
   configuration shared from the repository's root is not there to use.

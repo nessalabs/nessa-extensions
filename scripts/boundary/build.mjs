@@ -12,8 +12,10 @@
  *   stylesheet `@import`, an `.env` file, the public directory, the Vite
  *   configuration's own imports — can only find what is there. A sibling
  *   extension, an undeclared package, and a file at the repository's root
- *   are not there, so the build fails to find them, however they are spelled
- *   and whichever part of the toolchain looks. The store holds no workspace
+ *   are not there, so a path to them through the stage finds nothing,
+ *   however it is spelled and whichever part of the toolchain follows it. A
+ *   path that climbs back out through the store's link is the module graph's
+ *   to catch. The store holds no workspace
  *   project, because the pinned layout requires `hoistWorkspacePackages:
  *   false` (`scripts/architecture/layout.mjs`).
  * - **The module graph.** Every module each environment's bundler loaded,
@@ -30,9 +32,12 @@
  * the build and so is in no module graph — `typecheck.mjs` checks it, with
  * every other file of the unit. Held by review: a file outside the module
  * graph — an asset, a stylesheet, an `.env` file — named by an absolute path
- * into the repository; and anything the Vite configuration's own code does
- * when it runs, with Node's full access. A symbolic link in a unit is refused before install
- * (`scripts/check-architecture.mjs`), and copied into the stage as it is.
+ * into the repository, or by one that climbs out through the store's link
+ * (Vite resolves the `..` in those as text, so today it finds nothing there);
+ * anything the Vite configuration's own code does when it runs, with Node's
+ * full access; and the dev server, which is not a build. A symbolic link in a
+ * unit is refused before install (`scripts/check-architecture.mjs`), and
+ * copied into the stage as it is.
  *
  * An extension is built from its `vite.config.ts`, with its folder in the
  * stage as the working directory, so it must declare what that file imports,
@@ -55,13 +60,13 @@ import {
   symlinkSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { dirname, isAbsolute, join, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { stripVTControlCharacters } from "node:util"
 
 import { createBuilder } from "vite"
 
-import { moduleRefusal } from "./allow-list.mjs"
+import { moduleRefusal, repositoryPath } from "./allow-list.mjs"
 import { declaredPackages, units } from "./units.mjs"
 
 const configFile = "vite.config.ts"
@@ -90,7 +95,7 @@ function stage(root, paths) {
   const store = join(root, "node_modules", ".pnpm")
   if (existsSync(store)) {
     mkdirSync(join(directory, "node_modules"))
-    symlinkSync(store, join(directory, "node_modules", ".pnpm"))
+    symlinkSync(store, join(directory, "node_modules", ".pnpm"), "junction")
   }
   return directory
 }
@@ -104,10 +109,10 @@ const moduleGraph = (check) => ({
 })
 
 /**
- * Whether a module id is a name rather than a path: a Node built-in, or an
- * npm package a server build leaves as an import, resolved where the
- * extension is installed. (A plugin's virtual module may be named so too;
- * plugins come from the configuration, which review holds.)
+ * Whether a module id that is no file is a name — a Node built-in, or an npm
+ * package a server build leaves as an import, resolved where the extension is
+ * installed — rather than a path to nothing. (A plugin's virtual module may be
+ * named so too; plugins come from the configuration, which review holds.)
  */
 const isName = (id) =>
   id.startsWith("node:") ||
@@ -136,15 +141,20 @@ export async function buildExtension(root, unit) {
     const declared = declaredPackages(root, unit)
     staged = stage(root, [unit, ...declared])
     const check = (id) => {
-      if (id.startsWith("\0") || isName(id)) return
-      const file = id.split("?")[0]
+      if (id.startsWith("\0")) return
+      // Whatever its shape, an id that is a file — relative ones from the
+      // working directory, the staged extension, as the bundler reads them —
+      // is judged by where it really is. Only one that is no file may be a name.
+      // The system's realpath follows each link before the `..` after it, as
+      // the bundler's read does; Node's own resolves `..` first, as text.
       let real = null
       try {
-        if (isAbsolute(file)) real = realpathSync(file)
+        real = realpathSync.native(id.split("?")[0])
       } catch {
-        // not on disk: refused below
+        // no file: a name, or refused below
       }
       if (real === null) {
+        if (isName(id)) return
         refused.set(
           id,
           "which is not a file on disk, so where it comes from cannot be checked",
@@ -152,9 +162,7 @@ export async function buildExtension(root, unit) {
         return
       }
       const inStage = real === staged || real.startsWith(`${staged}${sep}`)
-      const at = relative(inStage ? staged : root, real)
-        .split(sep)
-        .join("/")
+      const at = repositoryPath(inStage ? staged : root, real)
       const why = moduleRefusal(at, unit, declared)
       if (why !== null && !refused.has(at)) refused.set(at, why)
     }

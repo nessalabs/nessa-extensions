@@ -1,7 +1,9 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import { moduleRefusal } from "./allow-list.mjs"
+import path from "node:path"
+
+import { moduleRefusal, repositoryPath } from "./allow-list.mjs"
 
 const unit = "extensions/notes"
 const declared = new Set(["packages/common"])
@@ -52,4 +54,38 @@ test("everything else is refused, saying where it is", () => {
     "which is outside every extension and package",
   )
   assert.equal(refusal("../secret.ts"), "which is outside the repository")
+})
+
+test("only the root's node_modules is pnpm's; any other in the repository is the repository's", () => {
+  assert.equal(
+    refusal("vendor/node_modules/evil/index.ts"),
+    "which is outside every extension and package",
+  )
+  assert.equal(refusal("../elsewhere/lib/index.js"), "which is outside the repository")
+})
+
+test("a path is taken relative to the repository, and another drive is outside it", () => {
+  assert.equal(
+    repositoryPath("/repo", "/repo/extensions/notes/x.ts", path.posix),
+    "extensions/notes/x.ts",
+  )
+  assert.equal(
+    repositoryPath("/repo", "/elsewhere/x.ts", path.posix),
+    "../elsewhere/x.ts",
+  )
+  assert.equal(
+    repositoryPath("C:\\repo", "C:\\repo\\extensions\\notes\\x.ts", path.win32),
+    "extensions/notes/x.ts",
+  )
+  const other = repositoryPath("C:\\repo", "D:\\node_modules\\vite\\x.js", path.win32)
+  assert.equal(other, "../D:/node_modules/vite/x.js")
+  assert.equal(moduleRefusal(other, unit, declared), null)
+  assert.equal(
+    moduleRefusal(
+      repositoryPath("C:\\repo", "D:\\secret.ts", path.win32),
+      unit,
+      declared,
+    ),
+    "which is outside the repository",
+  )
 })
