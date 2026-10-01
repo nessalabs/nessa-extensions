@@ -313,9 +313,13 @@ export function createFakeHost(options: FakeHostOptions): FakeHost {
     })
   }
 
+  /** A field `params` holds itself, never one it inherits. */
+  function field(params: unknown, key: string): unknown {
+    return isRecord(params) && Object.hasOwn(params, key) ? params[key] : undefined
+  }
+
   function stringField(params: unknown, key: string): string | undefined {
-    if (!isRecord(params) || !Object.hasOwn(params, key)) return undefined
-    const value = params[key]
+    const value = field(params, key)
     return typeof value === "string" ? value : undefined
   }
 
@@ -347,8 +351,10 @@ export function createFakeHost(options: FakeHostOptions): FakeHost {
       case "tools/call": {
         const name = stringField(params, "name")
         if (name === undefined) return malformed("name is not a string")
-        const args =
-          isRecord(params) && isRecord(params.arguments) ? params.arguments : undefined
+        const args = field(params, "arguments")
+        if (args !== undefined && !isRecord(args)) {
+          return malformed("arguments is not an object")
+        }
         return answer(id, () =>
           handlers.callTool(args === undefined ? { name } : { name, arguments: args }),
         )
@@ -403,8 +409,8 @@ export function createFakeHost(options: FakeHostOptions): FakeHost {
       return
     }
     if (method === "ui/notifications/size-changed") {
-      const width = isRecord(params) ? params.width : undefined
-      const height = isRecord(params) ? params.height : undefined
+      const width = field(params, "width")
+      const height = field(params, "height")
       if (typeof width !== "number" || typeof height !== "number") {
         violations.push({
           kind: "malformed-params",

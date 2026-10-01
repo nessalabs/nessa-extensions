@@ -57,41 +57,44 @@ const isId = (value: unknown): value is RequestId =>
 /** Which kind of JSON-RPC message `data` is, or why it is none. */
 export function readEnvelope(data: unknown): Envelope {
   if (!isRecord(data)) return { kind: "invalid", reason: "not an object" }
-  if (data.jsonrpc !== "2.0") return { kind: "invalid", reason: 'jsonrpc is not "2.0"' }
-  const params = Object.hasOwn(data, "params") ? data.params : undefined
+  // Only what the message holds itself: never a field it inherits.
+  const own = (record: Record<string, unknown>, key: string) =>
+    Object.hasOwn(record, key) ? record[key] : undefined
+  if (own(data, "jsonrpc") !== "2.0") {
+    return { kind: "invalid", reason: 'jsonrpc is not "2.0"' }
+  }
+  const params = own(data, "params")
+  const id = own(data, "id")
   if (Object.hasOwn(data, "method")) {
-    if (typeof data.method !== "string") {
+    const method = own(data, "method")
+    if (typeof method !== "string") {
       return { kind: "invalid", reason: "method is not a string" }
     }
-    if (!Object.hasOwn(data, "id")) {
-      return { kind: "notification", method: data.method, params }
-    }
-    if (!isId(data.id)) return { kind: "invalid", reason: "id is not a string or number" }
-    return { kind: "request", id: data.id, method: data.method, params }
+    if (!Object.hasOwn(data, "id")) return { kind: "notification", method, params }
+    if (!isId(id)) return { kind: "invalid", reason: "id is not a string or number" }
+    return { kind: "request", id, method, params }
   }
-  if (!isId(data.id))
+  if (!isId(id)) {
     return { kind: "invalid", reason: "a response's id is not a string or number" }
+  }
   const hasResult = Object.hasOwn(data, "result")
-  const hasError = Object.hasOwn(data, "error")
-  if (hasResult === hasError) {
+  if (hasResult === Object.hasOwn(data, "error")) {
     return {
       kind: "invalid",
       reason: "a response has neither or both of result and error",
     }
   }
-  if (hasResult) return { kind: "result", id: data.id, result: data.result }
-  const error = data.error
-  if (
-    !isRecord(error) ||
-    typeof error.code !== "number" ||
-    typeof error.message !== "string"
-  ) {
+  if (hasResult) return { kind: "result", id, result: own(data, "result") }
+  const error = own(data, "error")
+  const code = isRecord(error) ? own(error, "code") : undefined
+  const message = isRecord(error) ? own(error, "message") : undefined
+  if (!isRecord(error) || typeof code !== "number" || typeof message !== "string") {
     return {
       kind: "invalid",
       reason: "a response's error has no numeric code and message",
     }
   }
-  const read: JsonRpcError = { code: error.code, message: error.message }
+  const read: JsonRpcError = { code, message }
   if (Object.hasOwn(error, "data")) read.data = error.data
-  return { kind: "error", id: data.id, error: read }
+  return { kind: "error", id, error: read }
 }

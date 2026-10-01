@@ -475,6 +475,9 @@ export function createBridge(options: BridgeOptions): Bridge {
           update({ connection: { status: "failed", failure } })
           throw new BridgeError(failure)
         }
+        // `initialized` goes before anything else the app sends: subscribers
+        // that hear "connected" may send at once (a first size, a call).
+        send({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} })
         update({
           connection: {
             status: "connected",
@@ -483,7 +486,6 @@ export function createBridge(options: BridgeOptions): Bridge {
           },
           hostContext: result.hostContext,
         })
-        send({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} })
       },
       (error: unknown) => {
         // Closing and teardown say where the connection ended themselves.

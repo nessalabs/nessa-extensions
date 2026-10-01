@@ -161,7 +161,7 @@ export type ContentBlock =
   TextContent | ImageContent | AudioContent | ResourceLink | EmbeddedResource
 
 /** What a tool returns: `tools/call`'s result, and `ui/notifications/tool-result`. */
-export interface CallToolResult {
+export type CallToolResult = {
   content: ContentBlock[]
   structuredContent?: Record<string, unknown>
   /** The tool failed. Still a result: the tool ran and said so. */
@@ -180,7 +180,8 @@ export interface Tool {
   name: string
   title?: string
   description?: string
-  inputSchema?: Record<string, unknown>
+  /** A JSON Schema for the tool's arguments; MCP requires one, of an object. */
+  inputSchema: { type: "object"; [keyword: string]: unknown }
   _meta?: Record<string, unknown>
 }
 

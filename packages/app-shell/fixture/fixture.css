@@ -1,0 +1,61 @@
+/*
+ * Stands in for nessa_ui's stylesheet until @nessalabs/ui is on npm
+ * (nessalabs/nessa_ui#115): the defaults of the nessa_ui tokens the fixture
+ * uses, which the host's theme overrides through `nessaUiTokens`. When the
+ * package publishes, this file is replaced by its CSS.
+ */
+:root {
+  --background: rgb(255, 255, 255);
+  --foreground: rgb(37, 37, 37);
+  --muted-foreground: rgb(110, 110, 110);
+  --border: rgb(230, 230, 230);
+  --primary: rgb(52, 52, 52);
+  --primary-foreground: rgb(250, 250, 250);
+  --destructive: rgb(220, 38, 38);
+  --radius: 10px;
+  --nessa-font-sans: ui-sans-serif, system-ui, sans-serif;
+}
+
+/* As nessa_ui declares it: on the scope that carries the attribute, at zero
+   specificity, so the host's values set inline on that scope win. */
+:where([data-nessa-mode="dark"]) {
+  --background: rgb(37, 37, 37);
+  --foreground: rgb(250, 250, 250);
+  --border: rgb(70, 70, 70);
+}
+
+html,
+body {
+  margin: 0;
+}
+
+body {
+  font-family: var(--nessa-font-sans);
+}
+
+.card {
+  margin: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.muted {
+  color: var(--muted-foreground);
+}
+
+.refusal {
+  color: var(--destructive);
+}
+
+button {
+  margin: 4px 4px 0 0;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font: inherit;
+}

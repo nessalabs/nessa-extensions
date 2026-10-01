@@ -215,16 +215,17 @@ function readContainerDimensions(value: unknown) {
 function readTool(value: unknown): Tool | undefined {
   if (!isRecord(value)) return undefined
   const name = own(value, "name")
-  if (typeof name !== "string") return undefined
-  const tool: Tool = { name }
+  const schema = own(value, "inputSchema")
+  if (typeof name !== "string" || !isRecord(schema) || own(schema, "type") !== "object") {
+    return undefined
+  }
+  const tool: Tool = { name, inputSchema: { ...schema, type: "object" } }
   for (const key of ["title", "description"] as const) {
     const field = own(value, key)
     if (typeof field === "string") tool[key] = field
   }
-  for (const key of ["inputSchema", "_meta"] as const) {
-    const field = own(value, key)
-    if (isRecord(field)) tool[key] = field
-  }
+  const meta = own(value, "_meta")
+  if (isRecord(meta)) tool._meta = meta
   return tool
 }
 

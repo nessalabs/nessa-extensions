@@ -12,7 +12,10 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
+  useState,
   useSyncExternalStore,
+  type HTMLAttributes,
   type ReactNode,
 } from "react"
 
@@ -102,20 +105,69 @@ export function useDisplayMode(): {
 }
 
 /**
- * Applies the host's theme to `root` — by default the document's root
- * element — through `tokens`, and again each time the host context changes.
- * What the host does not supply keeps the app's defaults; on unmount the
- * defaults return.
+ * Applies the host's theme to `root`, the element that scopes the design
+ * system's theme, through `tokens`, and again each time the host context
+ * changes; nothing while `root` is null. What the host does not supply keeps
+ * the app's defaults; on unmount the defaults return.
+ *
+ * The variables and the theme attribute go on the same element. A design
+ * system declares its dark values on the element that carries the attribute
+ * (nessa_ui at zero specificity, `:where([data-nessa-mode="dark"])`), and
+ * descendants read the nearest declaration — so a host's values set anywhere
+ * above that element would be shadowed there, and the attribute set on the
+ * document's root would lose to the design system's own `:root` defaults.
  */
 export function useHostTheme<Token extends `--${string}`>(
   tokens: DesignTokens<Token>,
-  root?: ThemeRoot,
+  root: ThemeRoot | null,
 ): void {
   const context = useHostContext()
-  const target = root ?? document.documentElement
   // One applier per root and token set, so each application replaces what
   // the last one set; a new root or token set clears the old one's.
-  const applier = useMemo(() => createThemeApplier(target, tokens), [target, tokens])
-  useEffect(() => () => applier.clear(), [applier])
-  useEffect(() => applier.apply(context), [applier, context])
+  const applier = useMemo(
+    () => (root === null ? null : createThemeApplier(root, tokens)),
+    [root, tokens],
+  )
+  useEffect(() => () => applier?.clear(), [applier])
+  useEffect(() => applier?.apply(context), [applier, context])
+}
+
+/**
+ * An element that carries the host's theme for everything inside it: the
+ * place an app puts its design system's scope.
+ */
+export function HostThemeScope<Token extends `--${string}`>({
+  tokens,
+  children,
+  ...props
+}: { tokens: DesignTokens<Token>; children?: ReactNode } & Omit<
+  HTMLAttributes<HTMLDivElement>,
+  "children"
+>) {
+  const [element, setElement] = useState<HTMLDivElement | null>(null)
+  useHostTheme(tokens, element)
+  return (
+    <div {...props} ref={setElement}>
+      {children}
+    </div>
+  )
+}
+
+/**
+ * Runs `handler` when the host tears the app down, while the component is
+ * mounted; the bridge answers the host once it has finished. The latest
+ * `handler` is the one run.
+ */
+export function useTeardown(
+  handler: (reason: string | undefined) => void | Promise<void>,
+): void {
+  const bridge = useBridge()
+  const latest = useRef(handler)
+  useEffect(() => {
+    latest.current = handler
+  })
+  useEffect(() => {
+    const remove = bridge.onTeardown((reason) => latest.current(reason))
+    return () => remove()
+  }, [bridge])
 }

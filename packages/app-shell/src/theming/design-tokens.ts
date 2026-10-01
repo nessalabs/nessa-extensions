@@ -14,9 +14,8 @@ export interface DesignTokens<Token extends `--${string}`> {
   /** Each token, and the host style variable its value is taken from. */
   readonly fromHost: Readonly<Record<Token, StyleVariable>>
   /**
-   * The attribute on the document's root element that tells the design
-   * system the theme, set to `light` or `dark`; removed when the host says
-   * neither.
+   * The attribute on the theme's scope element that tells the design system
+   * the theme, set to `light` or `dark`; removed when the host says neither.
    */
   readonly themeAttribute: string
 }
