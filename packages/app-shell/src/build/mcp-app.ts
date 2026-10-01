@@ -10,17 +10,39 @@
  * written in as a `data:` URL, then writes the script and stylesheet into the
  * HTML (`inlineIntoHtml`). The build fails if anything is left that the HTML
  * would have to fetch — a second chunk, a file it names that is not in the
- * bundle — since a host's default policy would refuse it.
+ * bundle, a file in the public directory, which Vite copies beside the
+ * bundle rather than into it — since a host's default policy would refuse
+ * it. A URL in another element (an `<img src>` to a public file) is not read
+ * here; the host's policy refuses it at run time, and the browser
+ * verification runs the app under that policy.
  */
+/// <reference types="node" />
+import { existsSync, readdirSync } from "node:fs"
+
 import type { Plugin } from "vite"
 
 import { inlineIntoHtml } from "./inline.ts"
 
 export function mcpApp(): Plugin {
+  let publicDir = ""
   return {
     name: "nessa:mcp-app",
     apply: "build",
     enforce: "post",
+    configResolved(config) {
+      publicDir = config.publicDir
+    },
+    buildStart() {
+      if (
+        publicDir !== "" &&
+        existsSync(publicDir) &&
+        readdirSync(publicDir).length > 0
+      ) {
+        this.error(
+          `${publicDir} has files, which Vite copies beside the app for it to fetch; import them instead`,
+        )
+      }
+    },
     config: () => ({
       base: "./",
       build: {

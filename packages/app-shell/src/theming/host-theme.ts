@@ -120,15 +120,12 @@ export function createThemeApplier<Token extends `--${string}`>(
   return {
     apply(context) {
       const { properties, theme } = themeDeclarations(context, tokens)
-      const next = new Set<string>()
-      for (const [name, value] of properties) {
-        root.style.setProperty(name, value)
-        // A value the browser will not take leaves the property unset.
-        if (root.style.getPropertyValue(name) === "") root.style.removeProperty(name)
-        else next.add(name)
-      }
-      for (const name of applied) if (!next.has(name)) root.style.removeProperty(name)
-      applied = next
+      // Everything the last context set is removed first, so a value left
+      // out — or one the browser will not take, which `setProperty` ignores
+      // rather than replacing what was there — shows the app's default.
+      for (const name of applied) root.style.removeProperty(name)
+      applied = new Set(properties.keys())
+      for (const [name, value] of properties) root.style.setProperty(name, value)
       if (theme === undefined) {
         root.style.removeProperty("color-scheme")
         root.removeAttribute(tokens.themeAttribute)

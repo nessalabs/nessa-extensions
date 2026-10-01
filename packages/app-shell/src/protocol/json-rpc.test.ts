@@ -81,5 +81,11 @@ describe("readEnvelope", () => {
     const inherited = Object.create({ method: "ping", id: 1 }) as object
     Object.assign(inherited, { jsonrpc: "2.0" })
     expect(readEnvelope(inherited).kind).toBe("invalid")
+    const version = Object.create({ jsonrpc: "2.0" }) as object
+    Object.assign(version, { id: 1, result: {} })
+    expect(readEnvelope(version)).toEqual({
+      kind: "invalid",
+      reason: 'jsonrpc is not "2.0"',
+    })
   })
 })

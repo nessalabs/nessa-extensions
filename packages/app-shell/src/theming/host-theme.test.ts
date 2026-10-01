@@ -69,6 +69,9 @@ describe("isSafeValue", () => {
     "a:b",
     "<script>",
     "red\n;",
+    "url(x.png)",
+    "url(data)",
+    "src(x.woff)",
   ]
   for (const value of safe)
     it(`takes ${value}`, () => expect(isSafeValue(value)).toBe(true))
@@ -144,12 +147,13 @@ describe("createThemeApplier", () => {
     }
   })
 
-  it("leaves unset a value the browser will not take", () => {
+  it("leaves the default for a value the browser will not take, even over an earlier one", () => {
+    // As a browser does: an unparsable value is ignored, and what was set stays.
     const set = new Map<string, string>()
     const refusing: ThemeRoot = {
       style: {
         setProperty: (name: string, value: string | null) => {
-          if (name !== "--ink") set.set(name, value ?? "")
+          if (value !== "rgb(") set.set(name, value ?? "")
         },
         removeProperty: (name: string) => {
           set.delete(name)
@@ -164,7 +168,9 @@ describe("createThemeApplier", () => {
     applier.apply(
       context({ styles: { variables: { "--color-text-primary": "#111111" } } }),
     )
-    expect([...set.keys()]).toEqual(["--color-text-primary"])
+    expect(set.get("--ink")).toBe("#111111")
+    applier.apply(context({ styles: { variables: { "--color-text-primary": "rgb(" } } }))
+    expect([...set.keys()]).toEqual([])
   })
 
   it("sets the theme as the token set's attribute and the color scheme, so light-dark() resolves", () => {
