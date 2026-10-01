@@ -89,3 +89,20 @@ test("a path is taken relative to the repository, and another drive is outside i
     "which is outside the repository",
   )
 })
+
+test("a store entry pnpm installed from a local path is not npm", () => {
+  const why = "which pnpm installed from a path in the repository, not from npm"
+  assert.equal(
+    refusal("node_modules/.pnpm/secret@file+extensions+b/node_modules/secret/index.js"),
+    why,
+  )
+  assert.equal(
+    refusal("node_modules/.pnpm/secret@link+extensions+b/node_modules/secret/index.js"),
+    why,
+  )
+  // A version that merely contains the words is still npm.
+  assert.equal(
+    refusal("node_modules/.pnpm/file-type@19.0.0/node_modules/file-type/index.js"),
+    null,
+  )
+})

@@ -984,3 +984,36 @@ test("two packages that declare each other come with each other, once", (t) => {
   const build = run("build.mjs", root)
   assert.equal(build.status, 0, build.stderr)
 })
+
+test("a dependency pnpm installed from a sibling's path is refused, not taken for npm", (t) => {
+  // What a hand-edited lockfile naming `file:extensions/notes` installs.
+  const entry = "node_modules/.pnpm/secret@file+extensions+notes/node_modules/secret"
+  const root = repository(
+    t,
+    {
+      "extensions/experiments/package.json": manifest("@nessalabs/experiments", {
+        dependencies: {
+          "@nessalabs/common": "workspace:*",
+          "left-pad": "^1.0.0",
+          secret: "^1.0.0",
+        },
+      }),
+      [`${entry}/package.json`]: manifest("secret", {
+        version: "1.0.0",
+        main: "index.js",
+      }),
+      [`${entry}/index.js`]: `export const secret = "SIBLING"\n`,
+      "extensions/experiments/src/own.ts": `export { secret as own } from "secret"\n`,
+    },
+    { "extensions/experiments/node_modules/secret": `../../../${entry}` },
+  )
+  const build = run("build.mjs", root)
+  assert.equal(build.status, 1)
+  assert.ok(
+    build.stderr.includes(
+      `its build uses ${entry}/index.js, which pnpm installed from a path in the repository, not from npm`,
+    ),
+    build.stderr,
+  )
+  assert.equal(built(root), "")
+})

@@ -20,11 +20,41 @@ import {
 } from "./architecture/layout.mjs"
 
 /**
- * What install and build write at a unit's root: pnpm's links and the build's
- * output. Only there — a `dist` or `node_modules` deeper in a unit is source
- * like any other.
+ * What install and build write at a unit's root. The build's `dist` is skipped:
+ * the build drops it from its stage before running, so nothing in it is read.
+ * The unit's `node_modules` is walked by `strayLinks`, which spares only the
+ * links pnpm makes there. A `dist` or `node_modules` deeper in a unit is
+ * source like any other.
  */
 const skipped = new Set(["node_modules", "dist"])
+
+/**
+ * The links in a unit's `node_modules` that pnpm does not make. pnpm links
+ * each dependency as `node_modules/<name>` or `node_modules/@scope/<name>`
+ * and nothing deeper; the build judges those where they lead
+ * (scripts/boundary/build.mjs). Any other link — one inside a real directory
+ * there, at any depth — is one someone put there, and is refused.
+ */
+function strayLinks(modules) {
+  if (!existsSync(modules)) return []
+  const found = []
+  for (const name of readdirSync(modules).sort()) {
+    const path = join(modules, name)
+    const entry = lstatSync(path)
+    if (entry.isSymbolicLink() || !entry.isDirectory()) continue
+    if (!name.startsWith("@")) {
+      found.push(...links(path, false))
+      continue
+    }
+    for (const inner of readdirSync(path).sort()) {
+      const scoped = join(path, inner)
+      const each = lstatSync(scoped)
+      if (each.isDirectory() && !each.isSymbolicLink())
+        found.push(...links(scoped, false))
+    }
+  }
+  return found
+}
 
 /**
  * Every symbolic link under `directory`, not followed. The build copies a
@@ -156,6 +186,11 @@ export function checkRepository(root) {
   for (const unit of unitNames) {
     for (const link of links(join(root, unit))) {
       failures.push(`${rel(link)}: a symbolic link in a unit can lead into another`)
+    }
+    for (const link of strayLinks(join(root, unit, "node_modules"))) {
+      failures.push(
+        `${rel(link)}: a symbolic link pnpm did not make can lead into another unit`,
+      )
     }
   }
   return failures

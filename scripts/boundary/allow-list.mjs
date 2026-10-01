@@ -12,7 +12,8 @@
  *   `devDependencies`, or a package it declares does (`units.mjs`);
  * - **an npm package**: a file in the repository's root `node_modules`, which
  *   is pnpm's store, or in a `node_modules` directory outside the repository,
- *   where the toolchain itself may be installed.
+ *   where the toolchain itself may be installed. A store entry pnpm installed
+ *   from a local path (`<pkg>@file+…`) is not one.
  *
  * Anything else is refused: another extension, a package it does not declare,
  * the rest of the repository (any other `node_modules` directory in it
@@ -44,7 +45,14 @@ export function moduleRefusal(path, unit, declared) {
   if (owner !== null) return `which is in ${owner}, and ${unit} does not declare it`
   // In the repository, only the root's node_modules is pnpm's; outside it,
   // any node_modules is an install of the toolchain's.
-  if (top === "node_modules") return null
+  if (top === "node_modules") {
+    // pnpm keeps a dependency installed from a local path (`file:`, which a
+    // hand-edited lockfile can name for a sibling extension) under a store
+    // entry it names `<pkg>@file+<path>`; that is the repository, not npm.
+    return name === ".pnpm" && /@(file|link)\+/.test(inside[0] ?? "")
+      ? "which pnpm installed from a path in the repository, not from npm"
+      : null
+  }
   if (top === "..") {
     return path.split("/").includes("node_modules")
       ? null

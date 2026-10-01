@@ -209,3 +209,24 @@ test("the command still checks when run through a symlink", (t) => {
   const result = spawnSync(process.execPath, [link, broken], { encoding: "utf8" })
   assert.equal(result.status, 1)
 })
+
+test("a link in a unit's node_modules that pnpm does not make fails, however deep", (t) => {
+  const root = repository(t, twoExtensions)
+  const modules = join(root, "extensions/experiments/node_modules")
+  mkdirSync(join(modules, "vendor"), { recursive: true })
+  symlinkSync(
+    "../../../../node_modules/.pnpm/../../extensions/notes",
+    join(modules, "vendor/sib"),
+  )
+  mkdirSync(join(modules, "@scope/real/deep"), { recursive: true })
+  symlinkSync("../../../../../notes", join(modules, "@scope/real/deep/sib"))
+  // pnpm's own: a dependency at the top, and one under its scope.
+  symlinkSync("../../notes", join(modules, "left-pad"))
+  mkdirSync(join(modules, "@nessalabs"), { recursive: true })
+  symlinkSync("../../../../packages/server-kit", join(modules, "@nessalabs/server-kit"))
+  const rule = "a symbolic link pnpm did not make can lead into another unit"
+  assert.deepEqual(checkRepository(root), [
+    `extensions/experiments/node_modules/@scope/real/deep/sib: ${rule}`,
+    `extensions/experiments/node_modules/vendor/sib: ${rule}`,
+  ])
+})
