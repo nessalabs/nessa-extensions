@@ -150,6 +150,9 @@ export async function buildExtension(root, unit) {
   try {
     const declared = declaredPackages(root, unit)
     staged = stage(root, [unit, ...declared])
+    // The output a build leaves must be this build's: an earlier one's copied
+    // into the stage would pass for it when this one writes elsewhere.
+    rmSync(join(staged, unit, output), { recursive: true, force: true })
     const judge = moduleJudge({
       root,
       unit,

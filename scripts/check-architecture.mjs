@@ -104,9 +104,15 @@ export function checkRepository(root) {
     }
     const manifest = readManifest(path)
     if (manifest === null) continue
-    if (typeof manifest.name !== "string" || manifest.name === "") {
-      failures.push(`${rel(path)}: an extension's manifest names its package`)
-    } else extensionNames.add(manifest.name)
+    const expected = `@nessalabs/${name}`
+    if (manifest.name !== expected) {
+      failures.push(
+        `${rel(path)}: an extension's manifest names its package ${expected}, after its folder`,
+      )
+    }
+    if (typeof manifest.name === "string" && manifest.name !== "") {
+      extensionNames.add(manifest.name)
+    }
   }
 
   const projects = [

@@ -938,6 +938,20 @@ test("a link in a unit's node_modules that leads to a sibling is refused", (t) =
   assert.equal(built(root), "")
 })
 
+test("an earlier build's dist does not stand in for a build that writes elsewhere", (t) => {
+  const root = repository(t, {
+    "extensions/experiments/dist/index.html": `from an earlier build\n`,
+    "extensions/experiments/vite.config.ts": `export default { build: { outDir: "out" } }\n`,
+  })
+  const build = run("build.mjs", root)
+  assert.equal(build.status, 1)
+  assert.equal(
+    build.stderr,
+    "extensions/experiments: its build wrote no dist, which is where its output goes\n",
+  )
+  assert.equal(built(root), "")
+})
+
 test("a refused build removes the output an earlier build left", (t) => {
   const root = repository(t, {
     "extensions/experiments/dist/index.html": `from an earlier build\n`,

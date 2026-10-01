@@ -113,14 +113,19 @@ test("a manifest naming an extension, or off the pinned layout, fails", (t) => {
   ])
 })
 
-test("an extension's manifest must name it, and parse", (t) => {
+test("an extension's manifest must name it after its folder, and parse", (t) => {
   const root = repository(t, {
     "extensions/nameless/package.json": JSON.stringify({ version: "0.0.0" }),
     "extensions/broken/package.json": "{bad",
+    "extensions/unscoped/package.json": manifest("unscoped"),
+    "extensions/swapped/package.json": manifest("@nessalabs/other"),
+    "extensions/named/package.json": manifest("@nessalabs/named"),
   })
   assert.deepEqual(checkRepository(root).sort(), [
     "extensions/broken/package.json: is not valid JSON",
-    "extensions/nameless/package.json: an extension's manifest names its package",
+    "extensions/nameless/package.json: an extension's manifest names its package @nessalabs/nameless, after its folder",
+    "extensions/swapped/package.json: an extension's manifest names its package @nessalabs/swapped, after its folder",
+    "extensions/unscoped/package.json: an extension's manifest names its package @nessalabs/unscoped, after its folder",
   ])
 })
 
