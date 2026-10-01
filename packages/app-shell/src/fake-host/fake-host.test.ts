@@ -279,6 +279,11 @@ describe("the app's requests", () => {
     })
     send({
       jsonrpc: "2.0",
+      method: "ui/notifications/size-changed",
+      params: { height: 30 },
+    })
+    send({
+      jsonrpc: "2.0",
       method: "notifications/message",
       params: { level: "info", data: "x" },
     })
@@ -294,7 +299,7 @@ describe("the app's requests", () => {
     ])
     expect(host.modelContext).toEqual({ structuredContent: { a: 1 } })
     expect(host.links).toEqual(["https://example.com"])
-    expect(host.sizes).toEqual([{ width: 10, height: 20 }])
+    expect(host.sizes).toEqual([{ width: 10, height: 20 }, { height: 30 }])
     expect(host.logs).toEqual([{ level: "info", data: "x" }])
     expect(host.violations.map((v) => v.kind)).toEqual([
       "malformed-params",

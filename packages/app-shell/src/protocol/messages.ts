@@ -319,11 +319,13 @@ export interface LogParams {
   data: unknown
 }
 
-/** `ui/notifications/size-changed`'s params. */
-export interface SizeParams {
-  width: number
-  height: number
-}
+/**
+ * `ui/notifications/size-changed`'s params: the app's size in pixels. The
+ * standard's prose shows both dimensions; its schema makes each optional, so
+ * an app with one intrinsic axis reports that one. At least one is given.
+ */
+export type SizeParams =
+  { width: number; height?: number } | { width?: number; height: number }
 
 /** The requests an app sends, each with its params and the result it expects. */
 export interface AppRequests {

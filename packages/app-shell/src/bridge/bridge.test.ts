@@ -1169,6 +1169,22 @@ describe("the app's calls", () => {
     })
   })
 
+  it("size-changed: one axis alone is sent as it is", async () => {
+    const { bridge, host } = await connected()
+    bridge.reportSize({ height: 50 })
+    bridge.reportSize({ height: 50 })
+    bridge.reportSize({ width: 300, height: 50 })
+    await flush()
+    expect(
+      host.received
+        .filter(
+          (m) =>
+            m.kind === "notification" && m.method === "ui/notifications/size-changed",
+        )
+        .map((m) => (m.kind === "notification" ? m.params : null)),
+    ).toEqual([{ height: 50 }, { width: 300, height: 50 }])
+  })
+
   it("size-changed: sent when the size differs from the last one sent", async () => {
     const { bridge, host } = await connected()
     bridge.reportSize({ width: 100, height: 50 })

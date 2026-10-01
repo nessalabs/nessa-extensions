@@ -58,7 +58,8 @@ export function mountFakeHostFrame(options: FakeHostFrameOptions): {
     ...hostOptions,
     transport: windowPairTransport(window, () => iframe.contentWindow),
     onSize(size) {
-      iframe.style.height = `${size.height}px`
+      // The iframe fills its container's width; the app's height sizes it.
+      if (size.height !== undefined) iframe.style.height = `${size.height}px`
       onSize?.(size)
     },
   })

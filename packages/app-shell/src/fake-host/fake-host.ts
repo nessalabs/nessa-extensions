@@ -41,6 +41,7 @@ import {
   own,
   narrowInitializeParams,
   narrowLogParams,
+  narrowSizeParams,
   narrowMessageParams,
   narrowModelContextParams,
 } from "../protocol/narrow.ts"
@@ -417,23 +418,13 @@ export function createFakeHost(options: FakeHostOptions): FakeHost {
       return
     }
     if (method === "ui/notifications/size-changed") {
-      const width = field(params, "width")
-      const height = field(params, "height")
-      if (
-        typeof width !== "number" ||
-        typeof height !== "number" ||
-        !Number.isFinite(width) ||
-        !Number.isFinite(height)
-      ) {
-        violations.push({
-          kind: "malformed-params",
-          method,
-          reason: "width and height are not numbers",
-        })
+      const size = narrowSizeParams(params)
+      if (!size.ok) {
+        violations.push({ kind: "malformed-params", method, reason: size.reason })
         return
       }
-      sizes.push({ width, height })
-      options.onSize?.({ width, height })
+      sizes.push(size.value)
+      options.onSize?.(size.value)
       return
     }
     if (method === "notifications/message") {

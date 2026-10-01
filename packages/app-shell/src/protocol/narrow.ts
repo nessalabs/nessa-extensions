@@ -40,6 +40,7 @@ import {
   type OpenAiModelContext,
   type ReadResourceResult,
   type ResourceContents,
+  type SizeParams,
   type StyleVariable,
   type Tool,
 } from "./messages.ts"
@@ -575,6 +576,30 @@ export function narrowLogParams(value: unknown): Narrowed<LogParams> {
   const logger = own(value, "logger")
   if (typeof logger === "string") params.logger = logger
   return { ok: true, value: params, dropped: [] }
+}
+
+/**
+ * `ui/notifications/size-changed`'s params: each dimension optional, at least
+ * one given, each a finite number.
+ */
+export function narrowSizeParams(value: unknown): Narrowed<SizeParams> {
+  if (!isRecord(value)) return { ok: false, reason: "params is not an object" }
+  const width = own(value, "width")
+  const height = own(value, "height")
+  const valid = (dimension: unknown) =>
+    dimension === undefined || isFiniteNumber(dimension)
+  if (!valid(width) || !valid(height)) {
+    return { ok: false, reason: "a dimension is not a finite number" }
+  }
+  if (isFiniteNumber(width)) {
+    return {
+      ok: true,
+      value: isFiniteNumber(height) ? { width, height } : { width },
+      dropped: [],
+    }
+  }
+  if (isFiniteNumber(height)) return { ok: true, value: { height }, dropped: [] }
+  return { ok: false, reason: "neither width nor height is given" }
 }
 
 /** `ui/update-model-context`'s params. */

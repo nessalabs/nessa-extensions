@@ -13,6 +13,7 @@ import {
   narrowModelContextParams,
   narrowReadResourceResult,
   narrowReason,
+  narrowSizeParams,
   narrowToolArguments,
 } from "./narrow.ts"
 
@@ -439,6 +440,27 @@ describe("what the app sends, as a host reads it", () => {
       value: {},
       dropped: ["content"],
     })
+  })
+
+  it("narrowSizeParams: either dimension alone, or both, each finite", () => {
+    expect(narrowSizeParams({ height: 20 })).toEqual({
+      ok: true,
+      value: { height: 20 },
+      dropped: [],
+    })
+    expect(narrowSizeParams({ width: 10 })).toMatchObject({ value: { width: 10 } })
+    expect(narrowSizeParams({ width: 10, height: 20 })).toMatchObject({
+      value: { width: 10, height: 20 },
+    })
+    expect(narrowSizeParams({})).toEqual({
+      ok: false,
+      reason: "neither width nor height is given",
+    })
+    expect(narrowSizeParams({ width: Number.NaN, height: 1 })).toEqual({
+      ok: false,
+      reason: "a dimension is not a finite number",
+    })
+    expect(narrowSizeParams({ height: "1" })).toMatchObject({ ok: false })
   })
 
   it("narrowLogParams", () => {

@@ -693,7 +693,7 @@ export function createBridge(options: BridgeOptions): Bridge {
         return
       }
       notify("ui/notifications/size-changed", size)
-      lastSize = { width: size.width, height: size.height }
+      lastSize = { ...size }
     },
     onTeardown(handler) {
       teardownHandlers.add(handler)
