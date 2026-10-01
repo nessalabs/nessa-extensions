@@ -153,7 +153,7 @@ test.describe("in the fake host", () => {
       context: {
         styles: {
           variables: {
-            "--color-background-primary": "url(https://evil.example/x.png)",
+            "--color-background-primary": "url(x.png)",
           },
         },
       },

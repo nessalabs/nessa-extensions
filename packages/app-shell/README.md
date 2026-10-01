@@ -132,6 +132,7 @@ torn-down reject), and by nothing else, so what the caller is told and what
 | tearing-down, torn-down, before any connect | `connect()` | — | rejects `not-connected` with the status |
 | idle, connecting | a call or notification | — | refused `not-connected`; nothing sent |
 | idle, connecting | a host notification | — | reported `before-initialized`, ignored |
+| failed, torn-down, tearing-down (never opened) | a host notification | — | reported `not-open` with the status, ignored |
 | connected | `ui/resource-teardown` | tearing-down | the teardown handlers run; the app's calls are still carried, so it can save |
 | tearing-down | the handlers settle | torn-down | the host is answered (`Teardown error` if a handler failed); unanswered calls reject `torn-down` |
 | tearing-down, torn-down | `ui/resource-teardown` again | — | the handlers do not run again; each request is answered |
