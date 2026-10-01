@@ -53,6 +53,20 @@ describe("inlineIntoHtml", () => {
     expect(result.html).toBe(`<script>${code}</script>`)
   })
 
+  it("reads only the page's own tags, never tag text inside the code it writes in", () => {
+    const code =
+      'const a = \'<link rel="stylesheet" href="./a.css">\', b = `<link rel="stylesheet" href="${font}">`'
+    const result = inlineIntoHtml(
+      '<script src="a.js"></script><link rel="stylesheet" href="./a.css">',
+      new Map([
+        ["a.js", code],
+        ["a.css", "p{}"],
+      ]),
+    )
+    expect(result.html).toBe(`<script>${code}</script><style>p{}</style>`)
+    expect(result.unresolved).toEqual([])
+  })
+
   it("keeps a stylesheet's media", () => {
     const result = inlineIntoHtml(
       '<link rel="stylesheet" href="p.css" media="print">',

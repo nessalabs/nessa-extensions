@@ -15,6 +15,7 @@
  * `<meta>` as the document's first element, so it governs every script and
  * style the app carries.
  */
+import { escapeAttribute } from "../html.ts"
 import { windowPairTransport } from "../protocol/transport.ts"
 import { appCsp, type ResourceCsp } from "./csp.ts"
 import { createFakeHost, type FakeHost, type FakeHostOptions } from "./fake-host.ts"
@@ -27,9 +28,6 @@ export interface FakeHostFrameOptions extends Omit<FakeHostOptions, "transport">
   /** The resource's `_meta.ui.csp`; none declared if left out. */
   csp?: ResourceCsp
 }
-
-const escapeAttribute = (text: string) =>
-  text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;")
 
 /**
  * `html` with the policy as the first thing in its `<head>`; without one,

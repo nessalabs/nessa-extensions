@@ -222,23 +222,77 @@ describe("the connection", () => {
     expect(bridge.getState().connection).toEqual({ status: "closed" })
   })
 
-  it("connecting + teardown: torn down, connect rejects torn-down, and a late result does not connect", async () => {
+  it("connecting + teardown: tearing down, never opened, while the handlers run; then torn down, and connect rejects torn-down with the state", async () => {
     const { bridge, host } = setup()
     const connecting = bridge.connect()
+    let settled = false
+    connecting.then(
+      () => (settled = true),
+      () => (settled = true),
+    )
     await flush()
     let release: () => void = () => {}
     bridge.onTeardown(() => new Promise<void>((resolve) => (release = resolve)))
     host.send({ jsonrpc: "2.0", id: "t1", method: "ui/resource-teardown", params: {} })
     await flush()
     host.answer("ui/initialize", initializeResult())
+    await flush()
+    // The state and connect's outcome agree: neither has ended yet.
+    expect(bridge.getState().connection).toEqual({ status: "tearing-down" })
+    expect(settled).toBe(false)
+    expect(await failure(bridge.callTool("x"))).toMatchObject({
+      kind: "not-connected",
+      status: "tearing-down",
+    })
+    release()
     expect(await failure(connecting)).toEqual({
       kind: "torn-down",
       method: "ui/initialize",
     })
-    release()
-    await flush()
     expect(bridge.getState().connection).toEqual({ status: "torn-down" })
     expect(host.methods()).not.toContain("ui/notifications/initialized")
+  })
+
+  it("connecting + teardown + abort while the handlers run: still torn down, as the state says", async () => {
+    const { bridge, host } = setup()
+    const abort = new AbortController()
+    const connecting = bridge.connect({ signal: abort.signal })
+    await flush()
+    let release: () => void = () => {}
+    bridge.onTeardown(() => new Promise<void>((resolve) => (release = resolve)))
+    host.send({ jsonrpc: "2.0", id: "t1", method: "ui/resource-teardown", params: {} })
+    await flush()
+    abort.abort()
+    await flush()
+    expect(bridge.getState().connection.status).toBe("tearing-down")
+    release()
+    expect(await failure(connecting)).toEqual({
+      kind: "torn-down",
+      method: "ui/initialize",
+    })
+  })
+
+  it("idle + teardown: tearing down, then torn down, and the host is answered", async () => {
+    const { bridge, host } = setup()
+    host.send({ jsonrpc: "2.0", id: "t1", method: "ui/resource-teardown", params: {} })
+    await flush()
+    expect(bridge.getState().connection).toEqual({ status: "torn-down" })
+    expect(host.received.at(-1)).toEqual({ kind: "result", id: "t1", result: {} })
+    expect(await failure(bridge.connect())).toMatchObject({
+      kind: "not-connected",
+      status: "torn-down",
+    })
+  })
+
+  it("several changes in one turn are heard once", async () => {
+    const { bridge } = setup()
+    const listener = vi.fn()
+    bridge.subscribe(listener)
+    bridge.connect().catch(() => {})
+    bridge.close()
+    await flush()
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(bridge.getState().connection.status).toBe("closed")
   })
 
   it("connect twice: the same promise", async () => {

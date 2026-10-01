@@ -111,6 +111,11 @@ No `openai/*` field is required. The optional ones are typed:
 
 Each row has a test named for it in `src/bridge/bridge.test.ts`.
 
+The state is the one owner of how connecting ended: `connect()`'s promise is
+settled from it after each change (connected resolves; failed, closed and
+torn-down reject), and by nothing else, so what the caller is told and what
+`useConnection` shows never disagree.
+
 | State | Event | Next | What is sent and settled |
 | --- | --- | --- | --- |
 | idle | `connect()` | connecting | `ui/initialize` with the app, its display modes, and `2026-01-26` |
@@ -120,7 +125,8 @@ Each row has a test named for it in `src/bridge/bridge.test.ts`.
 | connecting | another protocol version | failed (`protocol-version`) | `connect` rejects; `initialized` is never sent |
 | connecting | the caller's signal aborts | failed (`aborted`) | a late answer is ignored, not reported |
 | connecting | `close()` — before or after the answer arrives, or from a subscriber hearing "connecting" | closed | `connect` rejects `closed`; `initialized` is never sent |
-| connecting | `ui/resource-teardown` | torn-down | `connect` rejects `torn-down`; a result arriving meanwhile does not connect |
+| idle, connecting | `ui/resource-teardown` | tearing-down, never opened | the teardown handlers run; no call is carried; a result arriving meanwhile, or an abort, does not change it |
+| tearing-down, never opened | the handlers settle | torn-down | `connect` rejects `torn-down`, together with the state; the host is answered |
 | any | `connect()` again | — | the same promise; after failed or closed, `not-connected` |
 | idle, connecting | a call or notification | — | refused `not-connected`; nothing sent |
 | idle, connecting | a host notification | — | reported `before-initialized`, ignored |

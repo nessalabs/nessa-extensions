@@ -5,6 +5,7 @@
  * Pure: the build plugin (`mcp-app.ts`) gives it the HTML and the bundle's
  * files, and refuses the build on whatever it could not inline.
  */
+import { escapeAttribute } from "../html.ts"
 
 export interface Inlined {
   html: string
@@ -32,9 +33,6 @@ function endsEarly(text: string, element: "script" | "style"): boolean {
   if (new RegExp(`</${element}`, "i").test(text)) return true
   return element === "script" && text.includes("<!--") && /<script/i.test(text)
 }
-
-const escapeAttribute = (text: string) =>
-  text.replace(/&/g, "&amp;").replace(/"/g, "&quot;")
 
 const attribute = (tag: string, name: string): string | undefined => {
   const match = new RegExp(
@@ -67,7 +65,7 @@ export function inlineIntoHtml(
     else inlined.add(name)
     return contents
   }
-  let out = html.replace(/<script\b[^>]*>\s*<\/script>/gi, (tag) => {
+  const script = (tag: string) => {
     const src = attribute(tag, "src")
     if (src === undefined) return tag
     const code = take(src)
@@ -78,8 +76,8 @@ export function inlineIntoHtml(
     }
     const module = /\stype\s*=\s*["']?module/i.test(tag) ? ' type="module"' : ""
     return `<script${module}>${code}</script>`
-  })
-  out = out.replace(/<link\b[^>]*>/gi, (tag) => {
+  }
+  const link = (tag: string) => {
     const rel = attribute(tag, "rel")?.toLowerCase()
     if (rel === "stylesheet") {
       const href = attribute(tag, "href")
@@ -97,6 +95,11 @@ export function inlineIntoHtml(
       return take(attribute(tag, "href")) === undefined ? tag : ""
     }
     return tag
-  })
+  }
+  // One pass over the page as built, so what is written in — the app's own
+  // code, which may hold text like a tag — is never read as the page.
+  const out = html.replace(/<script\b[^>]*>\s*<\/script>|<link\b[^>]*>/gi, (tag) =>
+    /^<script/i.test(tag) ? script(tag) : link(tag),
+  )
   return { html: out, inlined, unresolved, unsafe }
 }

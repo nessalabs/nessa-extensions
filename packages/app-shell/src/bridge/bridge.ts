@@ -63,10 +63,14 @@ export type Connection =
   | { status: "idle" }
   | { status: "connecting" }
   | { status: "connected"; host: Implementation; capabilities: HostCapabilities }
+  /**
+   * The host asked to tear the app down and its teardown handlers are
+   * running. `opened` is the connection it was in, when it had connected;
+   * absent when the host tore it down before (while idle or connecting).
+   */
   | {
       status: "tearing-down"
-      host: Implementation
-      capabilities: HostCapabilities
+      opened?: { host: Implementation; capabilities: HostCapabilities }
       reason?: string
     }
   | { status: "torn-down"; reason?: string }
@@ -75,10 +79,12 @@ export type Connection =
 
 /**
  * Whether a connection carries the app's calls: connected, or tearing down
- * (when the app may still save through the host before it goes).
+ * one that had connected (when the app may still save through the host
+ * before it goes).
  */
 export const isOpen = (connection: Connection): boolean =>
-  connection.status === "connected" || connection.status === "tearing-down"
+  connection.status === "connected" ||
+  (connection.status === "tearing-down" && connection.opened !== undefined)
 
 /** Everything an app renders from. Replaced, never changed in place. */
 export interface BridgeState {
@@ -191,7 +197,38 @@ export function createBridge(options: BridgeOptions): Bridge {
   const pending = new Map<RequestId, Pending>()
   const teardownHandlers = new Set<(reason: string | undefined) => void | Promise<void>>()
   let nextId = 1
-  let connecting: Promise<void> | null = null
+  /**
+   * What `connect()` returned, and how to settle it. The connection's state
+   * is the one owner of how connecting ended: `settleConnect` reads it after
+   * every change, and nothing else settles the promise.
+   */
+  let connecting: {
+    promise: Promise<void>
+    resolve: () => void
+    reject: (failure: BridgeFailure) => void
+  } | null = null
+  const settleConnect = () => {
+    if (connecting === null) return
+    const connection = state.connection
+    const method = "ui/initialize"
+    switch (connection.status) {
+      case "connected":
+        return connecting.resolve()
+      case "failed":
+        return connecting.reject(connection.failure)
+      case "closed":
+        return connecting.reject({ kind: "closed", method })
+      case "torn-down":
+        return connecting.reject({ kind: "torn-down", method })
+      case "tearing-down":
+        // Torn down from connected: connect had resolved; from before, it
+        // settles when the teardown ends, as `torn-down`.
+        return
+      case "idle":
+      case "connecting":
+        return
+    }
+  }
   let teardown: Promise<void> | null = null
   let lastSize: SizeParams | null = null
 
@@ -205,6 +242,7 @@ export function createBridge(options: BridgeOptions): Bridge {
   let telling = false
   const update = (next: Partial<BridgeState>) => {
     state = { ...state, ...next }
+    settleConnect()
     if (telling) return
     telling = true
     queueMicrotask(() => {
@@ -423,14 +461,18 @@ export function createBridge(options: BridgeOptions): Bridge {
   function tearDown(reason: string | undefined): Promise<void> {
     if (teardown !== null) return teardown
     const connection = state.connection
+    const because = reason === undefined ? {} : { reason }
     if (connection.status === "connected") {
+      const { host, capabilities } = connection
       update({
         connection: {
-          ...connection,
           status: "tearing-down",
-          ...(reason === undefined ? {} : { reason }),
+          opened: { host, capabilities },
+          ...because,
         },
       })
+    } else if (connection.status === "idle" || connection.status === "connecting") {
+      update({ connection: { status: "tearing-down", ...because } })
     }
     const handlers = [...teardownHandlers]
     teardown = Promise.allSettled(handlers.map(async (handler) => handler(reason))).then(
@@ -505,7 +547,7 @@ export function createBridge(options: BridgeOptions): Bridge {
   // ---- the app's calls
 
   function connect({ signal }: CallOptions = {}): Promise<void> {
-    if (connecting !== null) return connecting
+    if (connecting !== null) return connecting.promise
     if (status() !== "idle") {
       return Promise.reject(
         new BridgeError({
@@ -515,8 +557,17 @@ export function createBridge(options: BridgeOptions): Bridge {
         }),
       )
     }
+    let resolve: () => void = () => {}
+    let reject: (failure: BridgeFailure) => void = () => {}
+    const promise = new Promise<void>((resolved, rejected) => {
+      resolve = resolved
+      reject = (failure) => rejected(new BridgeError(failure))
+    })
+    connecting = { promise, resolve, reject }
     update({ connection: { status: "connecting" } })
-    connecting = request(
+    // The request only moves the state; `settleConnect` settles the promise
+    // from the state, whatever moved it — this, a close, or a teardown.
+    request(
       "ui/initialize",
       {
         appInfo: options.app,
@@ -529,12 +580,8 @@ export function createBridge(options: BridgeOptions): Bridge {
     ).then(
       (result) => {
         // Closed, or being torn down, after the host's answer arrived and
-        // before this ran: the connection never opens.
-        if (status() === "closed") {
-          throw new BridgeError({ kind: "closed", method: "ui/initialize" })
-        }
-        if (teardown !== null)
-          throw new BridgeError({ kind: "torn-down", method: "ui/initialize" })
+        // before this ran: the connection never opens, and that state stands.
+        if (status() !== "connecting") return
         if (result.protocolVersion !== PROTOCOL_VERSION) {
           const failure: BridgeFailure = {
             kind: "protocol-version",
@@ -542,7 +589,7 @@ export function createBridge(options: BridgeOptions): Bridge {
             spoken: PROTOCOL_VERSION,
           }
           update({ connection: { status: "failed", failure } })
-          throw new BridgeError(failure)
+          return
         }
         // `initialized` goes before anything else the app sends: subscribers
         // that hear "connected" may send at once (a first size, a call).
@@ -552,7 +599,7 @@ export function createBridge(options: BridgeOptions): Bridge {
         )
         if (failure !== null) {
           update({ connection: { status: "failed", failure } })
-          throw new BridgeError(failure)
+          return
         }
         update({
           connection: {
@@ -564,18 +611,12 @@ export function createBridge(options: BridgeOptions): Bridge {
         })
       },
       (error: unknown) => {
-        // Closing and teardown say where the connection ended themselves.
-        if (
-          error instanceof BridgeError &&
-          status() === "connecting" &&
-          teardown === null
-        ) {
-          update({ connection: { status: "failed", failure: error.failure } })
-        }
-        throw error
+        // Closed or being torn down already says where the connection ended.
+        if (status() !== "connecting" || !(error instanceof BridgeError)) return
+        update({ connection: { status: "failed", failure: error.failure } })
       },
     )
-    return connecting
+    return promise
   }
 
   return {

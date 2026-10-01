@@ -75,6 +75,18 @@ describe("autoResize", () => {
     expect(fake.observing()).toBe(0)
   })
 
+  it("stops when the bridge closes", async () => {
+    const { host, bridge } = await setup()
+    const fake = fakeElement()
+    autoResize(bridge, fake.element, fake.observe)
+    await bridge.connect()
+    await host.initialized
+    expect(fake.observing()).toBe(1)
+    bridge.close()
+    await flush()
+    expect(fake.observing()).toBe(0)
+  })
+
   it("stops when the app stops it", async () => {
     const { host, bridge } = await setup()
     const fake = fakeElement()
