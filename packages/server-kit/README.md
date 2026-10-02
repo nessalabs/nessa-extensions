@@ -58,12 +58,15 @@ serveOverStdio(board)
 - **`defineExtension` checks the definition once** and makes it an
   `Extension`, which is all that can be served. It parses the definition into
   a frozen copy — each view's `_meta.ui` with the reference SDK's own schemas,
-  refusing keys they do not name — and keeps only the copy, so what was
-  checked is what is served. It throws a `DefinitionError` naming every
+  refusing keys they do not name, a permission's included — and keeps only
+  the copy, so what was checked is what is served. One thing is not copied:
+  a tool's `input` is the zod schema it was given, which the kit lists once
+  and parses every call with; it must not be changed after `defineTool`. It throws a `DefinitionError` naming every
   problem and where it is; the rules are listed on `defineExtension`.
 - **What a tool answers is parsed too.** Its input is parsed inside the same
   guard as `run`; its `data` is read once, without running getters, into a
-  fresh JSON copy, and the copy is what is sent.
+  fresh JSON copy at most 256 levels deep, and the copy is what is sent.
+  `data: undefined` is no data.
 
 ## Module map
 
@@ -117,8 +120,10 @@ unless one is given; at `/mcp`), and resolves with the bound `url` and a
 - **2026-07-28 clients only.** Each request carries its client's capabilities,
   so each is answered by a fresh server, and the SDK's `createMcpHandler` owns
   the request from start to end. A 2025-era client declares its capabilities
-  once, in `initialize`, and so needs a session; HTTP refuses it with
-  `-32022`, naming the era it serves, and stdio serves it. 2025-era HTTP
+  once, in `initialize`, and so needs a session; stdio serves it, and HTTP
+  refuses it before any server is made: an `initialize` or a request with
+  `-32022`, naming the era it serves; a batch with `400`; a `GET` or
+  `DELETE` with `405`; a notification is accepted and dropped. 2025-era HTTP
   sessions belong with remote serving
   ([#11](https://github.com/nessalabs/nessa-extensions/issues/11)).
 - **Only this machine.** A request whose `Host` or `Origin` names anything else

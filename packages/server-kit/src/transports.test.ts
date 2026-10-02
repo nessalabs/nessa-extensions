@@ -117,6 +117,20 @@ describe("serveOverHttp", () => {
     await expect(clientAt(url, { era: "legacy" })).rejects.toThrow(/-32022/)
   })
 
+  it.each([
+    ["GET", undefined, 405],
+    ["DELETE", undefined, 405],
+    ["POST", [initialize], 400],
+  ])(
+    "refuses a 2025-era %s with a body of %j: %i, before any server",
+    async (method, body, status) => {
+      const { url } = await serving()
+      const answer = await raw(url, { method, body })
+      expect(answer.status).toBe(status)
+      expect(answer.text).toMatch(/"error":/)
+    },
+  )
+
   it("refuses a Host or Origin that is not this machine", async () => {
     const { url } = await serving()
     expect(

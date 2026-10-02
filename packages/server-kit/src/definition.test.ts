@@ -258,7 +258,22 @@ describe("a definition of the wrong shape", () => {
     ],
     [
       { ...base, tools: [tool({ effects: "bogus" as "read-only" })] },
-      "tools[0]: is not a valid tool",
+      "tools[0].effects: Invalid option",
+    ],
+    [
+      { ...base, tools: [tool({ description: 42 as unknown as string })] },
+      "tools[0].description: Invalid input",
+    ],
+    [
+      { ...base, tools: [tool({ run: "no" as unknown as Tool["run"] })] },
+      "tools[0].run: is not a function",
+    ],
+    [
+      {
+        ...base,
+        views: [view("ui://probe/a", { permissions: { camera: { foo: 1 } } } as never)],
+      },
+      "views[0].ui.permissions.camera: Unrecognized key",
     ],
   ])("is refused as a DefinitionError naming where: %#", (definition, problem) => {
     const problems = shapeProblems(definition)
@@ -268,6 +283,24 @@ describe("a definition of the wrong shape", () => {
 })
 
 describe("what defineExtension checked is what is served", () => {
+  it("reads the caller's tools once, and keeps what it read", () => {
+    let reads = 0
+    const good = tool({ name: "good" })
+    const bad = { ...tool({ name: "bad" }) } as Tool
+    const definition = {
+      name: "probe",
+      version: "0.0.0",
+      views: [],
+      get tools() {
+        reads += 1
+        return reads === 1 ? [good] : [bad]
+      },
+    }
+    const checked = defineExtension(definition)
+    expect(reads).toBe(1)
+    expect(checkedOf(checked).tools).toEqual([good])
+  })
+
   const made = () => tool({ name: "kept" })
 
   it("refuses a tool copied, rather than made, by defineTool", () => {

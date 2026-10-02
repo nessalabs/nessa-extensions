@@ -9,8 +9,9 @@
  * freezes a copy of each tool. Both record what they made in this module's
  * own registries, and `checkedOf` serves only from those: a tool copied or
  * built by hand, an extension spread into another, or anything changed after
- * the check is refused or never seen. The brands on `Tool` and `Extension`
- * only let the compiler say so first.
+ * the check is refused or never seen — except a tool's `input`, a zod
+ * schema that is not copied (see the README). The brands on `Tool` and
+ * `Extension` only let the compiler say so first.
  *
  * What a tool declares and answers is the package README's "Using it".
  */
@@ -166,13 +167,14 @@ export function defineExtension(definition: ExtensionDefinition): Extension {
   }
   // The parsed copy, not the caller's objects, is what is checked and kept.
   const views = Object.freeze(shape.data.views.map((view) => deepFreeze(view)))
-  const tools = Object.freeze([...definition.tools])
+  // From the one read the parse made, never a second read of the caller's.
+  const tools = Object.freeze([...shape.data.tools])
   const copy = { ...shape.data, views, tools }
   const inputSchemas = new Map<string, InputSchema>()
   const problems = [...viewProblems(views), ...toolProblems(copy, inputSchemas)]
   if (problems.length > 0) {
     throw new DefinitionError(
-      `${definition.name} is not a valid extension:\n- ${problems.join("\n- ")}`,
+      `${shape.data.name} is not a valid extension:\n- ${problems.join("\n- ")}`,
     )
   }
   const extension = Object.freeze(copy)
@@ -187,7 +189,19 @@ const isFunction = (value: unknown): value is (...args: never[]) => unknown =>
 /** A view's `_meta.ui`: the reference SDK's schemas, refusing keys they do not name. */
 const uiShape = McpUiResourceMetaSchema.extend({
   csp: McpUiResourceCspSchema.strict().optional(),
-  permissions: McpUiResourcePermissionsSchema.strict().optional(),
+  // Each permission the reference schema names, as an empty object and
+  // nothing else: the standard gives a permission no settings.
+  permissions: z
+    .object(
+      Object.fromEntries(
+        Object.keys(McpUiResourcePermissionsSchema.shape).map((permission) => [
+          permission,
+          z.object({}).strict().optional(),
+        ]),
+      ),
+    )
+    .strict()
+    .optional(),
 }).strict()
 
 const viewShape = z
@@ -221,10 +235,20 @@ const extensionShape = z
     instructions: z.string().optional(),
     views: z.array(viewShape),
     tools: z.array(
-      z.custom<Tool>(
-        (tool) => !madeTools.has(tool as object) || toolShape.safeParse(tool).success,
-        "is not a valid tool",
-      ),
+      z
+        .custom<Tool>(
+          (tool) => typeof tool === "object" && tool !== null,
+          "is not a tool",
+        )
+        // Each problem said where it is; whether `defineTool` made the tool
+        // is `toolProblems`'s to say.
+        .superRefine((tool, ctx) => {
+          const parsed = toolShape.safeParse(tool)
+          if (parsed.success) return
+          for (const issue of parsed.error.issues) {
+            ctx.addIssue({ code: "custom", message: issue.message, path: issue.path })
+          }
+        }),
     ),
   })
   .strict()

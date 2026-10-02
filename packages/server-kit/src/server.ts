@@ -199,15 +199,19 @@ async function callTool(
     if (typeof text !== "string" || text.trim().length === 0) {
       return failure(`${tool.name} answered without text, which every tool must give`)
     }
-    if (!outcome.has("data")) return { content: [{ type: "text", text }] }
-    const data = toJson(outcome.get("data"), 0)
+    // `data?` lets a tool write `data: undefined`; that is no data.
+    const answered = outcome.get("data")
+    if (answered === undefined) return { content: [{ type: "text", text }] }
+    const data = toJson(answered, 0)
     if (
       data === undefined ||
       data === null ||
       typeof data !== "object" ||
       Array.isArray(data)
     ) {
-      return failure(`${tool.name} answered with data that is not a JSON object`)
+      return failure(
+        `${tool.name} answered with data that is not a JSON object of at most ${maxDepth} levels`,
+      )
     }
     return { content: [{ type: "text", text }], structuredContent: data }
   } catch (error) {

@@ -284,27 +284,27 @@ describe.each(Object.keys(transports) as Array<keyof typeof transports>)(
             [
               "answers data that is an array",
               () => ({ text: "x", data: [1] }),
-              "unruly answered with data that is not a JSON object",
+              "unruly answered with data that is not a JSON object of at most 256 levels",
             ],
             [
               "answers a BigInt",
               () => ({ text: "x", data: { n: 1n } }),
-              "unruly answered with data that is not a JSON object",
+              "unruly answered with data that is not a JSON object of at most 256 levels",
             ],
             [
               "answers a non-finite number",
               () => ({ text: "x", data: { n: Infinity } }),
-              "unruly answered with data that is not a JSON object",
+              "unruly answered with data that is not a JSON object of at most 256 levels",
             ],
             [
               "answers a Date",
               () => ({ text: "x", data: { at: new Date(0) } }),
-              "unruly answered with data that is not a JSON object",
+              "unruly answered with data that is not a JSON object of at most 256 levels",
             ],
             [
               "answers undefined inside data",
               () => ({ text: "x", data: { a: [undefined] } }),
-              "unruly answered with data that is not a JSON object",
+              "unruly answered with data that is not a JSON object of at most 256 levels",
             ],
             [
               "answers data whose getter throws",
@@ -316,7 +316,7 @@ describe.each(Object.keys(transports) as Array<keyof typeof transports>)(
                   },
                 },
               }),
-              "unruly answered with data that is not a JSON object",
+              "unruly answered with data that is not a JSON object of at most 256 levels",
             ],
             [
               "answers text through a getter, which is never run",
@@ -349,22 +349,22 @@ describe.each(Object.keys(transports) as Array<keyof typeof transports>)(
                 for (let i = 0; i < 20000; i++) deep = [deep]
                 return { text: "x", data: { deep } }
               },
-              "unruly answered with data that is not a JSON object",
+              "unruly answered with data that is not a JSON object of at most 256 levels",
             ],
             [
               "answers a symbol key",
               () => ({ text: "x", data: { [Symbol("s")]: 1n } }),
-              "unruly answered with data that is not a JSON object",
+              "unruly answered with data that is not a JSON object of at most 256 levels",
             ],
             [
               "answers a sparse array",
               () => ({ text: "x", data: { a: holey() } }),
-              "unruly answered with data that is not a JSON object",
+              "unruly answered with data that is not a JSON object of at most 256 levels",
             ],
             [
               "answers an array with an extra property",
               () => ({ text: "x", data: { a: Object.assign([1], { extra: 2 }) } }),
-              "unruly answered with data that is not a JSON object",
+              "unruly answered with data that is not a JSON object of at most 256 levels",
             ],
             [
               "answers a hole balanced by an extra property",
@@ -372,12 +372,12 @@ describe.each(Object.keys(transports) as Array<keyof typeof transports>)(
                 text: "x",
                 data: { list: Object.assign(holey(), { extra: 2 }) },
               }),
-              "unruly answered with data that is not a JSON object",
+              "unruly answered with data that is not a JSON object of at most 256 levels",
             ],
             [
               "answers data as an array",
               () => ({ text: "x", data: [1] }),
-              "unruly answered with data that is not a JSON object",
+              "unruly answered with data that is not a JSON object of at most 256 levels",
             ],
             [
               "answers a property JSON would not see",
@@ -388,7 +388,7 @@ describe.each(Object.keys(transports) as Array<keyof typeof transports>)(
                   enumerable: false,
                 }),
               }),
-              "unruly answered with data that is not a JSON object",
+              "unruly answered with data that is not a JSON object of at most 256 levels",
             ],
             [
               "answers a cycle",
@@ -397,7 +397,7 @@ describe.each(Object.keys(transports) as Array<keyof typeof transports>)(
                 data.self = data
                 return { text: "x", data }
               },
-              "unruly answered with data that is not a JSON object",
+              "unruly answered with data that is not a JSON object of at most 256 levels",
             ],
           ])(
             "reports a run that %s as a tool error naming the tool",
@@ -440,6 +440,21 @@ describe.each(Object.keys(transports) as Array<keyof typeof transports>)(
             ).toEqual({
               content: [{ type: "text", text: "x" }],
               structuredContent: { a: shared, b: shared, c: { d: [] }, bare: { n: 1 } },
+            })
+          })
+
+          it("takes data: undefined as no data", async () => {
+            const extension = defineExtension({
+              name: "nodata",
+              version: "0.0.1",
+              views: [],
+              tools: [unruly(() => ({ text: "x", data: undefined }))],
+            })
+            const client = await connect(transport, setup, extension)
+            expect(
+              answer(await client.callTool({ name: "unruly", arguments: {} })),
+            ).toEqual({
+              content: [{ type: "text", text: "x" }],
             })
           })
 
