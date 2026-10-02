@@ -7,7 +7,7 @@
  * harness decides, the window shows"; `selections.test.ts`, "bestVersion").
  */
 import type { Baseline, Cases, Experiment, Run, RunChange, Score } from "./experiment.ts"
-import { changeOf, formatValue, type Change, type Formatted } from "./metric.ts"
+import { changeBetween, formatValue, type Change, type Formatted } from "./metric.ts"
 
 /** Something scored and measured: the baseline or a run. */
 type Scored = Pick<Baseline, "scores" | "measures">
@@ -122,7 +122,7 @@ export function pathToBest(experiment: Experiment): readonly PathStep[] {
     const gain =
       before === undefined || mean === undefined
         ? undefined
-        : changeOf(metric, mean - before, noise)
+        : changeBetween(metric, before, mean, noise)
     before = mean
     return [gain === undefined ? { run } : { run, gain }]
   })
@@ -152,11 +152,12 @@ export function lineage(experiment: Experiment, runId: string): Lineage | undefi
   return { baseline: experiment.baseline, runs: chain }
 }
 
+/** Newest first: by `startedAt`, then by `number`. */
+const newest = (a: Run, b: Run) => b.startedAt - a.startedAt || b.number - a.number
+
 /** The runs newest first: by `startedAt`, then by `number`. */
 export function runsNewestFirst(experiment: Experiment): readonly Run[] {
-  return [...experiment.runs].sort(
-    (a, b) => b.startedAt - a.startedAt || b.number - a.number,
-  )
+  return [...experiment.runs].sort(newest)
 }
 
 /**
@@ -165,7 +166,6 @@ export function runsNewestFirst(experiment: Experiment): readonly Run[] {
  */
 export function runsByScore(experiment: Experiment, splitId: string): readonly Run[] {
   const sign = experiment.definition.metric.better === "up" ? -1 : 1
-  const newest = (a: Run, b: Run) => b.startedAt - a.startedAt || b.number - a.number
   return [...experiment.runs].sort((a, b) => {
     const left = scoreOf(a, splitId)
     const right = scoreOf(b, splitId)

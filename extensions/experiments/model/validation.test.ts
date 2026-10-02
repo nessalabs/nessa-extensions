@@ -141,6 +141,21 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         ],
       },
       {
+        name: "a measure keyed __proto__",
+        edit: (e) => (e.baseline.measures = JSON.parse('{"__proto__": 5, "g": 10}')),
+        problems: [{ rule: "shape", path: ["baseline", "measures", "__proto__"] }],
+      },
+      {
+        name: "a score beyond the bound",
+        edit: (e) => (run(e, 0).scores = { b: { mean: 1e15 + 2 } }),
+        problems: [{ rule: "shape", path: ["runs", 0, "scores", "b", "mean"] }],
+      },
+      {
+        name: "a measure beyond the bound, below 0",
+        edit: (e) => (e.baseline.measures = { g: -1e15 - 2 }),
+        problems: [{ rule: "shape", path: ["baseline", "measures", "g"] }],
+      },
+      {
         name: "a score that is not a number",
         edit: (e) => (run(e, 0).scores = { b: { mean: Number.NaN } }),
         problems: [{ rule: "shape", path: ["runs", 0, "scores", "b", "mean"] }],
@@ -158,6 +173,13 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
     ],
     holds: [
       { name: "decimals 0", edit: (e) => (e.definition.metric.decimals = 0) },
+      {
+        name: "values at the bound, either side",
+        edit: (e) => {
+          run(e, 1).scores = { b: { mean: 1e15 } }
+          run(e, 1).measures = { g: -1e15 }
+        },
+      },
       { name: "decimals 10", edit: (e) => (e.definition.metric.decimals = 10) },
       { name: "a budget of 1 run", edit: (e) => (e.definition.budget = { runs: 1 }) },
       { name: "noise 0", edit: (e) => (e.definition.noise = 0) },
@@ -174,7 +196,12 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         name: "an interval of 0",
         edit: (e) => (run(e, 0).scores = { b: { mean: 54, interval: 0 } }),
       },
-      { name: "counts of 0", edit: (e) => (cases(e).slices[1]!.passingAfter = 0) },
+      {
+        name: "counts of 0",
+        edit: (e) => {
+          cases(e).slices[1] = { name: "s2", total: 0, passingBefore: 0, passingAfter: 0 }
+        },
+      },
       {
         name: "a moved page of 200",
         edit: (e) => {
@@ -627,7 +654,10 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
     breaks: [
       {
         name: "more passing before than in the slice",
-        edit: (e) => (cases(e).slices[0]!.passingBefore = 61),
+        edit: (e) => {
+          cases(e).slices[0]!.passingBefore = 61
+          cases(e).slices[0]!.passingAfter = 60
+        },
         problems: [
           {
             rule: "slice-passing-within-total",
@@ -637,7 +667,10 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
       },
       {
         name: "more passing after than in the slice",
-        edit: (e) => (cases(e).slices[1]!.passingAfter = 41),
+        edit: (e) => {
+          cases(e).slices[1]!.passingBefore = 40
+          cases(e).slices[1]!.passingAfter = 41
+        },
         problems: [
           {
             rule: "slice-passing-within-total",
@@ -652,6 +685,56 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         edit: (e) => {
           cases(e).slices[0]!.passingBefore = 60
           cases(e).slices[0]!.passingAfter = 60
+        },
+      },
+    ],
+  },
+  "slice-within-cases": {
+    breaks: [
+      {
+        name: "a slice with more cases than the run",
+        edit: (e) => (cases(e).slices[0]!.total = 101),
+        problems: [
+          {
+            rule: "slice-within-cases",
+            path: ["runs", 0, "cases", "slices", 0, "total"],
+          },
+        ],
+      },
+    ],
+    holds: [
+      { name: "a slice of every case", edit: (e) => (cases(e).slices[0]!.total = 100) },
+    ],
+  },
+  "slice-change-within-moved": {
+    breaks: [
+      {
+        name: "a slice passing more by more than were fixed",
+        edit: (e) => (cases(e).slices[0]!.passingAfter = 34),
+        problems: [
+          {
+            rule: "slice-change-within-moved",
+            path: ["runs", 0, "cases", "slices", 0, "passingAfter"],
+          },
+        ],
+      },
+      {
+        name: "a slice passing fewer by more than were broken",
+        edit: (e) => (cases(e).slices[1]!.passingAfter = 18),
+        problems: [
+          {
+            rule: "slice-change-within-moved",
+            path: ["runs", 0, "cases", "slices", 1, "passingAfter"],
+          },
+        ],
+      },
+    ],
+    holds: [
+      {
+        name: "a slice moved by every case fixed, and one by every case broken",
+        edit: (e) => {
+          cases(e).slices[0]!.passingAfter = 33
+          cases(e).slices[1]!.passingAfter = 19
         },
       },
     ],
@@ -687,7 +770,10 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
     breaks: [
       {
         name: "more fixed listed than fixed",
-        edit: (e) => (cases(e).fixed = 0),
+        edit: (e) => {
+          cases(e).fixed = 0
+          cases(e).slices[0]!.passingAfter = 30
+        },
         problems: [
           { rule: "moved-page-within-counts", path: ["runs", 0, "cases", "moved"] },
         ],
@@ -703,7 +789,10 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
     holds: [
       {
         name: "exactly as many listed as moved",
-        edit: (e) => (cases(e).fixed = 1),
+        edit: (e) => {
+          cases(e).fixed = 1
+          cases(e).slices[0]!.passingAfter = 31
+        },
       },
       { name: "none listed", edit: (e) => (cases(e).moved = []) },
     ],
@@ -809,6 +898,17 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
       {
         name: "a kept run with no score on the primary split",
         edit: (e) => (run(e, 0).scores = { a: { mean: 55 } }),
+        problems: [{ rule: "best-runs-scored", path: ["bestSoFar", 0] }],
+      },
+      {
+        name: "a kept run with no score on a primary split named for an inherited member",
+        edit: (e) => {
+          e.definition.splits[1]!.id = "toString"
+          e.definition.primarySplit = "toString"
+          e.baseline.scores = { a: { mean: 50 }, toString: { mean: 50 } }
+          run(e, 0).scores = { a: { mean: 55 } }
+          run(e, 1).scores = {}
+        },
         problems: [{ rule: "best-runs-scored", path: ["bestSoFar", 0] }],
       },
     ],

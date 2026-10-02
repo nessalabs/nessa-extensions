@@ -31,6 +31,22 @@ describe("the samples", () => {
     expect(later.runs[0]!.startedAt).toBe(checkoutSample(begun).runs[0]!.startedAt + 1000)
   })
 
+  it("validate into copies frozen at every level, every variant of every union included", () => {
+    for (const sample of [checkoutSample, latencySample, scaleSample]) {
+      const unfrozen: string[] = []
+      const visit = (node: unknown, path: string) => {
+        if (node === null || typeof node !== "object") return
+        if (!Object.isFrozen(node)) unfrozen.push(path)
+        for (const [key, child] of Object.entries(node)) visit(child, `${path}.${key}`)
+      }
+      visit(valid(sample(begun)), sample.name)
+      expect(unfrozen).toEqual([])
+    }
+    // The checkout sample has an agent of each kind of activity but diagnosing.
+    const kinds = valid(checkoutSample(begun)).agents.map((agent) => agent.activity.kind)
+    expect(new Set(kinds)).toEqual(new Set(["evaluating", "drafting", "resting"]))
+  })
+
   it("survive JSON, as a tool's data does", () => {
     for (const sample of [checkoutSample, latencySample, scaleSample]) {
       const experiment = valid(sample(begun))

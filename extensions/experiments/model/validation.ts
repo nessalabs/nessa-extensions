@@ -2,7 +2,9 @@
  * Validation: the one place an experiment's integrity is checked (nessa-agent
  * ADR 333, "Validation"), and the only maker of an `Experiment`.
  *
- * `validateExperiment` takes anything. zod parses it into a fresh copy, frozen
+ * `validateExperiment` takes any value; whatever JSON can carry is answered,
+ * valid or not (an input whose reading throws — a getter, a revoked proxy —
+ * throws). zod parses it into a fresh copy, frozen
  * at every level, and from then on only the copy is read: the rules below are
  * checked on it, and it is what is branded and returned. The input is read
  * once, by the parser, and never again, so nothing changed in it afterwards —
@@ -54,6 +56,8 @@ export const rules = [
   "progress-within-total",
   // Cases and changes.
   "slice-passing-within-total",
+  "slice-within-cases",
+  "slice-change-within-moved",
   "slice-names-unique",
   "moved-within-total",
   "moved-page-within-counts",
@@ -379,6 +383,23 @@ function checkCases(
   report: (rule: Rule, path: Path, message: string) => void,
 ) {
   cases.slices.forEach((slice, index) => {
+    // A slice is a group of the run's cases: no larger than they are, and
+    // moved by no more of them than were fixed, or broken.
+    if (slice.total > cases.total) {
+      report(
+        "slice-within-cases",
+        [...at, "slices", index, "total"],
+        `slice ${slice.name} has more cases than the run`,
+      )
+    }
+    const change = slice.passingAfter - slice.passingBefore
+    if (change > cases.fixed || -change > cases.broken) {
+      report(
+        "slice-change-within-moved",
+        [...at, "slices", index, "passingAfter"],
+        `slice ${slice.name} moved by more cases than were ${change > 0 ? "fixed" : "broken"}`,
+      )
+    }
     for (const key of ["passingBefore", "passingAfter"] as const) {
       if (slice[key] > slice.total) {
         report(

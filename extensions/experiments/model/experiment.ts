@@ -68,6 +68,7 @@ export type Slice = z.output<typeof slice>
 /** One case whose outcome the run changed. */
 export const movedCase = z
   .strictObject({
+    /** The case's id in its suite, as the source writes it: unique in the page. */
     id: text,
     title: text,
     /** The name of the run's slice it is in. */
@@ -217,8 +218,8 @@ export const experimentData = z
     id,
     title: text,
     goal: text,
-    /** The conversation that runs it. */
-    sessionId: z.string().min(1),
+    /** The conversation that runs it: the host's id, written as the host writes it. */
+    sessionId: text,
     startedAt: instant,
     notes: z.array(note).readonly(),
     definition: experimentDefinition,

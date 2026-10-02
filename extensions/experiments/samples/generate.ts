@@ -2,7 +2,7 @@
  * What the samples are made from: a seeded random sequence, so each reads the
  * same every time, and the cases and changes of a run at any size.
  */
-import type { ExperimentInput } from "../model/index.ts"
+import { movedPageSize, type ExperimentInput } from "../model/index.ts"
 
 type RunInput = ExperimentInput["runs"][number]
 export type CasesInput = NonNullable<RunInput["cases"]>
@@ -44,7 +44,7 @@ function spread(count: number, weights: readonly number[]): number[] {
 /**
  * A run's cases: `total` of them in `kinds`' slices, `fixed` and `broken` of
  * them moved, `passing` of them passing before, and one page of the moved —
- * at most 200, in proportion — each in the slice it moved in.
+ * at most `movedPageSize`, in proportion — each in the slice it moved in.
  */
 export function casesFor(
   seed: string,
@@ -76,8 +76,9 @@ export function casesFor(
     return { name: kind.name, total: size, passingBefore, passingAfter }
   })
   const moved = fixed + broken
-  const pageFixed = moved === 0 ? 0 : Math.min(fixed, Math.round((200 * fixed) / moved))
-  const pageBroken = Math.min(broken, 200 - pageFixed)
+  const pageFixed =
+    moved === 0 ? 0 : Math.min(fixed, Math.round((movedPageSize * fixed) / moved))
+  const pageBroken = Math.min(broken, movedPageSize - pageFixed)
   const taken = new Set<number>()
   const caseId = () => {
     let number = 1 + Math.floor(random() * total)

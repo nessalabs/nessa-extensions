@@ -33,7 +33,7 @@ export {
   type Slice,
 } from "./experiment.ts"
 export {
-  changeOf,
+  changeBetween,
   formatValue,
   type Change,
   type ChangeTone,
