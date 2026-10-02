@@ -18,7 +18,7 @@ import { z } from "zod/v4"
 
 import { experimentDefinition } from "./definition.ts"
 import { isPathData } from "./path-data.ts"
-import { count, id, instant, text, tone, value } from "./values.ts"
+import { count, id, instant, number, text, tone, value } from "./values.ts"
 
 /** A run's score on one split: its mean, and the half-width of its confidence interval. */
 export const score = z
@@ -133,7 +133,7 @@ export type Progress = z.output<typeof progress>
 export const run = z
   .strictObject({
     id,
-    number: z.number().int().min(1),
+    number: number.int().min(1),
     startedAt: instant,
     /** While it is being evaluated, when the harness says. */
     progress: progress.exactOptional(),

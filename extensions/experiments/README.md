@@ -58,10 +58,10 @@ beside what they test.
   holds; `validation.test.ts` tests each one both ways.
 - **It travels as JSON.** Everything in it is JSON — times are milliseconds
   since the epoch, an optional field is absent or a value, never `undefined`,
-  and no number is `-0`, which JSON writes as `0` — so a valid experiment is exactly what JSON carries, the server
-  can return it as a tool's `data`, and the
-  app, which receives that `data` from its host, validates it again before it
-  draws anything.
+  and no number is `-0`, which JSON writes as `0` — so a valid experiment is
+  exactly what JSON carries. The server can return it as a tool's `data`, and
+  the app, which receives that `data` from its host, validates it again before
+  it draws anything.
 - **The harness decides.** Whether a run was kept, which is best (the last of
   `bestSoFar`, or the baseline while it is empty), and why, are the harness's;
   `selections.ts` reads them and never works them out from scores.

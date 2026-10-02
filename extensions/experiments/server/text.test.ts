@@ -216,6 +216,20 @@ describe("missingText", () => {
 })
 
 describe("openingText", () => {
+  it("counts one character left as one", () => {
+    expect(
+      openingText(
+        { experimentId: "x", runId: "r1" },
+        {
+          kind: "download",
+          name: "a.txt",
+          mimeType: "text/plain",
+          text: `${"a".repeat(downloadShown)}b`,
+        },
+      ),
+    ).toMatch(/\n…and 1 more character$/)
+  })
+
   it("never cuts a character in two", () => {
     const text = `${"a".repeat(downloadShown - 1)}😀${"b".repeat(10)}`
     const shown = openingText(

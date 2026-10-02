@@ -82,7 +82,7 @@ export const experimentDefinition = z
     reference: z.strictObject({ value, label: text }).readonly().exactOptional(),
     /** How many runs the experiment may spend: a whole number, 1 or more. */
     budget: z
-      .strictObject({ runs: z.number().int().min(1) })
+      .strictObject({ runs: number.int().min(1) })
       .readonly()
       .exactOptional(),
     /** What a case is called: "test case", "prompt", "request". */

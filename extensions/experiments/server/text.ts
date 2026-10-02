@@ -308,7 +308,7 @@ function shownPart(text: string): string {
   const high = text.charCodeAt(downloadShown - 1)
   const end = high >= 0xd800 && high <= 0xdbff ? downloadShown - 1 : downloadShown
   // Characters, not code units: a character that takes two is one.
-  return `${text.slice(0, end)}\n…and ${count([...text.slice(end)].length)} more characters`
+  return `${text.slice(0, end)}\n…and ${counted([...text.slice(end)].length, "more character", "more characters")}`
 }
 
 /** What `open_file` says about what it opened, or why it could not. */
