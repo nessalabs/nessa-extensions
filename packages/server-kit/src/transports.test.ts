@@ -1,7 +1,7 @@
 import { request as httpRequest } from "node:http"
 import { fileURLToPath } from "node:url"
 
-import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client"
+import { Client } from "@modelcontextprotocol/client"
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio"
 import { afterEach, describe, expect, it } from "vitest"
 
