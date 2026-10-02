@@ -3,21 +3,23 @@
  * checked once, when it is defined, so a server never starts with a tool that
  * names a view it does not serve, or an input it cannot describe.
  *
- * What was checked is what is served. `defineTool` and `defineExtension`
- * record what they made, frozen, in this module's own registries, and
- * `checkedOf` serves only from those: a tool copied or built by hand, an
- * extension spread into another, or an array changed after the check is
- * refused or never seen. The brands on `Tool` and `Extension` only let the
- * compiler say so first.
+ * What was checked is what is served. `defineExtension` parses the
+ * definition into a copy — each view's `_meta.ui` with the reference SDK's
+ * own schemas, made strict — and keeps only the copy, frozen; `defineTool`
+ * freezes a copy of each tool. Both record what they made in this module's
+ * own registries, and `checkedOf` serves only from those: a tool copied or
+ * built by hand, an extension spread into another, or anything changed after
+ * the check is refused or never seen. The brands on `Tool` and `Extension`
+ * only let the compiler say so first.
  *
- * A tool says what it changes as one of three `effects`, not as two hints
- * that could disagree: `readOnlyHint` and `destructiveHint` are derived from
- * it (`toolAnnotations`). It says who may call it in `callers`, the
- * standard's `visibility`. And it always answers in text: `run` returns a
- * `text` that stands on its own, for a host without MCP Apps and for the
- * model, with optional `data` for the view.
+ * What a tool declares and answers is the package README's "Using it".
  */
-import type { McpUiResourceMeta } from "@modelcontextprotocol/ext-apps"
+import {
+  McpUiResourceCspSchema,
+  McpUiResourceMetaSchema,
+  McpUiResourcePermissionsSchema,
+  type McpUiResourceMeta,
+} from "@modelcontextprotocol/ext-apps"
 import { z } from "zod/v4"
 
 /** Who may call a tool: the standard's `_meta.ui.visibility`. */
@@ -156,18 +158,16 @@ export function defineTool<Input extends z.ZodObject>(tool: ToolDefinition<Input
  * - its `input` can be described as JSON Schema.
  */
 export function defineExtension(definition: ExtensionDefinition): Extension {
-  // Copied first, so what is checked is what is kept, whatever the caller
-  // does to its own arrays and objects afterwards.
-  const views = Object.freeze(
-    definition.views.map((view) =>
-      Object.freeze({
-        ...view,
-        ...(view.ui === undefined ? {} : { ui: deepFreeze(structuredClone(view.ui)) }),
-      }),
-    ),
-  )
+  const shape = extensionShape.safeParse(definition)
+  if (!shape.success) {
+    throw new DefinitionError(
+      `${String((definition as { name?: unknown }).name)} is not a valid extension:\n- ${shape.error.issues.map(describeIssue).join("\n- ")}`,
+    )
+  }
+  // The parsed copy, not the caller's objects, is what is checked and kept.
+  const views = Object.freeze(shape.data.views.map((view) => deepFreeze(view)))
   const tools = Object.freeze([...definition.tools])
-  const copy = { ...definition, views, tools }
+  const copy = { ...shape.data, views, tools }
   const inputSchemas = new Map<string, InputSchema>()
   const problems = [...viewProblems(views), ...toolProblems(copy, inputSchemas)]
   if (problems.length > 0) {
@@ -179,6 +179,64 @@ export function defineExtension(definition: ExtensionDefinition): Extension {
   checkedExtensions.set(extension, Object.freeze({ ...extension, inputSchemas }))
   // The brand is a type only; `checkedExtensions` is what `checkedOf` trusts.
   return extension as unknown as Extension
+}
+
+const isFunction = (value: unknown): value is (...args: never[]) => unknown =>
+  typeof value === "function"
+
+/** A view's `_meta.ui`: the reference SDK's schemas, refusing keys they do not name. */
+const uiShape = McpUiResourceMetaSchema.extend({
+  csp: McpUiResourceCspSchema.strict().optional(),
+  permissions: McpUiResourcePermissionsSchema.strict().optional(),
+}).strict()
+
+const viewShape = z
+  .object({
+    uri: z.custom<ViewUri>((value) => typeof value === "string", "is not a string"),
+    name: z.string(),
+    title: z.string().optional(),
+    description: z.string().optional(),
+    html: z.custom<ViewDefinition["html"]>(isFunction, "is not a function"),
+    ui: uiShape.optional(),
+  })
+  .strict()
+
+const toolShape = z
+  .object({
+    name: z.string(),
+    title: z.string().optional(),
+    description: z.string(),
+    input: z.instanceof(z.ZodObject, { message: "is not a zod object schema" }),
+    effects: z.enum(["read-only", "additive", "destructive"]),
+    view: z.string().optional(),
+    callers: z.array(z.string()).optional(),
+    run: z.custom<Tool["run"]>(isFunction, "is not a function"),
+  })
+  .strict()
+
+const extensionShape = z
+  .object({
+    name: z.string().min(1, "is empty"),
+    version: z.string().min(1, "is empty"),
+    instructions: z.string().optional(),
+    views: z.array(viewShape),
+    tools: z.array(
+      z.custom<Tool>(
+        (tool) => !madeTools.has(tool as object) || toolShape.safeParse(tool).success,
+        "is not a valid tool",
+      ),
+    ),
+  })
+  .strict()
+
+/** A shape problem, said where it is: `views[0].ui.csp.scriptDomains: …`. */
+function describeIssue(issue: z.core.$ZodIssue): string {
+  const where = issue.path
+    .map((key, at) =>
+      typeof key === "number" ? `[${key}]` : `${at === 0 ? "" : "."}${String(key)}`,
+    )
+    .join("")
+  return `${where || "the definition"}: ${issue.message}`
 }
 
 /** What `defineExtension` checked for `extension`; throws for anything it did not make. */

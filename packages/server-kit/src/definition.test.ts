@@ -201,6 +201,72 @@ describe("defineExtension", () => {
   })
 })
 
+describe("a definition of the wrong shape", () => {
+  /** The problems `defineExtension` names for `definition`, as an untyped caller could write it. */
+  const shapeProblems = (definition: unknown) =>
+    problemsOf(definition as ExtensionDefinition)
+  const base = { name: "probe", version: "0.0.0", views: [], tools: [] }
+
+  it.each([
+    [{ ...base, name: "" }, "name: is empty"],
+    [{ ...base, version: "" }, "version: is empty"],
+    [{ ...base, extra: true }, "the definition: Unrecognized key"],
+    [
+      { ...base, views: [{ ...view("ui://probe/a"), uri: 7 }] },
+      "views[0].uri: is not a string",
+    ],
+    [
+      { ...base, views: [{ uri: "ui://probe/a", html: (): string => "" }] },
+      "views[0].name: Invalid input",
+    ],
+    [
+      { ...base, views: [{ ...view("ui://probe/a"), html: "<p>" }] },
+      "views[0].html: is not a function",
+    ],
+    [
+      { ...base, views: [view("ui://probe/a", { prefersBorder: "yes" } as never)] },
+      "views[0].ui.prefersBorder: Invalid input",
+    ],
+    [
+      {
+        ...base,
+        views: [
+          view("ui://probe/a", { csp: { scriptDomains: ["javascript:x"] } } as never),
+        ],
+      },
+      "views[0].ui.csp: Unrecognized key",
+    ],
+    [
+      {
+        ...base,
+        views: [
+          view("ui://probe/a", { csp: { connectDomains: "https://a.com" } } as never),
+        ],
+      },
+      "views[0].ui.csp.connectDomains: Invalid input",
+    ],
+    [
+      {
+        ...base,
+        views: [view("ui://probe/a", { permissions: { camera: {}, usb: {} } } as never)],
+      },
+      "views[0].ui.permissions: Unrecognized key",
+    ],
+    [
+      { ...base, views: [view("ui://probe/a", { open: () => 1 } as never)] },
+      "views[0].ui: Unrecognized key",
+    ],
+    [
+      { ...base, tools: [tool({ effects: "bogus" as "read-only" })] },
+      "tools[0]: is not a valid tool",
+    ],
+  ])("is refused as a DefinitionError naming where: %#", (definition, problem) => {
+    const problems = shapeProblems(definition)
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain(problem)
+  })
+})
+
 describe("what defineExtension checked is what is served", () => {
   const made = () => tool({ name: "kept" })
 
@@ -222,6 +288,14 @@ describe("what defineExtension checked is what is served", () => {
     expect(Object.isFrozen(checked.tools) && Object.isFrozen(checked.views)).toBe(true)
   })
 
+  it("keeps its own copy of a view, so changing the caller's object changes nothing", () => {
+    const mine = view("ui://probe/a")
+    const checked = defineExtension(extension([mine], []))
+    ;(mine as { name: string }).name = "changed"
+    expect(checkedOf(checked).views[0]?.name).toBe("view")
+    expect(Object.isFrozen(checkedOf(checked).views[0])).toBe(true)
+  })
+
   it("keeps its own copy of a view's _meta.ui", () => {
     const ui = { csp: { connectDomains: ["https://api.example.com"] } }
     const checked = defineExtension(extension([view("ui://probe/a", ui)], []))
@@ -239,6 +313,13 @@ describe("what defineExtension checked is what is served", () => {
         "probe was not made by defineExtension, so it was never checked",
       ),
     )
+  })
+
+  it("copies a tool's callers, so changing the caller's array changes nothing", () => {
+    const callers: Array<"model" | "app"> = ["model"]
+    const kept = tool({ callers })
+    callers.push("app")
+    expect(kept.callers).toEqual(["model"])
   })
 
   it("freezes a tool, so it cannot be changed after it is checked", () => {

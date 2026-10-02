@@ -175,37 +175,41 @@ function listedView(view: ViewDefinition): Resource {
 }
 
 /**
- * Runs `tool` on `args`. Input that does not parse, a `run` that throws, and
- * an answer that is not text with optional JSON data are each a tool error
- * naming the tool — never a success, and never a protocol error that hides
- * which tool failed.
+ * Runs `tool` on `args`. What a tool must answer, and that anything else is a
+ * tool error naming it, is the package README's "Using it". Everything that
+ * can run the tool's code — parsing its input, `run`, reading its answer —
+ * happens inside the guard, and what is sent is a copy parsed from the
+ * answer, never the answer itself.
  */
 async function callTool(
   tool: Tool,
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<CallToolResult> {
-  const input = tool.input.safeParse(args)
-  if (!input.success) {
-    return failure(
-      `${tool.name} was given input it does not take: ${z.prettifyError(input.error)}`,
-    )
-  }
   try {
-    const outcome: unknown = await tool.run(input.data, { signal })
-    // Read inside the guard: getters and proxies in an outcome run code.
-    if (!isPlainObject(outcome)) return failure(`${tool.name} answered with no outcome`)
-    const { text, data } = outcome
+    const input = await tool.input.safeParseAsync(args)
+    if (!input.success) {
+      return failure(
+        `${tool.name} was given input it does not take: ${z.prettifyError(input.error)}`,
+      )
+    }
+    const outcome = ownProperties(await tool.run(input.data, { signal }))
+    if (outcome === undefined) return failure(`${tool.name} answered with no outcome`)
+    const text = outcome.get("text")
     if (typeof text !== "string" || text.trim().length === 0) {
       return failure(`${tool.name} answered without text, which every tool must give`)
     }
-    if (data !== undefined && !(isPlainObject(data) && isJson(data, new Set(), 0))) {
+    if (!outcome.has("data")) return { content: [{ type: "text", text }] }
+    const data = toJson(outcome.get("data"), 0)
+    if (
+      data === undefined ||
+      data === null ||
+      typeof data !== "object" ||
+      Array.isArray(data)
+    ) {
       return failure(`${tool.name} answered with data that is not a JSON object`)
     }
-    return {
-      content: [{ type: "text", text }],
-      ...(data === undefined ? {} : { structuredContent: data }),
-    }
+    return { content: [{ type: "text", text }], structuredContent: data }
   } catch (error) {
     return failure(
       `${tool.name} failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -213,48 +217,81 @@ async function callTool(
   }
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (typeof value !== "object" || value === null) return false
-  const prototype: unknown = Object.getPrototypeOf(value)
-  return prototype === Object.prototype || prototype === null
-}
+/** A JSON value, as `toJson` builds it. */
+type JsonValue =
+  null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
 
-/** How deep `isJson` walks before it calls a value too deep to carry. */
+/** How deep `toJson` goes before it calls a value too deep to carry. */
 const maxDepth = 256
 
 /**
- * Whether JSON carries `value` without losing any of it: null, booleans,
- * strings, finite numbers, and arrays and plain objects of those — no holes
- * or extra properties on an array, no symbol keys, no accessors, no cycles,
- * and nesting under `maxDepth`. `inside` holds the containers being walked.
+ * A plain object's own string-keyed data properties, read from their
+ * descriptors so no getter runs; `undefined` for anything else — an array,
+ * a class instance, a value with a symbol key, an accessor, or a property
+ * JSON would not see.
  */
-function isJson(value: unknown, inside: Set<object>, depth: number): boolean {
-  if (value === null || typeof value === "boolean" || typeof value === "string")
-    return true
-  if (typeof value === "number") return Number.isFinite(value)
-  if (typeof value !== "object" || inside.has(value) || depth >= maxDepth) return false
-  const array = Array.isArray(value)
-  if (!array && !isPlainObject(value)) return false
-  const keys = Reflect.ownKeys(value)
-  if (array) {
-    // Exactly its indices and `length`: no holes, nothing JSON drops.
-    if (keys.length !== value.length + 1) return false
-  }
-  inside.add(value)
-  const json = keys.every((key) => {
-    if (typeof key === "symbol") return false
-    if (array && key === "length") return true
-    // Read from the descriptor, so no getter runs; an accessor has no
-    // `value`, which is not JSON.
+function ownProperties(value: unknown): Map<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null) return undefined
+  const prototype: unknown = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== null) return undefined
+  const properties = new Map<string, unknown>()
+  for (const key of Reflect.ownKeys(value)) {
     const property = Object.getOwnPropertyDescriptor(value, key)
-    return (
-      property !== undefined &&
-      property.enumerable === true &&
-      isJson(property.value, inside, depth + 1)
-    )
-  })
-  inside.delete(value)
-  return json
+    if (typeof key === "symbol" || property === undefined || !("value" in property)) {
+      return undefined
+    }
+    // JSON would not see a non-enumerable property, so it cannot carry the value whole.
+    if (property.enumerable !== true) return undefined
+    properties.set(key, property.value)
+  }
+  return properties
+}
+
+/**
+ * A fresh JSON copy of `value`, or `undefined` when JSON cannot carry it
+ * whole: anything but null, booleans, strings, finite numbers, and arrays
+ * and plain objects of those — no holes, no extra or accessor properties, no
+ * symbol keys, nesting under `maxDepth` (so no cycles). The copy is built from
+ * what was read once, so it is exactly what was checked, whatever the
+ * original does afterwards.
+ */
+function toJson(value: unknown, depth: number): JsonValue | undefined {
+  if (value === null || typeof value === "boolean" || typeof value === "string")
+    return value
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined
+  // A cycle never ends, so it passes `maxDepth` and is refused there.
+  if (typeof value !== "object" || depth >= maxDepth) return undefined
+  if (Array.isArray(value)) return arrayToJson(value, depth)
+  const properties = ownProperties(value)
+  if (properties === undefined) return undefined
+  const entries: Array<[string, JsonValue]> = []
+  for (const [key, inner] of properties) {
+    const json = toJson(inner, depth + 1)
+    if (json === undefined) return undefined
+    entries.push([key, json])
+  }
+  // `fromEntries` defines each key as its own property, `__proto__` included.
+  return Object.fromEntries(entries)
+}
+
+function arrayToJson(value: unknown[], depth: number): JsonValue[] | undefined {
+  const length = value.length
+  const keys = Reflect.ownKeys(value)
+  // Exactly its indices and `length`: no holes, nothing JSON would drop.
+  if (keys.length !== length + 1) return undefined
+  const copy: JsonValue[] = []
+  for (const key of keys) {
+    if (key === "length") continue
+    if (typeof key !== "string" || String(Number(key)) !== key || Number(key) >= length) {
+      return undefined
+    }
+    const property = Object.getOwnPropertyDescriptor(value, key)
+    if (property === undefined || !("value" in property)) return undefined
+    const json = toJson(property.value, depth + 1)
+    if (json === undefined) return undefined
+    copy[Number(key)] = json
+  }
+  return copy
 }
 
 function failure(text: string): CallToolResult {

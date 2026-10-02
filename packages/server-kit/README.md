@@ -56,8 +56,14 @@ serveOverStdio(board)
   that does not parse, a `run` that throws, and an answer that is not text
   with JSON data are tool errors (`isError`) naming the tool, never successes.
 - **`defineExtension` checks the definition once** and makes it an
-  `Extension`, which is all that can be served. It throws a `DefinitionError`
-  naming every problem; the rules are listed on `defineExtension`.
+  `Extension`, which is all that can be served. It parses the definition into
+  a frozen copy — each view's `_meta.ui` with the reference SDK's own schemas,
+  refusing keys they do not name — and keeps only the copy, so what was
+  checked is what is served. It throws a `DefinitionError` naming every
+  problem and where it is; the rules are listed on `defineExtension`.
+- **What a tool answers is parsed too.** Its input is parsed inside the same
+  guard as `run`; its `data` is read once, without running getters, into a
+  fresh JSON copy, and the copy is what is sent.
 
 ## Module map
 
@@ -98,39 +104,32 @@ the client's and not validated as an envelope.
 
 ## Transports
 
-`serveOverStdio(extension)` serves on this process's stdin and stdout, as
-`npx @nessalabs/<name>` runs an extension.
+`serveOverStdio(extension, { onerror })` serves on this process's stdin and
+stdout, as `npx @nessalabs/<name>` runs an extension, to clients of either
+protocol era: the SDK pins one server to the connection, made for the era its
+opening chose.
 
-`serveOverHttp(extension, { host, port, path, maxSessions, onerror })` serves
-streamable HTTP on a loopback address (`127.0.0.1` by default, or `::1`; a free
-port unless one is given; at `/mcp`), and resolves with the bound `url` and a
+`serveOverHttp(extension, { host, port, path, onerror })` serves streamable
+HTTP on a loopback address (`127.0.0.1` by default, or `::1`; a free port
+unless one is given; at `/mcp`), and resolves with the bound `url` and a
 `close`:
 
-- **2026-07-28 requests** are each answered by a fresh server, since each
-  carries its client's capabilities.
-- **2025-era clients** get a session: one server for the session's life, found
-  by its `Mcp-Session-Id`, so later requests are answered knowing what
-  `initialize` declared. Only an `initialize` opens one, and an unknown
-  session id is answered `404`. A client that goes away without ending its
-  session leaves nothing that says so, so at most `maxSessions` (64) are
-  open, and a new one closes the idle session used longest ago. Its client,
-  if it comes back, is answered `404` and starts a new session, as the
-  protocol has it. A session answering a call — a POST whose answer has not
-  been read to its end — is never closed under it: when every session is
-  answering one, a new `initialize` is answered `503` until one finishes. A
-  GET stream does not count: it carries only what the server sends unasked,
-  and a client that went away may leave it open.
+- **2026-07-28 clients only.** Each request carries its client's capabilities,
+  so each is answered by a fresh server, and the SDK's `createMcpHandler` owns
+  the request from start to end. A 2025-era client declares its capabilities
+  once, in `initialize`, and so needs a session; HTTP refuses it with
+  `-32022`, naming the era it serves, and stdio serves it. 2025-era HTTP
+  sessions belong with remote serving
+  ([#11](https://github.com/nessalabs/nessa-extensions/issues/11)).
 - **Only this machine.** A request whose `Host` or `Origin` names anything else
   is refused `403`, which keeps a web page from reaching the server by DNS
   rebinding. A request target that is not a path is answered `400`, and one
-  whose path is not exactly `path` `404`. `path` and `maxSessions` are
-  checked when serving starts. Serving a remote host needs authentication and is not
-  built here
-  ([#11](https://github.com/nessalabs/nessa-extensions/issues/11)).
+  whose path is not exactly `path` `404`; `path` is checked when serving
+  starts. Serving a remote host needs authentication and is #11.
 
 ## Tests
 
 `src/*.test.ts` drive the server with the SDK's own MCP client, in both
-protocol eras, declaring MCP Apps or not, over the SDK's stdio entry and over
-HTTP; `transports.test.ts` also runs the sample extension as a child process
+protocol eras over stdio and in 2026-07-28 over HTTP, declaring MCP Apps or
+not; `transports.test.ts` also runs the sample extension as a child process
 over real stdio (`src/stdio.fixture.ts`).
