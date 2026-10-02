@@ -87,8 +87,9 @@ serveOverStdio(board)
 
 A server offers UI only to a client whose
 `capabilities.extensions["io.modelcontextprotocol/ui"].mimeTypes` includes
-`text/html;profile=mcp-app`, and declares the same extension in its own
-capabilities. To any other client it is a plain MCP server:
+`text/html;profile=mcp-app`. It declares no extension of its own: its
+capabilities are fixed before the client's arrive, MCP Apps defines the
+capability for clients only, and the reference SDK's servers declare none. To any other client it is a plain MCP server:
 
 | | Renders MCP Apps | Does not |
 | --- | --- | --- |

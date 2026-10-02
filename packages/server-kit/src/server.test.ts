@@ -130,11 +130,9 @@ describe.each(Object.keys(transports) as Array<keyof typeof transports>)(
             ])
           })
 
-          it("declares MCP Apps in its own capabilities", async () => {
+          it("declares no extension of its own; the offer is per request", async () => {
             const client = await connect(transport, setup)
-            expect(client.getServerCapabilities()?.extensions).toEqual({
-              "io.modelcontextprotocol/ui": { mimeTypes: [RESOURCE_MIME_TYPE] },
-            })
+            expect(client.getServerCapabilities()?.extensions).toBeUndefined()
           })
 
           it("lists and serves the view as text/html;profile=mcp-app with its _meta.ui", async () => {

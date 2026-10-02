@@ -8,7 +8,7 @@
  * It is built on the SDK's low-level `Server`, not `McpServer`, because
  * `McpServer` lists one fixed set of tools, and this list depends on who asks.
  */
-import { EXTENSION_ID, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server"
+import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server"
 import {
   ProtocolError,
   ProtocolErrorCode,
@@ -49,10 +49,13 @@ function serverFactoryOf(extension: Checked): (ctx: McpRequestContext) => Server
     const server = new Server(
       { name: extension.name, version: extension.version },
       {
+        // No `extensions` entry: a server's capabilities are fixed before a
+        // client declares its own, and MCP Apps defines the capability for
+        // clients only; what a server offers each client is negotiated per
+        // request (the README's "Negotiation, per request").
         capabilities: {
           tools: {},
           resources: {},
-          extensions: { [EXTENSION_ID]: { mimeTypes: [RESOURCE_MIME_TYPE] } },
         },
         ...(extension.instructions === undefined
           ? {}
