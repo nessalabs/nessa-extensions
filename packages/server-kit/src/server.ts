@@ -22,8 +22,10 @@ import {
 import { z } from "zod/v4"
 
 import {
+  checkedOf,
   defaultCallers,
   toolAnnotations,
+  type Checked,
   type Extension,
   type Tool,
   type ViewDefinition,
@@ -36,6 +38,11 @@ import { capabilitiesReader, rendersApps } from "./negotiation.ts"
  * `Server` over the same extension.
  */
 export function serverFactory(extension: Extension): (ctx: McpRequestContext) => Server {
+  const checked = checkedOf(extension)
+  return serverFactoryOf(checked)
+}
+
+function serverFactoryOf(extension: Checked): (ctx: McpRequestContext) => Server {
   const tools = new Map(extension.tools.map((tool) => [tool.name, tool]))
   const views = new Map(extension.views.map((view) => [view.uri as string, view]))
   return ({ era }) => {
@@ -93,7 +100,15 @@ export function serverFactory(extension: Extension): (ctx: McpRequestContext) =>
       const { uri } = request.params
       const view = views.get(uri)
       if (view === undefined) throw new ResourceNotFoundError(uri)
-      const html: unknown = await view.html()
+      let html: unknown
+      try {
+        html = await view.html()
+      } catch (error) {
+        throw new ProtocolError(
+          ProtocolErrorCode.InternalError,
+          `View ${view.uri} failed: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
       if (typeof html !== "string") {
         throw new ProtocolError(
           ProtocolErrorCode.InternalError,
@@ -126,7 +141,7 @@ function offeredWithoutApps(tool: Tool): boolean {
  * tool has a view or callers other than the default. The deprecated flat
  * `_meta["ui/resourceUri"]` is not written (one current contract).
  */
-function listedTool(extension: Extension, tool: Tool, apps: boolean): ListedTool {
+function listedTool(extension: Checked, tool: Tool, apps: boolean): ListedTool {
   const callers = tool.callers ?? defaultCallers
   const defaultVisibility =
     callers.length === defaultCallers.length &&
@@ -176,25 +191,25 @@ async function callTool(
       `${tool.name} was given input it does not take: ${z.prettifyError(input.error)}`,
     )
   }
-  let outcome: unknown
   try {
-    outcome = await tool.run(input.data, { signal })
+    const outcome: unknown = await tool.run(input.data, { signal })
+    // Read inside the guard: getters and proxies in an outcome run code.
+    if (!isPlainObject(outcome)) return failure(`${tool.name} answered with no outcome`)
+    const { text, data } = outcome
+    if (typeof text !== "string" || text.trim().length === 0) {
+      return failure(`${tool.name} answered without text, which every tool must give`)
+    }
+    if (data !== undefined && !(isPlainObject(data) && isJson(data, new Set(), 0))) {
+      return failure(`${tool.name} answered with data that is not a JSON object`)
+    }
+    return {
+      content: [{ type: "text", text }],
+      ...(data === undefined ? {} : { structuredContent: data }),
+    }
   } catch (error) {
     return failure(
       `${tool.name} failed: ${error instanceof Error ? error.message : String(error)}`,
     )
-  }
-  if (!isPlainObject(outcome)) return failure(`${tool.name} answered with no outcome`)
-  const { text, data } = outcome
-  if (typeof text !== "string" || text.trim().length === 0) {
-    return failure(`${tool.name} answered without text, which every tool must give`)
-  }
-  if (data !== undefined && !(isPlainObject(data) && isJson(data, new Set()))) {
-    return failure(`${tool.name} answered with data that is not a JSON object`)
-  }
-  return {
-    content: [{ type: "text", text }],
-    ...(data === undefined ? {} : { structuredContent: data }),
   }
 }
 
@@ -204,20 +219,40 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null
 }
 
+/** How deep `isJson` walks before it calls a value too deep to carry. */
+const maxDepth = 256
+
 /**
- * Whether JSON carries `value` as it is: null, booleans, strings, finite
- * numbers, and arrays and plain objects of those, without cycles. `inside`
- * holds the containers being walked.
+ * Whether JSON carries `value` without losing any of it: null, booleans,
+ * strings, finite numbers, and arrays and plain objects of those — no holes
+ * or extra properties on an array, no symbol keys, no accessors, no cycles,
+ * and nesting under `maxDepth`. `inside` holds the containers being walked.
  */
-function isJson(value: unknown, inside: Set<object>): boolean {
+function isJson(value: unknown, inside: Set<object>, depth: number): boolean {
   if (value === null || typeof value === "boolean" || typeof value === "string")
     return true
   if (typeof value === "number") return Number.isFinite(value)
-  if (typeof value !== "object" || inside.has(value)) return false
-  if (!Array.isArray(value) && !isPlainObject(value)) return false
+  if (typeof value !== "object" || inside.has(value) || depth >= maxDepth) return false
+  const array = Array.isArray(value)
+  if (!array && !isPlainObject(value)) return false
+  const keys = Reflect.ownKeys(value)
+  if (array) {
+    // Exactly its indices and `length`: no holes, nothing JSON drops.
+    if (keys.length !== value.length + 1) return false
+  }
   inside.add(value)
-  const items: unknown[] = Array.isArray(value) ? value : Object.values(value)
-  const json = items.every((item) => isJson(item, inside))
+  const json = keys.every((key) => {
+    if (typeof key === "symbol") return false
+    if (array && key === "length") return true
+    // Read from the descriptor, so no getter runs; an accessor has no
+    // `value`, which is not JSON.
+    const property = Object.getOwnPropertyDescriptor(value, key)
+    return (
+      property !== undefined &&
+      property.enumerable === true &&
+      isJson(property.value, inside, depth + 1)
+    )
+  })
   inside.delete(value)
   return json
 }

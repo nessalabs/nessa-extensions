@@ -1,30 +1,8 @@
 /**
- * Serving an extension: over stdio, as `npx @nessalabs/<name>` runs it, and
- * over streamable HTTP on this machine.
- *
- * Both hand the SDK's serving entries `serverFactory(definition)`, so the
- * same tools and views answer both, in either protocol era.
- *
- * Over HTTP the two eras are served differently, because they declare
- * client capabilities differently (`negotiation.ts`):
- *
- * - A 2026-07-28 request carries its capabilities, so each is answered by a
- *   fresh server (`createMcpHandler`, modern only).
- * - A 2025-era client declares them once, in `initialize`, so it gets a
- *   session: one server for the session's life, found by its
- *   `Mcp-Session-Id`, so every later request is answered knowing what the
- *   client declared. The SDK's stateless legacy serving would answer each
- *   request with a server that never saw `initialize`, and offer such a
- *   client no views at all. Sessions are bounded without being refused: a
- *   client that goes away without ending its session leaves nothing that
- *   says so, so when `maxSessions` are open a new one closes the session
- *   used longest ago, whose client — if it comes back — is told the session
- *   is gone and starts another, as the protocol has it.
- *
- * HTTP listens on a loopback address only, and refuses a request whose
- * `Host` or `Origin` names anything but this machine, which keeps a web page
- * from reaching the server by DNS rebinding. Serving a remote host, which
- * needs authentication, is not built here (#11).
+ * Serving an extension over stdio and over streamable HTTP on this machine.
+ * What each serves, how HTTP holds a 2025-era client's session and when it
+ * closes one, and what HTTP refuses, is the package README's "Transports"
+ * section; this module is what it describes.
  */
 import { randomUUID } from "node:crypto"
 import { createServer, type Server as HttpServer } from "node:http"
@@ -94,7 +72,18 @@ export async function serveOverHttp(
     throw new Error(`HTTP serves on a loopback address only, not ${JSON.stringify(host)}`)
   }
   const path = options.path ?? "/mcp"
-  const endpoint = httpEndpoint(serverFactory(extension), options)
+  if (!/^\/[^?#\s]*$/.test(path)) {
+    throw new Error(
+      `HTTP serves on a path with no query or fragment, not ${JSON.stringify(path)}`,
+    )
+  }
+  const maxSessions = options.maxSessions ?? 64
+  if (!Number.isSafeInteger(maxSessions) || maxSessions < 1) {
+    throw new Error(
+      `maxSessions is a whole number of at least 1, not ${String(maxSessions)}`,
+    )
+  }
+  const endpoint = httpEndpoint(serverFactory(extension), maxSessions, options.onerror)
   const handle = toNodeHandler(
     endpoint,
     options.onerror === undefined ? {} : { onerror: options.onerror },
@@ -109,7 +98,7 @@ export async function serveOverHttp(
       res.writeHead(400).end()
       return
     }
-    if (new URL(target, "http://localhost").pathname !== path) {
+    if (target.split("?", 1)[0] !== path) {
       res.writeHead(404).end()
       return
     }
@@ -127,22 +116,30 @@ export async function serveOverHttp(
   }
 }
 
+/** A 2025-era session: its transport, and how many of its requests are still being answered. */
+interface Session {
+  readonly transport: WebStandardStreamableHTTPServerTransport
+  active: number
+}
+
 /**
  * The endpoint's web-standard face: modern requests to a fresh server each,
- * 2025-era requests to their session's server.
+ * 2025-era requests to their session's server. Exported for its tests;
+ * `serveOverHttp` is the entry.
  */
-function httpEndpoint(
+export function httpEndpoint(
   factory: ReturnType<typeof serverFactory>,
-  options: Pick<HttpOptions, "onerror" | "maxSessions">,
+  maxSessions: number,
+  report: ((error: Error) => void) | undefined,
 ): { fetch(request: Request): Promise<Response>; close(): Promise<void> } {
-  const report = options.onerror
   const modern = createMcpHandler(factory, {
     legacy: "reject",
     ...(report === undefined ? {} : { onerror: report }),
   })
   // In the order last used: the first is the one used longest ago.
-  const sessions = new Map<string, WebStandardStreamableHTTPServerTransport>()
-  const maxSessions = options.maxSessions ?? 64
+  const sessions = new Map<string, Session>()
+  // Initializes being answered, each holding a place a session will take.
+  let opening = 0
   let closed = false
 
   /** An error answer, which `onerror` is told of. */
@@ -154,9 +151,76 @@ function httpEndpoint(
     )
   }
 
-  function used(id: string, session: WebStandardStreamableHTTPServerTransport): void {
-    sessions.delete(id)
-    sessions.set(id, session)
+  /**
+   * Makes room for one more session: none needed under the bound; otherwise
+   * the idle session used longest ago is closed. False when every session is
+   * answering a request — those are never closed under a caller.
+   */
+  function makeRoom(): boolean {
+    if (sessions.size + opening < maxSessions) return true
+    for (const [id, session] of sessions) {
+      if (session.active > 0) continue
+      sessions.delete(id)
+      void session.transport.close()
+      return true
+    }
+    return false
+  }
+
+  /**
+   * Answers `request` on `session`. A POST — a call the server is working on
+   * — counts as active until its answer, a JSON body or an event stream, has
+   * been read to its end or cancelled. A GET only opens a stream for what the
+   * server sends unasked; closing it ends no work, and a client that went away
+   * may leave it open, so it does not keep the session from being closed.
+   */
+  async function answer(session: Session, request: Request): Promise<Response> {
+    if (request.method !== "POST") return session.transport.handleRequest(request)
+    session.active += 1
+    let counted = true
+    const finish = () => {
+      if (counted) {
+        counted = false
+        session.active -= 1
+      }
+    }
+    let response: Response
+    try {
+      response = await session.transport.handleRequest(request)
+    } catch (error) {
+      finish()
+      throw error
+    }
+    if (response.body === null) {
+      finish()
+      return response
+    }
+    const reader = response.body.getReader()
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          const chunk = await reader.read()
+          if (chunk.done) {
+            finish()
+            controller.close()
+          } else {
+            controller.enqueue(chunk.value)
+          }
+        } catch (error) {
+          finish()
+          controller.error(error)
+        }
+      },
+      cancel(reason) {
+        finish()
+        return reader.cancel(reason)
+      },
+    })
+    return new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    })
   }
 
   async function legacy(request: Request): Promise<Response> {
@@ -164,42 +228,47 @@ function httpEndpoint(
     if (id !== null) {
       const session = sessions.get(id)
       if (session === undefined) return refuse(404, -32001, "Session not found")
-      used(id, session)
-      return session.handleRequest(request)
+      sessions.delete(id)
+      sessions.set(id, session)
+      return answer(session, request)
     }
-    // No session yet: only an `initialize` opens one. The transport answers
-    // anything else with an error and never initializes, and is closed here.
-    const transport = new WebStandardStreamableHTTPServerTransport({
-      sessionIdGenerator: randomUUID,
-      onsessioninitialized: (opened) => {
-        if (closed) {
-          void transport.close()
-          return
-        }
-        // Make room before adding, in the same turn, so the count never
-        // passes the bound however many sessions open at once.
-        while (sessions.size >= maxSessions) {
-          const [oldest] = sessions.keys()
-          if (oldest === undefined) break
-          void sessions.get(oldest)?.close()
-          sessions.delete(oldest)
-        }
-        sessions.set(opened, transport)
-      },
-    })
-    transport.onclose = () => {
-      const opened = transport.sessionId
-      if (opened !== undefined && sessions.get(opened) === transport)
-        sessions.delete(opened)
+    // No session yet: only an `initialize` opens one, and only it holds a
+    // place. The transport answers anything else with an error and never
+    // initializes, and its server is closed here.
+    const initializing = await isInitialize(request)
+    if (initializing && !makeRoom()) {
+      return refuse(503, -32000, "Every session is answering a request")
     }
-    if (report !== undefined) transport.onerror = report
-    const server = factory({ era: "legacy" })
-    if (report !== undefined) server.onerror = report
-    await server.connect(transport)
-    const response = await transport.handleRequest(request)
-    const opened = transport.sessionId
-    if (opened === undefined || sessions.get(opened) !== transport) await server.close()
-    return response
+    if (initializing) opening += 1
+    try {
+      const session: Session = {
+        transport: new WebStandardStreamableHTTPServerTransport({
+          sessionIdGenerator: randomUUID,
+          onsessioninitialized: (opened) => {
+            if (closed) {
+              void session.transport.close()
+              return
+            }
+            sessions.set(opened, session)
+          },
+        }),
+        active: 0,
+      }
+      session.transport.onclose = () => {
+        const opened = session.transport.sessionId
+        if (opened !== undefined) sessions.delete(opened)
+      }
+      const server = factory({ era: "legacy" })
+      // Connecting routes the transport's errors to the server's `onerror`.
+      if (report !== undefined) server.onerror = report
+      await server.connect(session.transport)
+      const response = await answer(session, request)
+      const opened = session.transport.sessionId
+      if (opened === undefined || !sessions.has(opened)) await server.close()
+      return response
+    } finally {
+      if (initializing) opening -= 1
+    }
   }
 
   return {
@@ -212,8 +281,22 @@ function httpEndpoint(
       await modern.close()
       const open = [...sessions.values()]
       sessions.clear()
-      await Promise.all(open.map((session) => session.close()))
+      await Promise.all(open.map((session) => session.transport.close()))
     },
+  }
+}
+
+/** Whether `request` is a JSON-RPC `initialize`, read from a copy of its body. */
+async function isInitialize(request: Request): Promise<boolean> {
+  try {
+    const message: unknown = await request.clone().json()
+    return (
+      typeof message === "object" &&
+      message !== null &&
+      (message as { method?: unknown }).method === "initialize"
+    )
+  } catch {
+    return false
   }
 }
 

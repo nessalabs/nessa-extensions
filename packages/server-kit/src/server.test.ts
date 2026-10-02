@@ -293,6 +293,67 @@ describe.each(Object.keys(transports) as Array<keyof typeof transports>)(
             "unruly answered with data that is not a JSON object",
           ],
           [
+            "answers data whose getter throws",
+            () => ({
+              text: "x",
+              data: {
+                get a() {
+                  throw new Error("boom")
+                },
+              },
+            }),
+            "unruly answered with data that is not a JSON object",
+          ],
+          [
+            "answers text whose getter throws",
+            () => ({
+              get text() {
+                throw new Error("boom-text")
+              },
+            }),
+            "unruly failed: boom-text",
+          ],
+          [
+            "answers a proxy whose keys throw",
+            () => ({
+              text: "x",
+              data: new Proxy(
+                {},
+                {
+                  ownKeys() {
+                    throw new Error("proxy-boom")
+                  },
+                },
+              ),
+            }),
+            "unruly failed: proxy-boom",
+          ],
+          [
+            "answers data nested too deep",
+            () => {
+              let deep: unknown = 1
+              for (let i = 0; i < 20000; i++) deep = [deep]
+              return { text: "x", data: { deep } }
+            },
+            "unruly answered with data that is not a JSON object",
+          ],
+          [
+            "answers a symbol key",
+            () => ({ text: "x", data: { [Symbol("s")]: 1n } }),
+            "unruly answered with data that is not a JSON object",
+          ],
+          [
+            "answers a sparse array",
+            // eslint-disable-next-line no-sparse-arrays
+            () => ({ text: "x", data: { a: [1, , 3] } }),
+            "unruly answered with data that is not a JSON object",
+          ],
+          [
+            "answers an array with an extra property",
+            () => ({ text: "x", data: { a: Object.assign([1], { extra: 2 }) } }),
+            "unruly answered with data that is not a JSON object",
+          ],
+          [
             "answers a cycle",
             () => {
               const data: Record<string, unknown> = {}
@@ -320,14 +381,20 @@ describe.each(Object.keys(transports) as Array<keyof typeof transports>)(
           },
         )
 
-        it("takes data that JSON carries, shared or nested", async () => {
+        it("takes data that JSON carries, shared, nested or without a prototype", async () => {
           const shared = { k: [1, "a", null, true] }
+          const bare = Object.assign(Object.create(null) as Record<string, unknown>, {
+            n: 1,
+          })
           const extension = defineExtension({
             name: "json",
             version: "0.0.1",
             views: [],
             tools: [
-              unruly(() => ({ text: "x", data: { a: shared, b: shared, c: { d: [] } } })),
+              unruly(() => ({
+                text: "x",
+                data: { a: shared, b: shared, c: { d: [] }, bare },
+              })),
             ],
           })
           const client = await connect(transport, setup, extension)
@@ -335,7 +402,7 @@ describe.each(Object.keys(transports) as Array<keyof typeof transports>)(
             answer(await client.callTool({ name: "unruly", arguments: {} })),
           ).toEqual({
             content: [{ type: "text", text: "x" }],
-            structuredContent: { a: shared, b: shared, c: { d: [] } },
+            structuredContent: { a: shared, b: shared, c: { d: [] }, bare: { n: 1 } },
           })
         })
 
@@ -383,6 +450,24 @@ describe.each(Object.keys(transports) as Array<keyof typeof transports>)(
       })
 
       describe("reading a view", () => {
+        it("names the view when its html throws", async () => {
+          const view = {
+            ...sample.views[0]!,
+            html: () => Promise.reject(new Error("no build")),
+          }
+          const extension = defineExtension({
+            name: "broken",
+            version: "0.0.1",
+            views: [view],
+            tools: [],
+          })
+          const client = await connect(transport, { era, mimeTypes: apps }, extension)
+          await expect(client.readResource({ uri: view.uri })).rejects.toMatchObject({
+            code: -32603,
+            message: expect.stringContaining("View ui://sample/board failed: no build"),
+          })
+        })
+
         it("refuses a view whose html is not a document", async () => {
           const view = {
             ...sample.views[0]!,

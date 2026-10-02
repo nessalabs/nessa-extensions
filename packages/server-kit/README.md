@@ -68,6 +68,7 @@ serveOverStdio(board)
 | `src/server.ts` | The MCP server built from an extension (`serverFactory`). |
 | `src/transports.ts` | Serving it over stdio and over HTTP on this machine. |
 | `src/testing.ts` | The client fixture and sample extension the tests share. |
+| `src/stdio.fixture.ts` | The sample extension on real stdio, run as a child process by `transports.test.ts`. |
 
 ## Negotiation, per request
 
@@ -93,8 +94,7 @@ capabilities two ways. A 2025-era client declares them once, in `initialize`; a
 to one HTTP endpoint may come from different clients. So a server made for a
 2026-07-28 client reads the request's envelope, and one made for a 2025-era
 client reads `initialize` — never a 2025-era request's own `_meta`, which is
-the client's and not validated as an envelope. It is built on the SDK's low-level `Server`, whose handlers see each request, rather
-than `McpServer`, which lists one fixed set of tools.
+the client's and not validated as an envelope.
 
 ## Transports
 
@@ -112,14 +112,19 @@ port unless one is given; at `/mcp`), and resolves with the bound `url` and a
   by its `Mcp-Session-Id`, so later requests are answered knowing what
   `initialize` declared. Only an `initialize` opens one, and an unknown
   session id is answered `404`. A client that goes away without ending its
-  session leaves nothing that says so, so sessions are bounded by closing,
-  not refusing: when `maxSessions` (64) are open, a new one closes the
-  session used longest ago. Its client, if it comes back, is answered `404`
-  and starts a new session, as the protocol has it.
+  session leaves nothing that says so, so at most `maxSessions` (64) are
+  open, and a new one closes the idle session used longest ago. Its client,
+  if it comes back, is answered `404` and starts a new session, as the
+  protocol has it. A session answering a call — a POST whose answer has not
+  been read to its end — is never closed under it: when every session is
+  answering one, a new `initialize` is answered `503` until one finishes. A
+  GET stream does not count: it carries only what the server sends unasked,
+  and a client that went away may leave it open.
 - **Only this machine.** A request whose `Host` or `Origin` names anything else
   is refused `403`, which keeps a web page from reaching the server by DNS
   rebinding. A request target that is not a path is answered `400`, and one
-  outside `path` `404`. Serving a remote host needs authentication and is not
+  whose path is not exactly `path` `404`. `path` and `maxSessions` are
+  checked when serving starts. Serving a remote host needs authentication and is not
   built here
   ([#11](https://github.com/nessalabs/nessa-extensions/issues/11)).
 

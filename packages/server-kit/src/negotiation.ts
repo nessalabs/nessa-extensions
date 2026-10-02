@@ -1,14 +1,7 @@
 /**
- * Whether the client of one request renders MCP Apps.
- *
- * The answer is per request, because the protocol's two eras carry client
- * capabilities differently: a 2025-era connection declares them once, in
- * `initialize`; a 2026-07-28 request carries them in its own `_meta`
- * envelope, and two requests on one HTTP endpoint may come from different
- * clients. Which one is read follows the era the server was made for, never
- * what a request happens to carry: a 2025-era request's `_meta` is the
- * client's own and is not validated as an envelope, so it does not override
- * what `initialize` declared.
+ * Whether the client of one request renders MCP Apps, read from where its
+ * era carries client capabilities. Why per request and why by era is the
+ * package README's "Negotiation, per request" section.
  */
 import {
   getUiCapability,

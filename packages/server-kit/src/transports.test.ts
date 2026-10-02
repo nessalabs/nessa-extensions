@@ -4,9 +4,12 @@ import { fileURLToPath } from "node:url"
 import { Client } from "@modelcontextprotocol/client"
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio"
 import { afterEach, describe, expect, it } from "vitest"
+import { z } from "zod/v4"
 
+import { defineExtension, defineTool, type Extension } from "./definition.ts"
+import { serverFactory } from "./server.ts"
 import { apps, capabilitiesFor, clientAt, sample } from "./testing.ts"
-import { serveOverHttp, type HttpServing } from "./transports.ts"
+import { httpEndpoint, serveOverHttp, type HttpServing } from "./transports.ts"
 
 const opened: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -249,5 +252,188 @@ describe("serveOverStdio", () => {
     expect(
       (await client.readResource({ uri: "ui://sample/board" })).contents[0]?.mimeType,
     ).toBe("text/html;profile=mcp-app")
+  })
+})
+
+describe("serveOverHttp's options", () => {
+  it.each([Number.NaN, 0, -1, 1.5, Number.POSITIVE_INFINITY])(
+    "refuses maxSessions %s",
+    async (maxSessions) => {
+      await expect(serveOverHttp(sample, { maxSessions })).rejects.toThrow(
+        `maxSessions is a whole number of at least 1, not ${String(maxSessions)}`,
+      )
+    },
+  )
+
+  it.each(["/mcp?x", "/a#b", "mcp", "/a b"])("refuses path %j", async (path) => {
+    await expect(serveOverHttp(sample, { path: path as "/mcp" })).rejects.toThrow(
+      `HTTP serves on a path with no query or fragment, not ${JSON.stringify(path)}`,
+    )
+  })
+
+  it("serves its path exactly, with or without a query", async () => {
+    const { url } = await serving()
+    expect(
+      (await raw(url, { body: initialize, target: "//evil.example/mcp" })).status,
+    ).toBe(404)
+    expect((await raw(url, { body: initialize, target: "/x/../mcp" })).status).toBe(404)
+    expect((await raw(url, { body: initialize, target: "/mcp?x=1" })).status).toBe(200)
+  })
+})
+
+/** A tool call held open until the test lets it finish. */
+function heldExtension(): {
+  extension: Extension
+  release: () => void
+  started: Promise<void>
+} {
+  let release = () => {}
+  let started = () => {}
+  const held = new Promise<void>((resolve) => (release = resolve))
+  const begun = new Promise<void>((resolve) => (started = resolve))
+  const extension = defineExtension({
+    name: "held",
+    version: "0.0.1",
+    views: [],
+    tools: [
+      defineTool({
+        name: "hold",
+        description: "Answers when released",
+        input: z.object({}),
+        effects: "read-only",
+        run: async () => {
+          started()
+          await held
+          return { text: "released" }
+        },
+      }),
+    ],
+  })
+  return { extension, release, started: begun }
+}
+
+describe("a 2025-era session's place over HTTP", () => {
+  const sessionOf = (answer: {
+    headers: Record<string, string | string[] | undefined>
+  }) => answer.headers["mcp-session-id"] as string
+
+  it("is never taken from a session answering a call; a new one waits for a free place", async () => {
+    const { extension, release, started } = heldExtension()
+    const served = await serveOverHttp(extension, { maxSessions: 1 })
+    opened.push(served.close)
+    const id = sessionOf(await raw(served.url, { body: initialize }))
+    const headers = { "mcp-session-id": id, "mcp-protocol-version": "2025-06-18" }
+    await raw(served.url, {
+      headers,
+      body: { jsonrpc: "2.0", method: "notifications/initialized" },
+    })
+    const call = raw(served.url, {
+      headers,
+      body: {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: { name: "hold", arguments: {} },
+      },
+    })
+    await started
+
+    const refused = await raw(served.url, { body: initialize })
+    expect(refused.status).toBe(503)
+    expect(JSON.parse(refused.text).error).toEqual({
+      code: -32000,
+      message: "Every session is answering a request",
+    })
+
+    release()
+    const answered = await call
+    expect(answered.status).toBe(200)
+    expect(answered.text).toContain("released")
+    expect((await raw(served.url, { body: initialize })).status).toBe(200)
+    // The held session, idle again, made the room.
+    expect(
+      (
+        await raw(served.url, {
+          headers,
+          body: { jsonrpc: "2.0", id: 4, method: "tools/list" },
+        })
+      ).status,
+    ).toBe(404)
+  })
+})
+
+describe("the HTTP endpoint", () => {
+  const request = (body: unknown, headers: Record<string, string> = {}) =>
+    new Request("http://127.0.0.1/mcp", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        ...headers,
+      },
+      body: JSON.stringify(body),
+    })
+
+  /** The endpoint, and whether each server it made has closed. */
+  function endpoint(report?: (error: Error) => void) {
+    const base = serverFactory(sample)
+    const closed: boolean[] = []
+    const made = httpEndpoint(
+      (ctx) => {
+        const server = base(ctx)
+        const at = closed.push(false) - 1
+        server.onclose = () => {
+          closed[at] = true
+        }
+        return server
+      },
+      64,
+      report,
+    )
+    opened.push(() => made.close())
+    return { made, closed }
+  }
+
+  it("closes the server of a request that opens no session", async () => {
+    const { made, closed } = endpoint()
+    const stray = await made.fetch(
+      request({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
+    )
+    expect(stray.status).toBeGreaterThanOrEqual(400)
+    expect(closed).toEqual([true])
+  })
+
+  it("keeps the server of a session it opened", async () => {
+    const { made, closed } = endpoint()
+    expect((await made.fetch(request(initialize))).status).toBe(200)
+    expect(closed).toEqual([false])
+  })
+
+  it("opens no session for an initialize answered while it closes", async () => {
+    const { made, closed } = endpoint()
+    const opening = made.fetch(request(initialize))
+    await made.close()
+    await opening
+    expect(closed).toEqual([true])
+  })
+
+  it("answers 503 once closed", async () => {
+    const { made } = endpoint()
+    await made.close()
+    const answer = await made.fetch(request(initialize))
+    expect(answer.status).toBe(503)
+    expect(await answer.json()).toEqual({
+      jsonrpc: "2.0",
+      error: { code: -32000, message: "The server is closing" },
+      id: null,
+    })
+  })
+
+  it("tells onerror of what a session's transport refuses", async () => {
+    const errors: Error[] = []
+    const { made } = endpoint((error) => errors.push(error))
+    const answer = await made.fetch(request(initialize, { accept: "application/json" }))
+    expect(answer.status).toBe(406)
+    expect(errors.length).toBeGreaterThan(0)
   })
 })

@@ -1,9 +1,14 @@
 /**
  * What an extension declares: its views (`ui://` resources) and its tools,
- * checked once, when it is defined. Only `defineExtension` makes an
- * `Extension`, and only an `Extension` can be served, so a server never
- * starts with a tool that names a view it does not serve, or an input it
- * cannot describe.
+ * checked once, when it is defined, so a server never starts with a tool that
+ * names a view it does not serve, or an input it cannot describe.
+ *
+ * What was checked is what is served. `defineTool` and `defineExtension`
+ * record what they made, frozen, in this module's own registries, and
+ * `checkedOf` serves only from those: a tool copied or built by hand, an
+ * extension spread into another, or an array changed after the check is
+ * refused or never seen. The brands on `Tool` and `Extension` only let the
+ * compiler say so first.
  *
  * A tool says what it changes as one of three `effects`, not as two hints
  * that could disagree: `readOnlyHint` and `destructiveHint` are derived from
@@ -98,11 +103,23 @@ export interface ExtensionDefinition {
 /** The JSON Schema a tool lists for its input. */
 export type InputSchema = { readonly type: "object"; readonly [key: string]: unknown }
 
-/** An extension `defineExtension` checked, with each tool's input already described as JSON Schema. */
+/** An extension `defineExtension` checked. */
 export interface Extension extends ExtensionDefinition {
   readonly [definedBrand]: "extension"
+}
+
+/** What `defineExtension` checked, as it is served: frozen copies, and each tool's input as JSON Schema. */
+export interface Checked {
+  readonly name: string
+  readonly version: string
+  readonly instructions?: string
+  readonly views: readonly ViewDefinition[]
+  readonly tools: readonly Tool[]
   readonly inputSchemas: ReadonlyMap<string, InputSchema>
 }
+
+const madeTools = new WeakSet<object>()
+const checkedExtensions = new WeakMap<object, Checked>()
 
 /** The standard's default visibility. */
 export const defaultCallers: readonly Caller[] = ["model", "app"]
@@ -114,8 +131,13 @@ export class DefinitionError extends Error {
 
 /** A tool, with `run`'s input typed from `input`. */
 export function defineTool<Input extends z.ZodObject>(tool: ToolDefinition<Input>): Tool {
-  // The brand is a type only; this is the one place a `Tool` is made.
-  return tool as unknown as Tool
+  const made = Object.freeze({
+    ...tool,
+    ...(tool.callers === undefined ? {} : { callers: Object.freeze([...tool.callers]) }),
+  })
+  madeTools.add(made)
+  // The brand is a type only; `madeTools` is what `defineExtension` trusts.
+  return made as unknown as Tool
 }
 
 /**
@@ -134,18 +156,48 @@ export function defineTool<Input extends z.ZodObject>(tool: ToolDefinition<Input
  * - its `input` can be described as JSON Schema.
  */
 export function defineExtension(definition: ExtensionDefinition): Extension {
+  // Copied first, so what is checked is what is kept, whatever the caller
+  // does to its own arrays and objects afterwards.
+  const views = Object.freeze(
+    definition.views.map((view) =>
+      Object.freeze({
+        ...view,
+        ...(view.ui === undefined ? {} : { ui: deepFreeze(structuredClone(view.ui)) }),
+      }),
+    ),
+  )
+  const tools = Object.freeze([...definition.tools])
+  const copy = { ...definition, views, tools }
   const inputSchemas = new Map<string, InputSchema>()
-  const problems = [
-    ...viewProblems(definition.views),
-    ...toolProblems(definition, inputSchemas),
-  ]
+  const problems = [...viewProblems(views), ...toolProblems(copy, inputSchemas)]
   if (problems.length > 0) {
     throw new DefinitionError(
       `${definition.name} is not a valid extension:\n- ${problems.join("\n- ")}`,
     )
   }
-  // The brand is a type only; this is the one place an `Extension` is made.
-  return { ...definition, inputSchemas } as unknown as Extension
+  const extension = Object.freeze(copy)
+  checkedExtensions.set(extension, Object.freeze({ ...extension, inputSchemas }))
+  // The brand is a type only; `checkedExtensions` is what `checkedOf` trusts.
+  return extension as unknown as Extension
+}
+
+/** What `defineExtension` checked for `extension`; throws for anything it did not make. */
+export function checkedOf(extension: Extension): Checked {
+  const checked = checkedExtensions.get(extension)
+  if (checked === undefined) {
+    throw new DefinitionError(
+      `${String(extension.name)} was not made by defineExtension, so it was never checked`,
+    )
+  }
+  return checked
+}
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value === "object" && value !== null) {
+    for (const inner of Object.values(value)) deepFreeze(inner)
+    Object.freeze(value)
+  }
+  return value
 }
 
 /** The standard's annotations for `effects`. */
@@ -200,6 +252,10 @@ function toolProblems(
   const seen = new Set<string>()
   for (const tool of definition.tools) {
     const named = JSON.stringify(tool.name)
+    if (!madeTools.has(tool)) {
+      problems.push(`tool ${named} was not made by defineTool`)
+      continue
+    }
     if (!toolName.test(tool.name)) {
       problems.push(`tool ${named} is not 1 to 128 letters, digits, "_", "-" or "."`)
     }
@@ -265,5 +321,7 @@ function isOrigin(domain: string): boolean {
   if (!cspSchemes.has(url.protocol) || url.origin !== origin) return false
   if (!/^(?:[a-z0-9-]+(?:\.[a-z0-9-]+)*|\[[0-9a-f:.]+\])$/i.test(url.hostname))
     return false
-  return wildcard === null || url.hostname.split(".").length >= 2
+  if (wildcard === null) return true
+  // A wildcard stands for subdomains of a name, not of an address.
+  return url.hostname.split(".").length >= 2 && !/^[\d.]+$|^\[/.test(url.hostname)
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { z } from "zod/v4"
 
 import {
+  checkedOf,
   DefinitionError,
   defineExtension,
   defineTool,
@@ -64,7 +65,7 @@ describe("defineExtension", () => {
     )
     const made = defineExtension(definition)
     expect(made).toMatchObject(definition)
-    expect(made.inputSchemas.get("tool")).toMatchObject({
+    expect(checkedOf(made).inputSchemas.get("tool")).toMatchObject({
       type: "object",
       properties: { rows: { type: "integer" } },
     })
@@ -122,6 +123,8 @@ describe("defineExtension", () => {
     "javascript://x",
     "data://x",
     "ftp://files.example.com",
+    "https://*.1.2.3.4",
+    "https://*.[::1]",
   ])("refuses CSP domain %s in every list", (domain) => {
     const csp = Object.fromEntries(cspKeys.map((key) => [key, [domain]]))
     expect(problemsOf(extension([view("ui://probe/a", { csp })], []))).toEqual(
@@ -195,6 +198,52 @@ describe("defineExtension", () => {
     )
     expect(() => defineExtension(broken)).toThrow(/^probe is not a valid extension:\n- /)
     expect(problemsOf(broken)).toHaveLength(3)
+  })
+})
+
+describe("what defineExtension checked is what is served", () => {
+  const made = () => tool({ name: "kept" })
+
+  it("refuses a tool copied, rather than made, by defineTool", () => {
+    const copied = { ...made(), input: z.object({ at: z.date() }) } as Tool
+    expect(problemsOf(extension([], [copied]))).toEqual([
+      'tool "kept" was not made by defineTool',
+    ])
+  })
+
+  it("keeps its own copy, whatever the caller does to its arrays afterwards", () => {
+    const tools = [made()]
+    const views = [view("ui://probe/a")]
+    const checked = defineExtension(extension(views, tools))
+    tools.push({ ...made(), name: "pushed" } as Tool)
+    views.push(view("ui://probe/b"))
+    expect(checkedOf(checked).tools.map((each) => each.name)).toEqual(["kept"])
+    expect(checkedOf(checked).views.map((each) => each.uri)).toEqual(["ui://probe/a"])
+    expect(Object.isFrozen(checked.tools) && Object.isFrozen(checked.views)).toBe(true)
+  })
+
+  it("keeps its own copy of a view's _meta.ui", () => {
+    const ui = { csp: { connectDomains: ["https://api.example.com"] } }
+    const checked = defineExtension(extension([view("ui://probe/a", ui)], []))
+    ui.csp.connectDomains.push("https://evil.example")
+    expect(checkedOf(checked).views[0]?.ui?.csp?.connectDomains).toEqual([
+      "https://api.example.com",
+    ])
+  })
+
+  it("refuses to serve an extension spread into another", () => {
+    const checked = defineExtension(extension([], [made()]))
+    const spread = { ...checked, tools: [] } as typeof checked
+    expect(() => checkedOf(spread)).toThrow(
+      new DefinitionError(
+        "probe was not made by defineExtension, so it was never checked",
+      ),
+    )
+  })
+
+  it("freezes a tool, so it cannot be changed after it is checked", () => {
+    const kept = made()
+    expect(Object.isFrozen(kept)).toBe(true)
   })
 })
 
