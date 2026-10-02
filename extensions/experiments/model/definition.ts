@@ -11,7 +11,7 @@
  */
 import { z } from "zod/v4"
 
-import { id, text, tone, value } from "./values.ts"
+import { id, number, text, tone, value } from "./values.ts"
 
 /** What is measured, and how its numbers read. */
 export const metric = z
@@ -25,7 +25,7 @@ export const metric = z
     /** Which way is better. */
     better: z.enum(["up", "down"]),
     /** Decimals a value and a change are written with: a whole number, 0–10. */
-    decimals: z.number().int().min(0).max(10),
+    decimals: number.int().min(0).max(10),
   })
   .readonly()
 export type Metric = z.output<typeof metric>

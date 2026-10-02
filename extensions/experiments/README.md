@@ -57,8 +57,8 @@ beside what they test.
   ...experiment }` is not an `Experiment`. `validation.ts` says what each rule
   holds; `validation.test.ts` tests each one both ways.
 - **It travels as JSON.** Everything in it is JSON — times are milliseconds
-  since the epoch, and an optional field is absent or a value, never
-  `undefined` — so a valid experiment is exactly what JSON carries, the server
+  since the epoch, an optional field is absent or a value, never `undefined`,
+  and no number is `-0`, which JSON writes as `0` — so a valid experiment is exactly what JSON carries, the server
   can return it as a tool's `data`, and the
   app, which receives that `data` from its host, validates it again before it
   draws anything.

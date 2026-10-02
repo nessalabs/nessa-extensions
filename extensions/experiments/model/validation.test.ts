@@ -95,6 +95,26 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         problems: [{ rule: "shape", path: ["definition", "noise"] }],
       },
       {
+        name: "a count of -0, which JSON writes as 0",
+        edit: (e) => (cases(e).broken = -0),
+        problems: [{ rule: "shape", path: ["runs", 0, "cases", "broken"] }],
+      },
+      {
+        name: "a value of -0",
+        edit: (e) => (run(e, 1).measures = { g: -0 }),
+        problems: [{ rule: "shape", path: ["runs", 1, "measures", "g"] }],
+      },
+      {
+        name: "a time of -0",
+        edit: (e) => (run(e, 0).settledAt = -0),
+        problems: [{ rule: "shape", path: ["runs", 0, "settledAt"] }],
+      },
+      {
+        name: "decimals of -0",
+        edit: (e) => (e.definition.metric.decimals = -0),
+        problems: [{ rule: "shape", path: ["definition", "metric", "decimals"] }],
+      },
+      {
         name: "a time past the latest a Date holds",
         edit: (e) => (run(e, 0).settledAt = 8.64e15 + 1),
         problems: [{ rule: "shape", path: ["runs", 0, "settledAt"] }],

@@ -22,6 +22,15 @@ export function isId(value: string): boolean {
   return id.safeParse(value).success
 }
 
+/**
+ * A number JSON carries as it is: any but `-0`, which JSON writes as `0`.
+ * Every number in an experiment is one, so a valid experiment is exactly what
+ * JSON carries (`validation.test.ts`, "is exactly what JSON carries").
+ */
+export const number = z.number().refine((n) => !Object.is(n, -0), {
+  error: "-0 is not a number JSON carries: it writes 0",
+})
+
 /** Text a person reads: a title, a label, a reason. Never blank. */
 export const text = z.string().regex(/\S/, { error: "text is not blank" })
 
@@ -32,7 +41,7 @@ export const text = z.string().regex(/\S/, { error: "text is not blank" })
 const latestInstant = 8.64e15
 
 /** A time, as milliseconds since the Unix epoch, up to `latestInstant`. */
-export const instant = z.number().int().nonnegative().max(latestInstant)
+export const instant = number.int().nonnegative().max(latestInstant)
 
 /**
  * The most a measured or scored number may be, either side of 0, and the most
@@ -44,10 +53,10 @@ export const instant = z.number().int().nonnegative().max(latestInstant)
 export const valueBound = 1e15
 
 /** A count of things: a whole number, 0 to `valueBound`. */
-export const count = z.number().int().nonnegative().max(valueBound)
+export const count = number.int().nonnegative().max(valueBound)
 
 /** A measured or scored number, within `valueBound`. zod refuses `NaN` and the infinities. */
-export const value = z.number().min(-valueBound).max(valueBound)
+export const value = number.min(-valueBound).max(valueBound)
 
 /** A tone a view draws something in. */
 export const tone = z.enum(["good", "bad", "neutral", "warning", "active"])
