@@ -15,7 +15,7 @@ it is in [AGENTS.md](AGENTS.md).
 
 | Package | What it is | Status |
 | --- | --- | --- |
-| `@nessalabs/experiments` | An experiment's overview, areas, runs, and run detail, with an inline card in the conversation | Planned: #4–#7 |
+| [`@nessalabs/experiments`](extensions/experiments) | An experiment's overview, areas, runs, and run detail, with an inline card in the conversation | The model: #4. Planned: the server (#5), the components (#6), the app (#7) |
 
 ## How an extension works
 

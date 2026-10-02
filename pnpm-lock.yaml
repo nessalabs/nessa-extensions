@@ -36,6 +36,16 @@ importers:
         specifier: ^3.2.7
         version: 3.2.7(@types/node@24.19.0)(happy-dom@20.14.5)(lightningcss@1.33.0)
 
+  extensions/experiments:
+    dependencies:
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+    devDependencies:
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/node@24.19.0)(happy-dom@20.14.5)(lightningcss@1.33.0)
+
   packages/app-shell:
     devDependencies:
       '@modelcontextprotocol/client':

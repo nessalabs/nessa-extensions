@@ -1,8 +1,9 @@
 # Extensions
 
 Each directory here is one extension: an MCP server with an MCP App, published
-as one npm package, `@nessalabs/<name>`. There are none yet; the first is
-experiments (#4–#7).
+as one npm package, `@nessalabs/<name>`. The first is
+[experiments](experiments) (#4–#7), built in slices: so far its model, with
+no `server/` or `app/` yet.
 
 ```
 extensions/<name>/
