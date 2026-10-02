@@ -15,6 +15,7 @@ describe("isPathData", () => {
       "m1 1 2 2 3 3",
       "M1-1-2.5.5.5.5",
       "M1e2 .5L1E-1 2",
+      "M1e+2 3",
       // An arc's flags may run into what follows them.
       "M1 1a1 1 0 001 1",
       "M0 0C1 1 2 2 3 3S4 4 5 5Q6 6 7 7T8 8",
@@ -40,6 +41,13 @@ describe("isPathData", () => {
       "M0 0,",
       "M0 0,L1 1",
       "M,0 0",
+      "M0,,0",
+      "M1e 2",
+      "M1e+ 2",
+      // Only the white space SVG names separates: not a no-break space.
+      "M0\u00a00",
+      "M\u00a00 0",
+      "\u00a0M0 0",
       "M0 0 a1 1 0 2 0 1 1",
       "M0 0 C1 1 2 2 3",
       'M0 0"/><script>',

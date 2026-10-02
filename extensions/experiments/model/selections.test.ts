@@ -249,8 +249,26 @@ describe("limitOf", () => {
     expect(limitOf(checkout, "cost")).toEqual({
       kind: "limit",
       bound: "at-most",
-      value: 1.1 * 5.2,
+      // Exactly 5.72; the binary product is 5.720000000000001.
+      value: 5.72,
       formatted: "5.72¢",
+    })
+  })
+
+  it("is the exact product, written: 1.05 times 1.9 is 1.995, written 2.00", () => {
+    const experiment = edited((e) => {
+      e.definition.guardrails[0]!.limit = {
+        bound: "at-most",
+        value: 1.05,
+        relativeTo: "baseline",
+      }
+      e.baseline.measures = { g: 1.9 }
+    })
+    expect(limitOf(experiment, "g")).toEqual({
+      kind: "limit",
+      bound: "at-most",
+      value: 1.995,
+      formatted: "2.00¢",
     })
   })
 

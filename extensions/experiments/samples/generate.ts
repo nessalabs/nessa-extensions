@@ -86,7 +86,8 @@ export function casesFor(
   kinds: readonly SliceKind[],
   counts: { readonly total: number; readonly fixed: number; readonly broken: number },
   before: Before,
-): CasesInput {
+  known: Known = new Map(),
+): { readonly cases: CasesInput; readonly known: Known } {
   const random = seeded(`cases-${seed}`)
   const { total } = counts
   const weights = kinds.map((kind) => kind.share * (0.7 + random() * 0.6))
@@ -125,13 +126,14 @@ export function casesFor(
   const pageFixed =
     moved === 0 ? 0 : Math.min(fixed, Math.round((movedPageSize * fixed) / moved))
   const pageBroken = Math.min(broken, movedPageSize - pageFixed)
-  const taken = new Set<number>()
-  const caseId = () => {
-    let number = 1 + Math.floor(random() * total)
-    while (taken.has(number)) number = (number % total) + 1
-    taken.add(number)
-    return `C-${String(number).padStart(7, "0")}`
-  }
+  // A case is one of the suite: its number places it in a slice, by the
+  // slices' sizes, and names it, so it is the same case in every run. A case
+  // the lineage last saw fixed is passing, so it is not fixed again; one it
+  // saw broken is not broken again.
+  const starts = sizes.map((_, index) =>
+    sizes.slice(0, index).reduce((sum, each) => sum + each, 0),
+  )
+  const seen = new Map<string, "passing" | "failing" | "listed">(known)
   const page: CasesInput["moved"][number][] = []
   // Round the slices, each listing no more than it moved.
   for (const [move, listed, by] of [
@@ -142,20 +144,44 @@ export function casesFor(
     let slice = 0
     for (let each = 0; each < listed; each += 1) {
       while (left[slice % kinds.length] === 0) slice += 1
-      left[slice % kinds.length] -= 1
-      const kind = kinds[slice % kinds.length]
-      page.push({
-        id: caseId(),
-        title: kind.titles[Math.floor(random() * kind.titles.length)],
-        slice: kind.name,
-        move,
-      })
+      const index = slice % kinds.length
+      left[index] = (left[index] ?? 0) - 1
+      const kind = kinds[index]
+      const size = sizes[index] ?? 0
+      const start = starts[index] ?? 0
+      // A free case in the slice, from a random place, in order.
+      let offset = Math.floor(random() * size)
+      for (let tries = 0; tries < size; tries += 1) {
+        const id = caseIdOf(start + ((offset + tries) % size))
+        const was = seen.get(id)
+        if (was === "listed" || was === (move === "fixed" ? "passing" : "failing"))
+          continue
+        offset = (offset + tries) % size
+        break
+      }
+      const number = start + offset
+      const id = caseIdOf(number)
+      seen.set(id, "listed")
+      page.push({ id, title: titleOf(kind, number), slice: kind.name, move })
       slice += 1
     }
   }
+  const after = new Map<string, "passing" | "failing">(known)
+  for (const each of page)
+    after.set(each.id, each.move === "fixed" ? "passing" : "failing")
   page.sort((a, b) => a.id.localeCompare(b.id))
-  return { total, fixed, broken, slices, moved: page }
+  return { cases: { total, fixed, broken, slices, moved: page }, known: after }
 }
+
+/** The id of the suite's case `number` (from 0). */
+const caseIdOf = (number: number) => `C-${String(number + 1).padStart(7, "0")}`
+
+/** The title of the suite's case `number`, one of its slice's. */
+const titleOf = (kind: SliceKind, number: number) =>
+  kind.titles[number % kind.titles.length] ?? kind.name
+
+/** What a lineage last saw of a case: fixed (so passing) or broken (so failing). */
+export type Known = ReadonlyMap<string, "passing" | "failing">
 
 const stems = [
   "refunds",

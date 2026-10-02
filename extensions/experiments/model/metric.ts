@@ -48,19 +48,62 @@ const minus = "\u2212"
  * 0.35 as "0.3".)
  */
 function scaled(value: number, places: number): bigint {
+  return rounded(decimal(value), places)
+}
+
+/** A decimal exactly: `units` of 10^-`scale`. */
+interface Decimal {
+  readonly units: bigint
+  readonly scale: number
+}
+
+/** `value`'s shortest round-trip digits, exactly. */
+function decimal(value: number): Decimal {
   const [mantissa = "0", exponent = "0"] = String(Math.abs(value)).split("e")
   const [whole = "0", fraction = ""] = mantissa.split(".")
   const units = BigInt(whole + fraction)
-  // The digits are units of 10^-(fraction's length - exponent); to `places`.
-  const shift = places - (fraction.length - Number(exponent))
-  let magnitude: bigint
+  return { units: value < 0 ? -units : units, scale: fraction.length - Number(exponent) }
+}
+
+/** `exact` in units of the last of `places` places, rounded half away from zero. */
+function rounded(exact: Decimal, places: number): bigint {
+  const magnitude = exact.units < 0n ? -exact.units : exact.units
+  const shift = places - exact.scale
+  let result: bigint
   if (shift >= 0) {
-    magnitude = units * 10n ** BigInt(shift)
+    result = magnitude * 10n ** BigInt(shift)
   } else {
     const divisor = 10n ** BigInt(-shift)
-    magnitude = (units * 2n + divisor) / (divisor * 2n)
+    result = (magnitude * 2n + divisor) / (divisor * 2n)
   }
-  return value < 0 ? -magnitude : magnitude
+  return exact.units < 0n ? -result : result
+}
+
+/**
+ * `factor` times `value` in `metric`, exactly: the product of the two
+ * decimals, written to the metric's decimals, and the number nearest it. A
+ * limit relative to the baseline is its ratio of the baseline's measure, and
+ * 1.05 × 1.9 is 1.995, written "2.00", where the binary product is
+ * 1.9949999999999999 (`metric.test.ts`). For `selections.ts`'s `limitOf`, so
+ * not exported from the model's barrel.
+ */
+export function productOf(
+  metric: Metric,
+  factor: number,
+  value: number,
+): { readonly value: number; readonly formatted: Formatted } {
+  const left = decimal(factor)
+  const right = decimal(value)
+  const product = { units: left.units * right.units, scale: left.scale + right.scale }
+  const places = metric.decimals
+  const formatted =
+    `${signed(rounded(product, places), places)}${metric.unit}` as Formatted
+  // The nearest number to the exact product: its digits, read once.
+  const digits = Math.max(product.scale, 0)
+  const exact = Number(
+    `${product.units < 0n ? "-" : ""}${unscaled(product.units * 10n ** BigInt(digits - product.scale), digits)}`,
+  )
+  return { value: exact, formatted }
 }
 
 /** The magnitude of `units` of the last of `places` places, written: 125 at 2 is "1.25". */

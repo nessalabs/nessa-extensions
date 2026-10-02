@@ -23,16 +23,17 @@ export const text = z.string().regex(/\S/, { error: "text is not blank" })
 /** A time, as milliseconds since the Unix epoch. */
 export const instant = z.number().int().nonnegative()
 
-/** A count of things: a whole number, 0 or more. */
-export const count = z.number().int().nonnegative()
-
 /**
- * The most a measured or scored number may be, either side of 0. Bounded so
- * that what the model works out from two of them — a difference, a limit's
- * ratio of the baseline's measure — stays finite and is written in plain
- * digits (`validation.test.ts`, `metric.test.ts`).
+ * The most a measured or scored number may be, either side of 0, and the most
+ * a count may be. Bounded so that what the model works out from them stays
+ * exact: a difference or a limit's ratio of the baseline's measure, worked
+ * in `bigint` (`metric.ts`), and a slice's sums of counts, which stay well
+ * within the 2^53 a double holds exactly (`slice.ts`; `validation.test.ts`).
  */
 export const valueBound = 1e15
+
+/** A count of things: a whole number, 0 to `valueBound`. */
+export const count = z.number().int().nonnegative().max(valueBound)
 
 /** A measured or scored number, within `valueBound`. zod refuses `NaN` and the infinities. */
 export const value = z.number().min(-valueBound).max(valueBound)

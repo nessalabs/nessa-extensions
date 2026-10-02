@@ -397,12 +397,20 @@ function checkCases(
     counts[moved.move] += 1
     listed.set(moved.slice, counts)
   }
-  // A slice's coherence is checked only once its counts are within the
-  // run's and its own, so a count out of range is reported once, as that.
+  // A slice's coherence is checked only once what it is read with holds: the
+  // run's moved within its total, the page within the run's counts, the
+  // slice's name its own, and its counts within the run's and its own. So a
+  // fact is reported once, as itself (`validation.test.ts`).
   const movedWithin = movedCount(cases) <= cases.total
+  const movedFixed = cases.moved.filter((moved) => moved.move === "fixed").length
+  const pageWithin =
+    movedFixed <= cases.fixed && cases.moved.length - movedFixed <= cases.broken
+  const named = new Map<string, number>()
+  for (const slice of cases.slices)
+    named.set(slice.name, (named.get(slice.name) ?? 0) + 1)
   cases.slices.forEach((slice, index) => {
     // A slice is a group of the run's cases: no larger than they are.
-    let within = movedWithin
+    let within = movedWithin && pageWithin && named.get(slice.name) === 1
     if (slice.total > cases.total) {
       within = false
       report(
@@ -441,7 +449,6 @@ function checkCases(
   if (!movedWithin) {
     report("moved-within-total", at, "more cases moved than the run has")
   }
-  const movedFixed = cases.moved.filter((moved) => moved.move === "fixed").length
   if (movedFixed > cases.fixed) {
     report(
       "moved-page-within-counts",

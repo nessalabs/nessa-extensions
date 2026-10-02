@@ -12,6 +12,7 @@ import {
   changeFor,
   minutes,
   type CasesInput,
+  type Known,
   type SliceKind,
 } from "./generate.ts"
 
@@ -334,15 +335,33 @@ export function checkoutSample(startedAt: number): ExperimentInput {
     scores: { train: { mean: 57.9, interval: 2.4 }, test: { mean: 58.3, interval: 1.9 } },
     measures: { cost: 5.2 },
   }
-  let best: { id: string; train: number; test: number; cost: number } = {
-    id: baseline.id,
-    train: 57.9,
-    test: 58.3,
-    cost: 5.2,
+  // The versions a run can be built on: the baseline, then each kept run from
+  // when it settled. A run is built on the best version when it starts.
+  type Version = {
+    id: string
+    train: number
+    test: number
+    cost: number
+    settledAt: number
+    slices?: CasesInput["slices"]
+    known: Known
   }
+  const versions: Version[] = [
+    {
+      id: baseline.id,
+      train: 57.9,
+      test: 58.3,
+      cost: 5.2,
+      settledAt: startedAt,
+      known: new Map(),
+    },
+  ]
+  const bestAt = (time: number) =>
+    versions.reduce((best, each) =>
+      each.settledAt <= time && each.settledAt >= best.settledAt ? each : best,
+    )
   const runs: RunInput[] = []
   const kept: { id: string; settledAt: number }[] = []
-  const slicesById = new Map<string, CasesInput["slices"]>()
   history.forEach(
     (
       [areaId, agentId, summary, train, test, verdict, startedAfter, costChange],
@@ -350,7 +369,7 @@ export function checkoutSample(startedAt: number): ExperimentInput {
     ) => {
       const number = index + 1
       const id = `r${number}`
-      const parent = best
+      const parent = bestAt(at(startedAfter))
       const area = areaOf(areaId)
       const trainMean = round(parent.train + train, 1)
       const testMean = round(parent.test + test, 1)
@@ -364,8 +383,7 @@ export function checkoutSample(startedAt: number): ExperimentInput {
       const net = Math.round((test / 100) * testCases)
       const churn = 12 + (number % 7) * 3
       // Its slices start where its parent's ended; the baseline's are a count.
-      const parentSlices = slicesById.get(parent.id)
-      const cases = casesFor(
+      const { cases, known } = casesFor(
         id,
         slices,
         {
@@ -373,11 +391,11 @@ export function checkoutSample(startedAt: number): ExperimentInput {
           fixed: Math.max(net, 0) + churn,
           broken: Math.max(-net, 0) + churn,
         },
-        parentSlices === undefined
+        parent.slices === undefined
           ? { passing: Math.round((parent.test / 100) * testCases) }
-          : { slices: parentSlices },
+          : { slices: parent.slices },
+        parent.known,
       )
-      slicesById.set(id, cases.slices)
       runs.push({
         id,
         number,
@@ -403,7 +421,15 @@ export function checkoutSample(startedAt: number): ExperimentInput {
         ),
       })
       if (verdict === "kept") {
-        best = { id, train: trainMean, test: testMean, cost }
+        versions.push({
+          id,
+          train: trainMean,
+          test: testMean,
+          cost,
+          settledAt,
+          slices: cases.slices,
+          known,
+        })
         kept.push({ id, settledAt })
       }
     },
@@ -417,7 +443,7 @@ export function checkoutSample(startedAt: number): ExperimentInput {
       number,
       startedAt: at(startedAfter),
       progress: { done, total: 8400 },
-      parentId: best.id,
+      parentId: bestAt(at(startedAfter)).id,
       scores: {},
       measures: {},
       verdict: "evaluating",
@@ -434,7 +460,7 @@ export function checkoutSample(startedAt: number): ExperimentInput {
       id: `r${number}`,
       number,
       startedAt: at(186),
-      parentId: best.id,
+      parentId: bestAt(at(186)).id,
       scores: {},
       measures: {},
       verdict: "queued",

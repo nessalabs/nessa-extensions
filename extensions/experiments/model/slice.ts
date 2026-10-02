@@ -47,8 +47,11 @@ export interface Listed {
 /**
  * Whether some cells give `slice`'s counts, `run`'s, and the cases `listed`
  * in the slice. Every count is a whole number, 0 or more (the schema's), and
- * the slice's are within the run's and its own total (the rules
- * `slice-within-cases` and `slice-passing-within-total`, checked first).
+ * the slice's are within the run's and its own total, and `listed` within
+ * the run's `fixed` and `broken` (the rules `slice-within-cases`,
+ * `slice-passing-within-total` and `moved-page-within-counts`, checked first).
+ * Counts are at most 10^15 (`valueBound`), so every sum here stays within
+ * the 2^53 a double holds exactly.
  *
  * The cells follow from `b`: `f = b + change` (where `change` is
  * `passingAfter - passingBefore`), `p = passingBefore - b`,

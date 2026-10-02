@@ -62,6 +62,47 @@ describe("the samples", () => {
     expect(compared).toBeGreaterThan(10)
   })
 
+  it("build each run on a version kept before the run started", () => {
+    const experiment = valid(checkoutSample(begun))
+    const byId = new Map(experiment.runs.map((run) => [run.id, run]))
+    let compared = 0
+    for (const run of experiment.runs) {
+      const parent = byId.get(run.parentId)
+      if (parent === undefined) continue
+      expect(parent.verdict, run.id).toBe("kept")
+      expect(parent.settledAt!, run.id).toBeLessThanOrEqual(run.startedAt)
+      compared += 1
+    }
+    expect(compared).toBeGreaterThan(10)
+  })
+
+  it("name each case as one case: one slice and title in every run, moved in turn along a lineage", () => {
+    const experiment = valid(checkoutSample(begun))
+    const named = new Map<string, string>()
+    for (const run of experiment.runs) {
+      for (const moved of run.cases?.moved ?? []) {
+        const said = `${moved.slice} / ${moved.title}`
+        expect(named.get(moved.id) ?? said, moved.id).toBe(said)
+        named.set(moved.id, said)
+      }
+    }
+    expect(named.size).toBeGreaterThan(1000)
+    // Down each lineage, a case fixed is not fixed again until it breaks.
+    const byId = new Map(experiment.runs.map((run) => [run.id, run]))
+    for (const run of experiment.runs) {
+      const last = new Map<string, string>()
+      const chain = []
+      for (let at = byId.get(run.id); at !== undefined; at = byId.get(at.parentId))
+        chain.unshift(at)
+      for (const each of chain) {
+        for (const moved of each.cases?.moved ?? []) {
+          expect(last.get(moved.id), `${moved.id} in ${each.id}`).not.toBe(moved.move)
+          last.set(moved.id, moved.move)
+        }
+      }
+    }
+  })
+
   it("survive JSON, as a tool's data does", () => {
     for (const sample of [checkoutSample, latencySample, scaleSample]) {
       const experiment = valid(sample(begun))

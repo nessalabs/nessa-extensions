@@ -4,6 +4,7 @@ import type { Metric } from "./definition.ts"
 import {
   changeBetween,
   formatSize,
+  productOf,
   formatValue,
   type Change,
   type Formatted,
@@ -180,6 +181,23 @@ describe("formatSize", () => {
     expect(formatSize(percent, -1.24)).toBe("1.2 pts")
     expect(formatSize(latency, 15)).toBe("15 ms")
     expect(formatSize(percent, 0.35)).toBe("0.4 pts")
+  })
+})
+
+describe("productOf", () => {
+  it("multiplies the two decimals exactly, and writes the product", () => {
+    const cents = { ...percent, unit: "¢", decimals: 2 }
+    expect(productOf(cents, 1.05, 1.9)).toEqual({ value: 1.995, formatted: "2.00¢" })
+    expect(productOf(cents, 1.05, 5.1)).toEqual({ value: 5.355, formatted: "5.36¢" })
+    expect(productOf(cents, 0.9, -12.7)).toEqual({
+      value: -11.43,
+      formatted: "\u221211.43¢",
+    })
+    expect(productOf(cents, 1e15, 1e15)).toEqual({
+      value: 1e30,
+      formatted: "1000000000000000000000000000000.00¢",
+    })
+    expect(productOf(cents, 1e-7, 3)).toEqual({ value: 3e-7, formatted: "0.00¢" })
   })
 })
 

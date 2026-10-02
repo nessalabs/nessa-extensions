@@ -14,7 +14,13 @@ import {
   type Run,
   type RunChange,
 } from "./experiment.ts"
-import { changeBetween, formatValue, type Change, type Formatted } from "./metric.ts"
+import {
+  changeBetween,
+  formatValue,
+  productOf,
+  type Change,
+  type Formatted,
+} from "./metric.ts"
 
 /** The run with `id`, if there is one. */
 export function runOf(experiment: Experiment, id: string): Run | undefined {
@@ -220,13 +226,22 @@ export function limitOf(
   )
   if (guardrail === undefined) return undefined
   const { bound, relativeTo } = guardrail.limit
-  let value = guardrail.limit.value
-  if (relativeTo === "baseline") {
-    const measure = measureOf(experiment.baseline, guardrailId)
-    if (measure === undefined) return { kind: "not-measured-yet" }
-    value *= measure
+  if (relativeTo !== "baseline") {
+    const { value } = guardrail.limit
+    return {
+      kind: "limit",
+      bound,
+      value,
+      formatted: formatValue(guardrail.metric, value),
+    }
   }
-  return { kind: "limit", bound, value, formatted: formatValue(guardrail.metric, value) }
+  const measure = measureOf(experiment.baseline, guardrailId)
+  if (measure === undefined) return { kind: "not-measured-yet" }
+  return {
+    kind: "limit",
+    bound,
+    ...productOf(guardrail.metric, guardrail.limit.value, measure),
+  }
 }
 
 /** Lines a change added and removed, over all its files. */

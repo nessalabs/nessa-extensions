@@ -85,6 +85,11 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         problems: [{ rule: "shape", path: ["runs", 0, "number"] }],
       },
       {
+        name: "a count beyond the bound",
+        edit: (e) => (cases(e).total = 1e15 + 1),
+        problems: [{ rule: "shape", path: ["runs", 0, "cases", "total"] }],
+      },
+      {
         name: "a negative count",
         edit: (e) => (cases(e).broken = -1),
         problems: [{ rule: "shape", path: ["runs", 0, "cases", "broken"] }],
@@ -747,6 +752,22 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         problems: [{ rule: "slice-coherent", path: ["runs", 0, "cases", "slices", 1] }],
       },
       {
+        name: "a slice whose counts reach the bound, coherent or not, by one case",
+        edit: (e) => {
+          // Every case broke; the slice's broken cases leave 7 to break in a
+          // run of 6 outside it.
+          const t = 1e15 - 10
+          cases(e).total = t + 6
+          cases(e).fixed = 0
+          cases(e).broken = t + 4
+          cases(e).slices = [
+            { name: "s1", total: t, passingBefore: t - 3, passingAfter: 0 },
+          ]
+          cases(e).moved = []
+        },
+        problems: [{ rule: "slice-coherent", path: ["runs", 0, "cases", "slices", 0] }],
+      },
+      {
         name: "a slice of every case that did not move by fixed less broken",
         edit: (e) =>
           cases(e).slices.push({
@@ -820,6 +841,19 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         },
       },
       {
+        name: "a slice whose counts reach the bound, with room outside for the rest",
+        edit: (e) => {
+          const t = 1e15 - 10
+          cases(e).total = t + 7
+          cases(e).fixed = 0
+          cases(e).broken = t + 4
+          cases(e).slices = [
+            { name: "s1", total: t, passingBefore: t - 3, passingAfter: 0 },
+          ]
+          cases(e).moved = []
+        },
+      },
+      {
         name: "slices that overlap: one of every case beside the others",
         edit: (e) =>
           cases(e).slices.push({
@@ -857,6 +891,20 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         edit: (e) => cases(e).slices.push({ ...cases(e).slices[0]! }),
         problems: [
           { rule: "slice-names-unique", path: ["runs", 0, "cases", "slices", 2, "name"] },
+        ],
+      },
+      {
+        name: "a name for two slices, with cases listed under it: reported once, as this",
+        edit: (e) => {
+          // The page's cases under s1, added up, fit the first s1 but not the
+          // second: reported as the repeated name, not as a slice.
+          cases(e).slices[1]!.name = "s1"
+          cases(e).moved[1]!.slice = "s1"
+          cases(e).moved.push({ id: "c3", title: "Case 3", slice: "s1", move: "fixed" })
+          cases(e).moved.push({ id: "c5", title: "Case 5", slice: "s1", move: "fixed" })
+        },
+        problems: [
+          { rule: "slice-names-unique", path: ["runs", 0, "cases", "slices", 1, "name"] },
         ],
       },
     ],
@@ -905,6 +953,17 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
           cases(e).fixed = 1
           cases(e).slices[0]!.passingAfter = 31
           cases(e).moved.push({ id: "c3", title: "Case 3", slice: "s2", move: "fixed" })
+        },
+        problems: [
+          { rule: "moved-page-within-counts", path: ["runs", 0, "cases", "moved"] },
+        ],
+      },
+      {
+        name: "more fixed listed than fixed, in one slice: reported once, as this",
+        edit: (e) => {
+          for (const id of ["c5", "c6", "c7"]) {
+            cases(e).moved.push({ id, title: "Case", slice: "s1", move: "fixed" })
+          }
         },
         problems: [
           { rule: "moved-page-within-counts", path: ["runs", 0, "cases", "moved"] },
