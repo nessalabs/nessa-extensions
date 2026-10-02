@@ -5,10 +5,16 @@
   "type": "module",
   "description": "An experiment's climb, areas, runs, and run detail, as an MCP server with an MCP App.",
   "license": "MIT",
+  "bin": {
+    "experiments": "./dist/main.js"
+  },
   "dependencies": {
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "^2.2.0",
+    "@nessalabs/server-kit": "workspace:*",
+    "vite": "^8.3.1",
     "vitest": "^3.2.7"
   }
 }

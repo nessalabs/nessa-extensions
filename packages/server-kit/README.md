@@ -83,7 +83,7 @@ serveOverStdio(board)
 | `src/negotiation.ts` | Whether the client of one request renders MCP Apps. |
 | `src/server.ts` | The MCP server built from an extension (`serverFactory`). |
 | `src/transports.ts` | Serving it over stdio and over HTTP on this machine. |
-| `src/testing.ts` | The client fixture and sample extension the tests share. |
+| `src/testing.ts` | The client fixture and sample extension the tests share, exported as `@nessalabs/server-kit/testing` so an extension's server tests use the same fixture. |
 | `src/stdio.fixture.ts` | The sample extension on real stdio, run as a child process by `transports.test.ts`. |
 
 ## Negotiation, per request
