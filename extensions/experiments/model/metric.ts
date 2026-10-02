@@ -36,36 +36,46 @@ export type Change = ChangeBrand & {
 
 const minus = "\u2212"
 
-/** One writer per number of decimals: digits only, no grouping, no sign. */
-const writers = new Map<number, Intl.NumberFormat>()
-
 /**
- * `value`'s magnitude written to `decimals` places, rounding half away from
- * zero on the decimal the number reads as, so 0.35 is "0.4" as 0.25 is
- * "0.3" (`metric.test.ts`). `toFixed` would round the binary double instead.
+ * `value` in units of the last of `places` places, rounded half away from
+ * zero: 0.35 at 1 place is 4, as 0.25 is 3 (`metric.test.ts`).
+ *
+ * Every number this module writes or compares goes through here, so a value,
+ * a size, a change and the noise are all read as the same decimal. That
+ * decimal is the number's shortest round-trip digits, which ECMA-262
+ * specifies for `Number#toString` in every engine; the rounding is then
+ * exact, in `bigint`. (Rounding the binary double, as `toFixed` does, writes
+ * 0.35 as "0.3".)
  */
-function digits(value: number, decimals: number): string {
-  let writer = writers.get(decimals)
-  if (writer === undefined) {
-    writer = new Intl.NumberFormat("en-US", {
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals,
-      useGrouping: false,
-    })
-    writers.set(decimals, writer)
+function scaled(value: number, places: number): bigint {
+  const [mantissa = "0", exponent = "0"] = String(Math.abs(value)).split("e")
+  const [whole = "0", fraction = ""] = mantissa.split(".")
+  const units = BigInt(whole + fraction)
+  // The digits are units of 10^-(fraction's length - exponent); to `places`.
+  const shift = places - (fraction.length - Number(exponent))
+  let magnitude: bigint
+  if (shift >= 0) {
+    magnitude = units * 10n ** BigInt(shift)
+  } else {
+    const divisor = 10n ** BigInt(-shift)
+    magnitude = (units * 2n + divisor) / (divisor * 2n)
   }
-  return writer.format(Math.abs(value))
+  return value < 0 ? -magnitude : magnitude
 }
 
-/** `value` to `decimals` places, a negative with a minus sign ("−3.5"), and nothing as "0". */
-function written(value: number, decimals: number): string {
-  const text = digits(value, decimals)
-  return value < 0 && Number(text) !== 0 ? `${minus}${text}` : text
+/** The magnitude of `units` of the last of `places` places, written: 125 at 2 is "1.25". */
+function unscaled(units: bigint, places: number): string {
+  const text = (units < 0n ? -units : units).toString().padStart(places + 1, "0")
+  return places === 0 ? text : `${text.slice(0, -places)}.${text.slice(-places)}`
 }
+
+/** `units` written, a negative with a minus sign ("−3.5"). */
+const signed = (units: bigint, places: number) =>
+  units < 0n ? `${minus}${unscaled(units, places)}` : unscaled(units, places)
 
 /** A value of `metric`: its number to the metric's decimals, then its unit as given. */
 export function formatValue(metric: Metric, value: number): Formatted {
-  return `${written(value, metric.decimals)}${metric.unit}` as Formatted
+  return `${signed(scaled(value, metric.decimals), metric.decimals)}${metric.unit}` as Formatted
 }
 
 /** What a size of `metric` is written in: its delta unit, or its unit. */
@@ -76,28 +86,16 @@ const sizeUnit = (metric: Metric) => metric.deltaUnit ?? metric.unit
  * to the metric's decimals, with no sign, in the delta unit ("1.2 pts").
  */
 export function formatSize(metric: Metric, size: number): Formatted {
-  return `${digits(size, metric.decimals)}${sizeUnit(metric)}` as Formatted
-}
-
-/** `value` as written to `places`, in units of its last place: 1.25 at 2 is 125. */
-function scaled(value: number, places: number): bigint {
-  const units = BigInt(digits(value, places).replace(".", ""))
-  return value < 0 ? -units : units
-}
-
-/** The magnitude of `units` of the last of `places` places, written: 125 at 2 is "1.25". */
-function unscaled(units: bigint, places: number): string {
-  const text = (units < 0n ? -units : units).toString().padStart(places + 1, "0")
-  return places === 0 ? text : `${text.slice(0, -places)}.${text.slice(-places)}`
+  return `${unscaled(scaled(size, metric.decimals), metric.decimals)}${sizeUnit(metric)}` as Formatted
 }
 
 /**
  * The change in `metric` from `from` to `to`, as two values written side by
- * side read: the exact difference of the two as they are written, so the
- * change agrees with them at any size (`metric.test.ts`). Its tone is
- * `neutral` when its magnitude is 0 or within `noise`, and otherwise `good`
- * when it moves the way the metric's `better` says and `bad` when it does
- * not. Which noise applies is `selections.ts`'s to say (`metricChange`,
+ * side read: the exact difference of the two as written, so the change
+ * agrees with them at any size (`metric.test.ts`). Its tone is `neutral`
+ * when it is 0 or within `noise` as `formatSize` writes it, and otherwise
+ * `good` when it moves the way the metric's `better` says and `bad` when it
+ * does not. Which noise applies is `selections.ts`'s to say (`metricChange`,
  * `guardrailChange`), so the model's barrel does not export this.
  */
 export function changeBetween(
@@ -106,14 +104,17 @@ export function changeBetween(
   to: number,
   noise?: number,
 ): Change {
-  const units = scaled(to, metric.decimals) - scaled(from, metric.decimals)
-  const magnitude = unscaled(units, metric.decimals)
-  const value = units === 0n ? 0 : Number(units < 0n ? `-${magnitude}` : magnitude)
+  const places = metric.decimals
+  const units = scaled(to, places) - scaled(from, places)
+  const magnitude = units < 0n ? -units : units
+  const value =
+    units === 0n ? 0 : Number(`${units < 0n ? "-" : ""}${unscaled(units, places)}`)
   const tone: ChangeTone =
-    units === 0n || (noise !== undefined && Math.abs(value) <= noise)
+    units === 0n || (noise !== undefined && magnitude <= scaled(noise, places))
       ? "neutral"
-      : value > 0 === (metric.better === "up")
+      : units > 0n === (metric.better === "up")
         ? "good"
         : "bad"
-  return Object.freeze({ value, size: `${magnitude}${sizeUnit(metric)}`, tone }) as Change
+  const size = `${unscaled(units, places)}${sizeUnit(metric)}`
+  return Object.freeze({ value, size, tone }) as Change
 }

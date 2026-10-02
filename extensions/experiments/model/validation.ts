@@ -7,8 +7,9 @@
  * throws). zod parses it into a fresh copy, frozen
  * at every level, and from then on only the copy is read: the rules below are
  * checked on it, and it is what is branded and returned. The input is read
- * once, by the parser, and never again, so nothing changed in it afterwards —
- * by a getter, or by whoever holds it — can reach what was checked
+ * only by the parser (which may read a union's tag twice: once to choose,
+ * once to copy), never after it, so nothing changed in it afterwards — by a
+ * getter, or by whoever holds it — can reach what was checked
  * (`validation.test.ts`, "what validateExperiment returns").
  *
  * The parser holds each field on its own (an id's alphabet, a count's whole
@@ -28,6 +29,7 @@ import {
   type Experiment,
   type ExperimentData,
 } from "./experiment.ts"
+import { sliceCoherent } from "./slice.ts"
 
 /** The rules, each named for what it holds. */
 export const rules = [
@@ -395,19 +397,23 @@ function checkCases(
     counts[moved.move] += 1
     listed.set(moved.slice, counts)
   }
+  // A slice's coherence is checked only once its counts are within the
+  // run's and its own, so a count out of range is reported once, as that.
+  const movedWithin = movedCount(cases) <= cases.total
   cases.slices.forEach((slice, index) => {
     // A slice is a group of the run's cases: no larger than they are.
+    let within = movedWithin
     if (slice.total > cases.total) {
+      within = false
       report(
         "slice-within-cases",
         [...at, "slices", index, "total"],
         `slice ${slice.name} has more cases than the run`,
       )
     }
-    let passingWithin = true
     for (const key of ["passingBefore", "passingAfter"] as const) {
       if (slice[key] > slice.total) {
-        passingWithin = false
+        within = false
         report(
           "slice-passing-within-total",
           [...at, "slices", index, key],
@@ -415,7 +421,7 @@ function checkCases(
         )
       }
     }
-    if (passingWithin && !coherent(slice, cases, listed.get(slice.name))) {
+    if (within && !sliceCoherent(slice, cases, listed.get(slice.name))) {
       report(
         "slice-coherent",
         [...at, "slices", index],
@@ -432,7 +438,7 @@ function checkCases(
         `slice ${duplicate} is listed twice`,
       ),
   )
-  if (movedCount(cases) > cases.total) {
+  if (!movedWithin) {
     report("moved-within-total", at, "more cases moved than the run has")
   }
   const movedFixed = cases.moved.filter((moved) => moved.move === "fixed").length
@@ -468,43 +474,6 @@ function checkCases(
       )
     }
   })
-}
-
-/**
- * Whether some number of a slice's cases fixed and broken agrees with what is
- * said of it. Of a slice with `total` cases, `before` passing before the run
- * and `after` after, `f` fixed and `b` broken must have
- *
- * - `f - b = after - before`: passing changes only by cases moving;
- * - `f ≤` the run's `fixed` and `b ≤` its `broken`;
- * - `b ≤ before`: a broken case passed before (and so `f ≤ after`, a fixed
- *   case passes after, once `f - b` is fixed);
- * - `b ≤ total - after`: a broken case fails after (and so `f ≤ total -
- *   before`, a fixed case failed before);
- * - `f` and `b` at least the cases the page lists as fixed and broken in it
- *   (and so neither below 0).
- *
- * With `f = b + (after - before)`, that is a lowest `b` no higher than the
- * highest. It holds whether slices overlap or cover only some of the cases.
- */
-function coherent(
-  slice: {
-    readonly total: number
-    readonly passingBefore: number
-    readonly passingAfter: number
-  },
-  cases: { readonly fixed: number; readonly broken: number },
-  listed: { readonly fixed: number; readonly broken: number } = { fixed: 0, broken: 0 },
-): boolean {
-  const change = slice.passingAfter - slice.passingBefore
-  const lowest = Math.max(listed.broken, listed.fixed - change)
-  const highest = Math.min(
-    cases.broken,
-    slice.passingBefore,
-    slice.total - slice.passingAfter,
-    cases.fixed - change,
-  )
-  return lowest <= highest
 }
 
 /** `items` by id, the first with each id. */

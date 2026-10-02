@@ -2,7 +2,7 @@
  * What the samples are made from: a seeded random sequence, so each reads the
  * same every time, and the cases and changes of a run at any size.
  */
-import { movedPageSize, type ExperimentInput } from "../model/index.ts"
+import { movedCount, movedPageSize, type ExperimentInput } from "../model/index.ts"
 
 type RunInput = ExperimentInput["runs"][number]
 export type CasesInput = NonNullable<RunInput["cases"]>
@@ -42,43 +42,86 @@ function spread(count: number, weights: readonly number[]): number[] {
 }
 
 /**
- * A run's cases: `total` of them in `kinds`' slices, `fixed` and `broken` of
- * them moved, `passing` of them passing before, and one page of the moved —
- * at most `movedPageSize`, in proportion — each in the slice it moved in.
+ * `count` split by `weights` in whole numbers, none above its `cap`: in
+ * proportion, then what is left to each with room, heaviest first. Short of
+ * `count` only when every cap is reached.
+ */
+function spreadWithin(
+  count: number,
+  weights: readonly number[],
+  caps: readonly number[],
+): number[] {
+  const sum = weights.reduce((total, each) => total + each, 0)
+  const room = weights.map((weight, index) => ({
+    weight,
+    cap: caps[index] ?? 0,
+    part: Math.min(caps[index] ?? 0, Math.floor((weight / sum) * count)),
+  }))
+  let left = count - room.reduce((total, each) => total + each.part, 0)
+  for (const each of [...room].sort((a, b) => b.weight - a.weight)) {
+    const more = Math.min(left, each.cap - each.part)
+    each.part += more
+    left -= more
+  }
+  return room.map((each) => each.part)
+}
+
+/** What passed before a run: its parent's slices, or, for the baseline's, a count. */
+export type Before =
+  | { readonly passing: number }
+  | {
+      readonly slices: readonly { readonly name: string; readonly passingAfter: number }[]
+    }
+
+/**
+ * A run's cases: `total` of them in `kinds`' slices; passing before as
+ * `before` says, so a run's slices start where its parent's ended; about
+ * `fixed` and `broken` of them moved, in each slice no more than it has room
+ * for; and one page of the moved — at most `movedPageSize`, in proportion —
+ * each in the slice it moved in. The slices cover the cases once, so each
+ * agrees with the run (the rule `slice-coherent`).
  */
 export function casesFor(
   seed: string,
   kinds: readonly SliceKind[],
-  counts: {
-    readonly total: number
-    readonly fixed: number
-    readonly broken: number
-    readonly passing: number
-  },
+  counts: { readonly total: number; readonly fixed: number; readonly broken: number },
+  before: Before,
 ): CasesInput {
   const random = seeded(`cases-${seed}`)
-  const { total, fixed, broken, passing } = counts
+  const { total } = counts
   const weights = kinds.map((kind) => kind.share * (0.7 + random() * 0.6))
   const sizes = spread(
     total,
     kinds.map((kind) => kind.share),
   )
-  const fixedBy = spread(fixed, weights)
-  const brokenBy = spread(broken, weights)
-  const passingBy = spread(passing, weights)
-  // Each slice's own fixed and broken cases are fixedBy and brokenBy, so its
-  // passing before leaves room for both — a fixed case failed before, a
-  // broken one passed — and after is before moved by them.
+  const passingBy =
+    "slices" in before
+      ? kinds.map(
+          (kind) =>
+            before.slices.find((slice) => slice.name === kind.name)?.passingAfter ?? 0,
+        )
+      : spread(before.passing, weights).map((each, index) =>
+          Math.min(each, sizes[index] ?? 0),
+        )
+  // A fixed case failed before; a broken one passed.
+  const fixedBy = spreadWithin(
+    counts.fixed,
+    weights,
+    sizes.map((size, index) => size - (passingBy[index] ?? 0)),
+  )
+  const brokenBy = spreadWithin(counts.broken, weights, passingBy)
+  const fixed = fixedBy.reduce((sum, each) => sum + each, 0)
+  const broken = brokenBy.reduce((sum, each) => sum + each, 0)
   const slices = kinds.map((kind, index) => {
-    const size = sizes[index]
-    const passingBefore = Math.min(
-      size - fixedBy[index],
-      Math.max(brokenBy[index], passingBy[index]),
-    )
-    const passingAfter = passingBefore + fixedBy[index] - brokenBy[index]
-    return { name: kind.name, total: size, passingBefore, passingAfter }
+    const passingBefore = passingBy[index] ?? 0
+    return {
+      name: kind.name,
+      total: sizes[index] ?? 0,
+      passingBefore,
+      passingAfter: passingBefore + (fixedBy[index] ?? 0) - (brokenBy[index] ?? 0),
+    }
   })
-  const moved = fixed + broken
+  const moved = movedCount({ fixed, broken })
   const pageFixed =
     moved === 0 ? 0 : Math.min(fixed, Math.round((movedPageSize * fixed) / moved))
   const pageBroken = Math.min(broken, movedPageSize - pageFixed)

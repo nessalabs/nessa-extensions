@@ -24,6 +24,8 @@ model/            the domain: pure, no DOM, no Node, no clock; imports neither s
   definition.ts   ExperimentDefinition, Metric, Limit, splits, guardrails, verdicts
   experiment.ts   runs, the baseline, cases, changes, areas, agents, notes; the Experiment brand
   validation.ts   validateExperiment: the only maker of an Experiment, and its rules
+  slice.ts        the model of a slice (eight cells) that the rule slice-coherent checks
+  path-data.ts    the SVG path grammar an area's glyph is held to
   metric.ts       formatValue, formatSize, changeBetween: the one place a metric's numbers are written
   selections.ts   what the views read: the best version, the climb, the path, lineage, order, limits
   index.ts        the model's exports; nothing sample-shaped
@@ -55,7 +57,8 @@ beside what they test.
 - **Numbers are written in `metric.ts`.** A value is `Formatted` text: its
   number to the metric's `decimals`, then its `unit` exactly as given (so a
   definition writes `" ms"` for a space), rounded half away from zero on the
-  decimal it reads as. A size — an interval, the noise — is `Formatted` in
+  decimal it reads as: its shortest round-trip digits, rounded exactly in
+  `bigint`, the same in every engine. A size — an interval, the noise — is `Formatted` in
   `deltaUnit`, with no sign. A change is a `Change`, made from the two values
   it is between: the exact difference of the two as written, its size in
   `deltaUnit`, and its tone by `better` and the noise, for nessa_ui's `Delta`

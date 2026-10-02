@@ -58,12 +58,12 @@ export function scaleSample(startedAt: number): ExperimentInput {
         measures: { accuracy: 98.3 },
         verdict: "faster",
         reason: "p95 fell past the noise and accuracy held. This is the new best.",
-        cases: casesFor("planner", slices, {
-          total: scaleCases,
-          fixed: 41_820,
-          broken: 23_115,
-          passing: 900_000,
-        }),
+        cases: casesFor(
+          "planner",
+          slices,
+          { total: scaleCases, fixed: 41_820, broken: 23_115 },
+          { passing: 900_000 },
+        ),
         change: changeFor(
           "planner",
           "Replaces the query planner across every index, adapter and test.",

@@ -165,6 +165,11 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         problems: [{ rule: "shape", path: ["areas", 0, "glyph"] }],
       },
       {
+        name: "a glyph whose last command has no numbers",
+        edit: (e) => (e.areas[0]!.glyph = "M0 0 L"),
+        problems: [{ rule: "shape", path: ["areas", 0, "glyph"] }],
+      },
+      {
         name: "blank text",
         edit: (e) => (run(e, 0).reason = "  "),
         problems: [{ rule: "shape", path: ["runs", 0, "reason"] }],
@@ -742,6 +747,28 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         problems: [{ rule: "slice-coherent", path: ["runs", 0, "cases", "slices", 1] }],
       },
       {
+        name: "a slice of every case that did not move by fixed less broken",
+        edit: (e) =>
+          cases(e).slices.push({
+            name: "all",
+            total: 100,
+            passingBefore: 50,
+            passingAfter: 50,
+          }),
+        problems: [{ rule: "slice-coherent", path: ["runs", 0, "cases", "slices", 2] }],
+      },
+      {
+        name: "a slice leaving too few cases outside it for the rest that moved",
+        edit: (e) => {
+          cases(e).total = 10
+          cases(e).fixed = 5
+          cases(e).broken = 0
+          cases(e).slices = [{ name: "s1", total: 8, passingBefore: 3, passingAfter: 3 }]
+          cases(e).moved = []
+        },
+        problems: [{ rule: "slice-coherent", path: ["runs", 0, "cases", "slices", 0] }],
+      },
+      {
         name: "a broken case listed in a slice with nothing passing before",
         edit: (e) => {
           cases(e).slices[1] = {
@@ -848,7 +875,26 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         problems: [{ rule: "moved-within-total", path: ["runs", 0, "cases"] }],
       },
     ],
-    holds: [{ name: "every case moved", edit: (e) => (cases(e).broken = 97) }],
+    holds: [
+      {
+        name: "every case moved",
+        edit: (e) => {
+          cases(e).broken = 97
+          cases(e).slices[0] = {
+            name: "s1",
+            total: 60,
+            passingBefore: 58,
+            passingAfter: 2,
+          }
+          cases(e).slices[1] = {
+            name: "s2",
+            total: 40,
+            passingBefore: 39,
+            passingAfter: 1,
+          }
+        },
+      },
+    ],
   },
   "moved-page-within-counts": {
     breaks: [

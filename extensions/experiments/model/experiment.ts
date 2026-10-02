@@ -17,6 +17,7 @@
 import { z } from "zod/v4"
 
 import { experimentDefinition } from "./definition.ts"
+import { isPathData } from "./path-data.ts"
 import { count, id, instant, text, tone, value } from "./values.ts"
 
 /** A run's score on one split: its mean, and the half-width of its confidence interval. */
@@ -158,12 +159,10 @@ export type Run = z.output<typeof run>
 export const baseline = z.strictObject({ id, scores, measures }).readonly()
 export type Baseline = z.output<typeof baseline>
 
-/**
- * SVG path data: a move, then commands and numbers only, so it can only ever
- * be a path (`validation.test.ts`, "a glyph that is not path data").
- */
-const pathData = z.string().regex(/^\s*[Mm][MmZzLlHhVvCcSsQqTtAa0-9eE.,+\-\s]*$/, {
-  error: "a glyph is SVG path data: a move, then commands, numbers, commas and spaces",
+/** SVG path data, by its grammar (`path-data.ts`). */
+const pathData = z.string().refine(isPathData, {
+  error:
+    "a glyph is SVG path data: a move, then each command with whole sets of its numbers",
 })
 
 /** Part of the product the agents work on, with what it is drawn as. */
@@ -231,7 +230,7 @@ export function measureOf(owner: Scored, guardrailId: string): number | undefine
 }
 
 /** How many of a run's cases moved: those fixed and those broken. */
-export function movedCount(cases: Cases): number {
+export function movedCount(cases: Pick<Cases, "fixed" | "broken">): number {
   return cases.fixed + cases.broken
 }
 

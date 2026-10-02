@@ -48,6 +48,18 @@ describe("formatValue", () => {
     expect(formatValue({ ...percent, decimals: 2 }, 1.005)).toBe("1.01%")
   })
 
+  it("rounds halves away from zero, small and large, and digits a double writes with an exponent", () => {
+    const whole = { ...latency, unit: "" }
+    expect(formatValue(whole, 2.5)).toBe("3")
+    expect(formatValue(whole, -2.5)).toBe("\u22123")
+    expect(formatValue({ ...whole, decimals: 1 }, 0.05)).toBe("0.1")
+    expect(formatValue({ ...whole, decimals: 2 }, 123456789.125)).toBe("123456789.13")
+    // String(5e-7) is "5e-7"; String(1e-7) is "1e-7".
+    expect(formatValue({ ...whole, decimals: 6 }, 5e-7)).toBe("0.000001")
+    expect(formatValue({ ...whole, decimals: 6 }, 1e-7)).toBe("0.000000")
+    expect(formatValue({ ...whole, decimals: 6 }, -1e-7)).toBe("0.000000")
+  })
+
   it("writes the largest values a definition allows in plain digits", () => {
     expect(formatValue(latency, 1e15)).toBe("1000000000000000 ms")
     expect(formatValue({ ...percent, decimals: 10 }, 1e-7)).toBe("0.0000001000%")
@@ -139,6 +151,18 @@ describe("changeBetween", () => {
       size: "5848286419504.270 pts",
       tone: "bad",
     })
+  })
+
+  it("reads the noise as it is written, so a change written as the noise is within it", () => {
+    // A noise of 0.15 is written 0.2; a change written 0.2 is within it.
+    expect(formatSize(percent, 0.15)).toBe("0.2 pts")
+    expect(changeBetween(percent, 50, 50.2, 0.15).tone).toBe("neutral")
+    expect(changeBetween(percent, 50, 50.3, 0.15).tone).toBe("good")
+    // At no decimals, 0.5 is written 1.
+    const whole = { ...percent, decimals: 0 }
+    expect(formatSize(whole, 0.5)).toBe("1 pts")
+    expect(changeBetween(whole, 0, 1, 0.5).tone).toBe("neutral")
+    expect(changeBetween(whole, 0, -2, 0.5).tone).toBe("bad")
   })
 
   it("carries no binary remainder", () => {

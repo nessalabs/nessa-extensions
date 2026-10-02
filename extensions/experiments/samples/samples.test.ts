@@ -47,6 +47,21 @@ describe("the samples", () => {
     expect(new Set(kinds)).toEqual(new Set(["evaluating", "drafting", "resting"]))
   })
 
+  it("follow lineage: a run's slices start where its parent's ended", () => {
+    const experiment = valid(checkoutSample(begun))
+    const byId = new Map(experiment.runs.map((run) => [run.id, run]))
+    let compared = 0
+    for (const run of experiment.runs) {
+      const parent = byId.get(run.parentId)
+      if (run.cases === undefined || parent?.cases === undefined) continue
+      const before = run.cases.slices.map((slice) => [slice.name, slice.passingBefore])
+      const after = parent.cases.slices.map((slice) => [slice.name, slice.passingAfter])
+      expect(before, run.id).toEqual(after)
+      compared += 1
+    }
+    expect(compared).toBeGreaterThan(10)
+  })
+
   it("survive JSON, as a tool's data does", () => {
     for (const sample of [checkoutSample, latencySample, scaleSample]) {
       const experiment = valid(sample(begun))

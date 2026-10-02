@@ -7,7 +7,13 @@
  * `startedAt`.
  */
 import type { ExperimentInput } from "../model/index.ts"
-import { casesFor, changeFor, minutes, type SliceKind } from "./generate.ts"
+import {
+  casesFor,
+  changeFor,
+  minutes,
+  type CasesInput,
+  type SliceKind,
+} from "./generate.ts"
 
 type RunInput = ExperimentInput["runs"][number]
 
@@ -336,6 +342,7 @@ export function checkoutSample(startedAt: number): ExperimentInput {
   }
   const runs: RunInput[] = []
   const kept: { id: string; settledAt: number }[] = []
+  const slicesById = new Map<string, CasesInput["slices"]>()
   history.forEach(
     (
       [areaId, agentId, summary, train, test, verdict, startedAfter, costChange],
@@ -356,6 +363,21 @@ export function checkoutSample(startedAt: number): ExperimentInput {
       const settledAt = at(startedAfter + 4 + (number % 5) + (number === 20 ? 24 : 0))
       const net = Math.round((test / 100) * testCases)
       const churn = 12 + (number % 7) * 3
+      // Its slices start where its parent's ended; the baseline's are a count.
+      const parentSlices = slicesById.get(parent.id)
+      const cases = casesFor(
+        id,
+        slices,
+        {
+          total: testCases,
+          fixed: Math.max(net, 0) + churn,
+          broken: Math.max(-net, 0) + churn,
+        },
+        parentSlices === undefined
+          ? { passing: Math.round((parent.test / 100) * testCases) }
+          : { slices: parentSlices },
+      )
+      slicesById.set(id, cases.slices)
       runs.push({
         id,
         number,
@@ -371,12 +393,7 @@ export function checkoutSample(startedAt: number): ExperimentInput {
         reason: reasons[verdict],
         areaId,
         agentId,
-        cases: casesFor(id, slices, {
-          total: testCases,
-          fixed: Math.max(net, 0) + churn,
-          broken: Math.max(-net, 0) + churn,
-          passing: Math.round((parent.test / 100) * testCases),
-        }),
+        cases,
         change: changeFor(
           id,
           summary,
