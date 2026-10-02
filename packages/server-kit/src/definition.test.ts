@@ -99,6 +99,8 @@ describe("defineExtension", () => {
     "https://API.example.com",
     "HTTPS://api.example.com:443",
     "https://*.Example.com",
+    "https://[::1]",
+    "http://127.0.0.1:0",
   ])("takes CSP origin %s", (origin) => {
     const csp = Object.fromEntries(cspKeys.map((key) => [key, [origin]]))
     expect(problemsOf(extension([view("ui://probe/a", { csp })], []))).toEqual([])
@@ -127,6 +129,13 @@ describe("defineExtension", () => {
     "https://api.example.com:65536",
     "http://[::zz]:80",
     "https://*.example.com:0x50",
+    "https://1.2.3",
+    "https://0x7f.1",
+    "https://4294967295",
+    "https://123",
+    "https://[::ffff:1.2.3.4]",
+    "https://*.0x7f.1",
+    "https://a.com:0443",
     "https://*.1.2.3.4",
     "https://*.[::1]",
   ])("refuses CSP domain %s in every list", (domain) => {
@@ -395,24 +404,19 @@ describe("what defineExtension checked is what is served", () => {
     expect(kept.callers).toEqual(["model"])
   })
 
-  it("freezes a tool's input schema, nested ones included, so what is listed is what is parsed", () => {
-    const inner = z.object({ a: z.number() })
-    const input = z.object({
-      n: z.number(),
-      inner: inner.optional(),
-      list: z.array(inner),
-    })
-    const checked = defineExtension(extension([], [tool({ input })]))
-    expect(() => {
-      ;(input.shape as Record<string, unknown>).extra = z.string()
-    }).toThrow(TypeError)
-    expect(() => {
-      ;(inner.shape as Record<string, unknown>).b = z.string()
-    }).toThrow(TypeError)
-    expect(checkedOf(checked).inputSchemas.get("tool")).toEqual(
-      z.toJSONSchema(input, { io: "input" }),
+  it("leaves a tool's input schema to zod, so formats and derived schemas keep working", () => {
+    const input = z.object({ email: z.email(), id: z.uuid() })
+    defineExtension(extension([], [tool({ input })]))
+    expect(input.safeParse({ email: "a@b.co", id: crypto.randomUUID() }).success).toBe(
+      true,
     )
-    expect(input.safeParse({ n: 1, list: [{ a: 1 }] }).success).toBe(true)
+    expect(z.email().safeParse("not an email").success).toBe(false)
+    expect(
+      input
+        .describe("described")
+        .strict()
+        .safeParse({ email: "a@b.co", id: crypto.randomUUID() }).success,
+    ).toBe(true)
   })
 
   it("freezes a tool, so it cannot be changed after it is checked", () => {

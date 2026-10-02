@@ -9,9 +9,9 @@
  * freezes a copy of each tool. Both record what they made in this module's
  * own registries, and `checkedOf` serves only from those: a tool copied or
  * built by hand, an extension spread into another, or anything changed after
- * the check is refused or never seen. A tool's `input` is the caller's own
- * zod schema, not a copy, so `defineTool` freezes its definitions instead.
- * The brands on `Tool` and `Extension` only let the compiler say so first.
+ * the check is refused or never seen. A tool's `input` is the one thing
+ * not copied (see the README). The brands on `Tool` and `Extension` only
+ * let the compiler say so first.
  *
  * What a tool declares and answers is the package README's "Using it".
  */
@@ -137,7 +137,6 @@ export class DefinitionError extends Error {
 export function defineTool<Input extends z.ZodObject>(tool: ToolDefinition<Input>): Tool {
   // One read of the caller's object; everything below is from the copy.
   const copy = { ...tool }
-  freezeSchema(copy.input, new Set())
   const made = Object.freeze({
     ...copy,
     ...(copy.callers === undefined ? {} : { callers: Object.freeze([...copy.callers]) }),
@@ -145,29 +144,6 @@ export function defineTool<Input extends z.ZodObject>(tool: ToolDefinition<Input
   madeTools.add(made)
   // The brand is a type only; `madeTools` is what `defineExtension` trusts.
   return made as unknown as Tool
-}
-
-/**
- * Freezes the definitions of `schema` and every schema inside it, so the
- * input a tool lists, converted once, is the input every call is parsed
- * with. Only definitions are frozen — a schema keeps the caches it fills as
- * it parses — and a lazy schema's target, made on demand, is not reached.
- */
-function freezeSchema(schema: z.core.$ZodType, seen: Set<object>): void {
-  if (seen.has(schema)) return
-  seen.add(schema)
-  freezeDefinition(schema._zod.def, seen)
-}
-
-function freezeDefinition(value: unknown, seen: Set<object>): void {
-  if (typeof value !== "object" || value === null || seen.has(value)) return
-  if (value instanceof z.core.$ZodType) {
-    freezeSchema(value, seen)
-    return
-  }
-  seen.add(value)
-  for (const inner of Object.values(value)) freezeDefinition(inner, seen)
-  Object.freeze(value)
 }
 
 /**
@@ -422,8 +398,8 @@ const cspSchemes: ReadonlySet<string> = new Set(["http:", "https:", "ws:", "wss:
  * Whether `domain` is an origin a CSP source list can hold: an `http`,
  * `https`, `ws` or `wss` scheme, a host, an optional port, and nothing else
  * — no path, query, fragment, credentials, trailing dot, or anything a CSP
- * would read as another token. Case and an explicit default port are
- * allowed, as CSP allows them. A leading `*.` stands for subdomains of a
+ * would read as another token, and nothing `URL` would rewrite. Case and
+ * an explicit default port are allowed, as CSP allows them. A leading `*.` stands for subdomains of a
  * name with at least two labels, never of an address.
  */
 function isOrigin(domain: string): boolean {
@@ -434,12 +410,18 @@ function isOrigin(domain: string): boolean {
   if (match === null) return false
   const [, scheme = "", wildcard, host = "", port] = match
   if (!cspSchemes.has(`${scheme.toLowerCase()}:`)) return false
+  // A port is written plainly: no leading zero.
+  if (port !== undefined && !/^(?:0|[1-9]\d*)$/.test(port)) return false
+  let url: URL
   try {
     // Refuses a port past 65535 and a malformed IPv6 address.
-    new URL(`${scheme}://${host}${port === undefined ? "" : `:${port}`}`)
+    url = new URL(`${scheme}://${host}${port === undefined ? "" : `:${port}`}`)
   } catch {
     return false
   }
+  // `URL` rewrites a host it reads as an address (`0x7f.1`, `1.2.3`); a CSP
+  // compares hosts as written, so a host `URL` changes is not one to hold.
+  if (url.hostname !== host.toLowerCase()) return false
   if (wildcard === undefined) return true
   return host.split(".").length >= 2 && !/^[\d.]+$|^\[/.test(host)
 }
