@@ -33,7 +33,7 @@ sequenceDiagram
   Host->>Server: tools/call
   Server-->>Host: result: text for the model, structured data for the view
   Host->>Server: resources/read ui://…
-  Server-->>Host: text/html;profile=mcp-app, with _meta.ui.csp
+  Server-->>Host: text/html#59;profile=mcp-app, with _meta.ui.csp
   Host->>App: render in a sandboxed iframe on its own origin
   App->>Host: ui/initialize
   Host-->>App: host context (theme, locale, display mode, size)
