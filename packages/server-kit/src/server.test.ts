@@ -391,6 +391,20 @@ describe.each(Object.keys(transports) as Array<keyof typeof transports>)(
               "unruly answered with data that is not a JSON object of at most 256 levels",
             ],
             [
+              "answers a key an answer does not have",
+              () => ({ text: "x", structuredContent: { a: 1 } }),
+              "unruly answered with structuredContent, which an answer does not have",
+            ],
+            [
+              "answers data 257 levels deep",
+              () => {
+                let deep: Record<string, unknown> = {}
+                for (let i = 0; i < 256; i++) deep = { d: deep }
+                return { text: "x", data: deep }
+              },
+              "unruly answered with data that is not a JSON object of at most 256 levels",
+            ],
+            [
               "answers a cycle",
               () => {
                 const data: Record<string, unknown> = {}
@@ -441,6 +455,27 @@ describe.each(Object.keys(transports) as Array<keyof typeof transports>)(
               content: [{ type: "text", text: "x" }],
               structuredContent: { a: shared, b: shared, c: { d: [] }, bare: { n: 1 } },
             })
+          })
+
+          it("takes data 256 levels deep, and an own __proto__ key as a key", async () => {
+            let deep: Record<string, unknown> = {}
+            // `data` is the first level, so `deep` holds the other 255.
+            for (let i = 0; i < 254; i++) deep = { d: deep }
+            const own = JSON.parse('{"__proto__": {"polluted": true}}') as object
+            const extension = defineExtension({
+              name: "deep",
+              version: "0.0.1",
+              views: [],
+              tools: [unruly(() => ({ text: "x", data: { deep, own } }))],
+            })
+            const client = await connect(transport, setup, extension)
+            const result = answer(
+              await client.callTool({ name: "unruly", arguments: {} }),
+            )
+            expect(result.isError).toBeUndefined()
+            const sent = result.structuredContent as { own: object }
+            expect(Object.hasOwn(sent.own, "__proto__")).toBe(true)
+            expect(({} as { polluted?: boolean }).polluted).toBeUndefined()
           })
 
           it("takes data: undefined as no data", async () => {

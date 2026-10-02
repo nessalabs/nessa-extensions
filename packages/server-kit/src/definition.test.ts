@@ -261,6 +261,14 @@ describe("a definition of the wrong shape", () => {
       "tools[0].effects: Invalid option",
     ],
     [
+      { ...base, tools: [tool({ visibility: ["app"] } as never)] },
+      "tools[0]: Unrecognized key",
+    ],
+    [
+      { ...base, views: [{ ...view("ui://probe/a"), mimeType: "text/html" }] },
+      "views[0]: Unrecognized key",
+    ],
+    [
       { ...base, tools: [tool({ description: 42 as unknown as string })] },
       "tools[0].description: Invalid input",
     ],
@@ -346,6 +354,22 @@ describe("what defineExtension checked is what is served", () => {
         "probe was not made by defineExtension, so it was never checked",
       ),
     )
+  })
+
+  it("reads a tool once, so a getter cannot hand it a different callers array", () => {
+    let reads = 0
+    const first: Array<"model" | "app"> = ["model"]
+    const definition = {
+      ...tool(),
+      get callers() {
+        reads += 1
+        return reads === 1 ? first : undefined
+      },
+    }
+    const kept = defineTool(definition as unknown as ToolDefinition)
+    first.push("app")
+    expect(reads).toBe(1)
+    expect(kept.callers).toEqual(["model"])
   })
 
   it("copies a tool's callers, so changing the caller's array changes nothing", () => {

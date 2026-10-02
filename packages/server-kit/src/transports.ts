@@ -60,7 +60,9 @@ export async function serveOverHttp(
     throw new Error(`HTTP serves on a loopback address only, not ${JSON.stringify(host)}`)
   }
   const path = options.path ?? "/mcp"
-  if (!/^\/[^?#\s]*$/.test(path)) {
+  // Exactly the path a request's target is matched against, so the `url`
+  // returned is one the server answers.
+  if (!/^\/[^?#\s]*$/.test(path) || new URL(path, "http://localhost").pathname !== path) {
     throw new Error(
       `HTTP serves on a path with no query or fragment, not ${JSON.stringify(path)}`,
     )
@@ -111,7 +113,8 @@ function listen(server: HttpServer, host: string, port: number): Promise<void> {
 
 function close(server: HttpServer): Promise<void> {
   return new Promise((resolve, reject) => {
+    // Idle connections close with the server; requests in flight were ended
+    // by the endpoint's own close.
     server.close((error) => (error ? reject(error) : resolve()))
-    server.closeAllConnections()
   })
 }

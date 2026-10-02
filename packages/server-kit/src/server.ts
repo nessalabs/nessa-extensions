@@ -195,6 +195,12 @@ async function callTool(
     }
     const outcome = ownProperties(await tool.run(input.data, { signal }))
     if (outcome === undefined) return failure(`${tool.name} answered with no outcome`)
+    const unknown = [...outcome.keys()].filter((key) => key !== "text" && key !== "data")
+    if (unknown.length > 0) {
+      return failure(
+        `${tool.name} answered with ${unknown.join(", ")}, which an answer does not have`,
+      )
+    }
     const text = outcome.get("text")
     if (typeof text !== "string" || text.trim().length === 0) {
       return failure(`${tool.name} answered without text, which every tool must give`)

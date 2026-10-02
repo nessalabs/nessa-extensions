@@ -36,10 +36,6 @@ export type Effects = "read-only" | "additive" | "destructive"
 /** A view's URI. The standard requires the `ui://` scheme. */
 export type ViewUri = `ui://${string}`
 
-/** A value JSON can carry. */
-export type Json =
-  string | number | boolean | null | readonly Json[] | { readonly [key: string]: Json }
-
 /** A view: one `ui://` resource of type `text/html;profile=mcp-app`. */
 export interface ViewDefinition {
   readonly uri: ViewUri
@@ -55,7 +51,12 @@ export interface ViewDefinition {
 /** What a tool answers with: text that stands alone, and optional data for its view. */
 export interface ToolOutcome {
   readonly text: string
-  readonly data?: { readonly [key: string]: Json }
+  /**
+   * A JSON object for the view. Typed loosely, so an interface describes it
+   * as well as a type alias does; what is sent is checked and copied when the
+   * tool answers (the README's "Using it").
+   */
+  readonly data?: object
 }
 
 /** What a tool's `run` is given besides its input. */
@@ -134,9 +135,11 @@ export class DefinitionError extends Error {
 
 /** A tool, with `run`'s input typed from `input`. */
 export function defineTool<Input extends z.ZodObject>(tool: ToolDefinition<Input>): Tool {
+  // One read of the caller's object; everything below is from the copy.
+  const copy = { ...tool }
   const made = Object.freeze({
-    ...tool,
-    ...(tool.callers === undefined ? {} : { callers: Object.freeze([...tool.callers]) }),
+    ...copy,
+    ...(copy.callers === undefined ? {} : { callers: Object.freeze([...copy.callers]) }),
   })
   madeTools.add(made)
   // The brand is a type only; `madeTools` is what `defineExtension` trusts.

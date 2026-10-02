@@ -52,9 +52,13 @@ serveOverStdio(board)
   call it in `callers` (the standard's `visibility`, default
   `["model", "app"]`).
 - **Every tool answers in text.** `run` returns `text` that stands on its own,
-  and optional JSON `data`, sent as `structuredContent` for the view. Input
-  that does not parse, a `run` that throws, and an answer that is not text
-  with JSON data are tool errors (`isError`) naming the tool, never successes.
+  and optional `data`, a JSON object sent as `structuredContent` for the view
+  (typed as any object, so an interface describes it; it is checked when the
+  tool answers). Input that does not parse, a `run` that throws, and an
+  answer that is anything but `text` with JSON `data` — a missing or blank
+  `text`, `data` JSON cannot carry, or a key an answer does not have, such as
+  a misspelt `date` — are tool errors (`isError`) naming the tool, never
+  successes.
 - **`defineExtension` checks the definition once** and makes it an
   `Extension`, which is all that can be served. It parses the definition into
   a frozen copy — each view's `_meta.ui` with the reference SDK's own schemas,

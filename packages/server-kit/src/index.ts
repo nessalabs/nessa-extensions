@@ -18,7 +18,6 @@ export {
   type Extension,
   type ExtensionDefinition,
   type InputSchema,
-  type Json,
   type Tool,
   type ToolCall,
   type ToolDefinition,

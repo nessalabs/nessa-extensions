@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url"
 import { Client } from "@modelcontextprotocol/client"
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio"
 import { afterEach, describe, expect, it } from "vitest"
+import { z } from "zod/v4"
 
+import { defineExtension, defineTool } from "./definition.ts"
 import { apps, capabilitiesFor, clientAt, sample } from "./testing.ts"
 import { serveOverHttp, type HttpServing } from "./transports.ts"
 
@@ -90,11 +92,14 @@ describe("serveOverHttp", () => {
     )
   })
 
-  it.each(["/mcp?x", "/a#b", "mcp", "/a b"])("refuses path %j", async (path) => {
-    await expect(serveOverHttp(sample, { path: path as "/mcp" })).rejects.toThrow(
-      `HTTP serves on a path with no query or fragment, not ${JSON.stringify(path)}`,
-    )
-  })
+  it.each(["/mcp?x", "/a#b", "mcp", "/a b", "/a/../mcp", "/café", "/a\\b"])(
+    "refuses path %j",
+    async (path) => {
+      await expect(serveOverHttp(sample, { path: path as "/mcp" })).rejects.toThrow(
+        `HTTP serves on a path with no query or fragment, not ${JSON.stringify(path)}`,
+      )
+    },
+  )
 
   it("serves on ::1 too, and shows it in the URL", async () => {
     const served = await serving({ host: "::1" })
@@ -121,13 +126,15 @@ describe("serveOverHttp", () => {
     ["GET", undefined, 405],
     ["DELETE", undefined, 405],
     ["POST", [initialize], 400],
+    ["POST", { jsonrpc: "2.0", method: "notifications/initialized" }, 202],
   ])(
     "refuses a 2025-era %s with a body of %j: %i, before any server",
     async (method, body, status) => {
       const { url } = await serving()
       const answer = await raw(url, { method, body })
       expect(answer.status).toBe(status)
-      expect(answer.text).toMatch(/"error":/)
+      if (status === 202) expect(answer.text).toBe("")
+      else expect(answer.text).toMatch(/"error":/)
     },
   )
 
@@ -170,6 +177,9 @@ describe("serveOverHttp", () => {
     expect((await raw(url, { body: initialize, target: "/x/../extension" })).status).toBe(
       404,
     )
+    for (const target of ["/extension/x", "/extensionx"]) {
+      expect((await raw(url, { body: initialize, target })).status).toBe(404)
+    }
     expect(reached(await raw(url, { body: initialize, target: "/extension?x=1" }))).toBe(
       true,
     )
@@ -218,4 +228,43 @@ describe("serveOverStdio", () => {
       ).toBe("text/html;profile=mcp-app")
     },
   )
+})
+
+describe("closing an HTTP server", () => {
+  it("ends a call in flight: its run is aborted and its caller's request fails", async () => {
+    let aborted: (value: boolean) => void = () => {}
+    let begun: () => void = () => {}
+    const sawAbort = new Promise<boolean>((resolve) => (aborted = resolve))
+    const started = new Promise<void>((resolve) => (begun = resolve))
+    const extension = defineExtension({
+      name: "slow",
+      version: "0.0.1",
+      views: [],
+      tools: [
+        defineTool({
+          name: "wait",
+          description: "Waits until aborted",
+          input: z.object({}),
+          effects: "read-only",
+          run: (_input, { signal }) =>
+            new Promise((resolve) => {
+              begun()
+              signal.addEventListener("abort", () => {
+                aborted(signal.aborted)
+                resolve({ text: "stopped" })
+              })
+            }),
+        }),
+      ],
+    })
+    const served = await serveOverHttp(extension)
+    const client = await clientAt(served.url, { era: "modern" })
+    const call = client.callTool({ name: "wait", arguments: {} })
+    await started
+    const closing = served.close()
+    await expect(call).rejects.toThrow()
+    await closing
+    await expect(sawAbort).resolves.toBe(true)
+    await client.close()
+  })
 })
