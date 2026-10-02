@@ -96,6 +96,9 @@ describe("defineExtension", () => {
     "http://localhost:3000",
     "http://127.0.0.1:8080",
     "http://[::1]:8080",
+    "https://API.example.com",
+    "HTTPS://api.example.com:443",
+    "https://*.Example.com",
   ])("takes CSP origin %s", (origin) => {
     const csp = Object.fromEntries(cspKeys.map((key) => [key, [origin]]))
     expect(problemsOf(extension([view("ui://probe/a", { csp })], []))).toEqual([])
@@ -117,12 +120,13 @@ describe("defineExtension", () => {
     "https://*.",
     "https://*.com",
     "https://a.com.",
-    "https://API.example.com",
-    "https://api.example.com:443",
     "http://a.com;script-src",
     "javascript://x",
     "data://x",
     "ftp://files.example.com",
+    "https://api.example.com:65536",
+    "http://[::zz]:80",
+    "https://*.example.com:0x50",
     "https://*.1.2.3.4",
     "https://*.[::1]",
   ])("refuses CSP domain %s in every list", (domain) => {
@@ -389,6 +393,26 @@ describe("what defineExtension checked is what is served", () => {
     const kept = tool({ callers })
     callers.push("app")
     expect(kept.callers).toEqual(["model"])
+  })
+
+  it("freezes a tool's input schema, nested ones included, so what is listed is what is parsed", () => {
+    const inner = z.object({ a: z.number() })
+    const input = z.object({
+      n: z.number(),
+      inner: inner.optional(),
+      list: z.array(inner),
+    })
+    const checked = defineExtension(extension([], [tool({ input })]))
+    expect(() => {
+      ;(input.shape as Record<string, unknown>).extra = z.string()
+    }).toThrow(TypeError)
+    expect(() => {
+      ;(inner.shape as Record<string, unknown>).b = z.string()
+    }).toThrow(TypeError)
+    expect(checkedOf(checked).inputSchemas.get("tool")).toEqual(
+      z.toJSONSchema(input, { io: "input" }),
+    )
+    expect(input.safeParse({ n: 1, list: [{ a: 1 }] }).success).toBe(true)
   })
 
   it("freezes a tool, so it cannot be changed after it is checked", () => {

@@ -63,10 +63,12 @@ serveOverStdio(board)
   `Extension`, which is all that can be served. It parses the definition into
   a frozen copy — each view's `_meta.ui` with the reference SDK's own schemas,
   refusing keys they do not name, a permission's included — and keeps only
-  the copy, so what was checked is what is served. One thing is not copied:
-  a tool's `input` is the zod schema it was given, which the kit lists once
-  and parses every call with; it must not be changed after `defineTool`. It throws a `DefinitionError` naming every
-  problem and where it is; the rules are listed on `defineExtension`.
+  the copy, so what was checked is what is served. A tool's `input` is the
+  zod schema it was given, not a copy: `defineTool` freezes its definitions,
+  and those of every schema inside it, so the input the kit lists once is the
+  one every call is parsed with, and changing the schema afterwards throws.
+  It throws a `DefinitionError` naming every problem and where it is; the
+  rules are listed on `defineExtension`.
 - **What a tool answers is parsed too.** Its input is parsed inside the same
   guard as `run`; its `data` is read once, without running getters, into a
   fresh JSON copy at most 256 levels deep, and the copy is what is sent.
