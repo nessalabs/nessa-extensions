@@ -67,15 +67,14 @@ function spreadWithin(
 }
 
 /** What passed before a run: its parent's slices, or, for the baseline's, a count. */
-export type Before =
-  | { readonly passing: number }
-  | {
-      readonly slices: readonly { readonly name: string; readonly passingAfter: number }[]
-    }
+/** What passed in the version a run is built on, slice by slice. */
+export interface Before {
+  readonly slices: readonly { readonly name: string; readonly passingAfter: number }[]
+}
 
 /**
  * A run's cases: `total` of them in `kinds`' slices; passing before as
- * `before` says, so a run's slices start where its parent's ended; about
+ * `before` says (for a first version, `slicesOf`), so a run's slices start where its parent's ended; about
  * `fixed` and `broken` of them moved, in each slice no more than it has room
  * for; and one page of the moved — at most `movedPageSize`, in proportion —
  * each in the slice it moved in. The slices cover the cases once, so each
@@ -100,15 +99,9 @@ export function casesFor(
     total,
     kinds.map((kind) => kind.share),
   )
-  const passingBy =
-    "slices" in before
-      ? kinds.map(
-          (kind) =>
-            before.slices.find((slice) => slice.name === kind.name)?.passingAfter ?? 0,
-        )
-      : spread(before.passing, weights).map((each, index) =>
-          Math.min(each, sizes[index] ?? 0),
-        )
+  const passingBy = kinds.map(
+    (kind) => before.slices.find((slice) => slice.name === kind.name)?.passingAfter ?? 0,
+  )
   // A fixed case failed before; a broken one passed.
   const fixedBy = spreadWithin(
     counts.fixed,

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 
-import { validateExperiment, type Experiment } from "../model/index.ts"
+import {
+  limitOf,
+  measureOf,
+  validateExperiment,
+  type Experiment,
+} from "../model/index.ts"
 import * as model from "../model/index.ts"
 import {
   checkoutSample,
@@ -121,6 +126,17 @@ describe("the samples", () => {
           last.set(moved.id, moved.move)
         }
       }
+    }
+  })
+
+  it("give a verdict that agrees with the cost guardrail: costly exactly when over it", () => {
+    const experiment = valid(checkoutSample(begun))
+    const limit = limitOf(experiment, "cost")
+    if (limit?.kind !== "limit") throw new Error("the cost limit is measured")
+    for (const run of experiment.runs) {
+      const cost = measureOf(run, "cost")
+      if (run.settledAt === undefined || cost === undefined) continue
+      expect(run.verdict === "costly", run.id).toBe(cost > limit.value)
     }
   })
 

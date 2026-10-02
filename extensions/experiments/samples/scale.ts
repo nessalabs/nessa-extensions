@@ -4,7 +4,7 @@
  * size real evaluations reach (nessa-agent ADR 333, "Scale").
  */
 import type { ExperimentInput } from "../model/index.ts"
-import { casesFor, changeFor, minutes, type SliceKind } from "./generate.ts"
+import { casesFor, changeFor, minutes, slicesOf, type SliceKind } from "./generate.ts"
 import { latencySample } from "./latency.ts"
 
 export const scaleExperimentId = "search-latency-at-scale"
@@ -62,7 +62,7 @@ export function scaleSample(startedAt: number): ExperimentInput {
           "planner",
           slices,
           { total: scaleCases, fixed: 41_820, broken: 23_115 },
-          { passing: 900_000 },
+          slicesOf("baseline", slices, scaleCases, 900_000),
         ).cases,
         change: changeFor(
           "planner",
