@@ -11,8 +11,9 @@ import {
   casesFor,
   changeFor,
   minutes,
-  type CasesInput,
-  type Known,
+  slicesOf,
+  type Before,
+  type CaseStates,
   type SliceKind,
 } from "./generate.ts"
 
@@ -221,7 +222,16 @@ const history: readonly Planned[] = [
     "flat",
     91,
   ],
-  ["model", "pike", "Runs escalations only at high effort.", 1.1, 0.7, "flat", 96, 0.22],
+  [
+    "model",
+    "pike",
+    "Runs escalations only at high effort.",
+    1.1,
+    0.7,
+    "costly",
+    96,
+    0.22,
+  ],
   [
     "prompt",
     "tamsin",
@@ -343,8 +353,8 @@ export function checkoutSample(startedAt: number): ExperimentInput {
     test: number
     cost: number
     settledAt: number
-    slices?: CasesInput["slices"]
-    known: Known
+    before: Before
+    states: CaseStates
   }
   const versions: Version[] = [
     {
@@ -353,7 +363,14 @@ export function checkoutSample(startedAt: number): ExperimentInput {
       test: 58.3,
       cost: 5.2,
       settledAt: startedAt,
-      known: new Map(),
+      // Its slices are set once, so every run built on it starts from them.
+      before: slicesOf(
+        "baseline",
+        slices,
+        testCases,
+        Math.round((58.3 / 100) * testCases),
+      ),
+      states: new Map(),
     },
   ]
   const bestAt = (time: number) =>
@@ -382,8 +399,9 @@ export function checkoutSample(startedAt: number): ExperimentInput {
       const settledAt = at(startedAfter + 4 + (number % 5) + (number === 20 ? 24 : 0))
       const net = Math.round((test / 100) * testCases)
       const churn = 12 + (number % 7) * 3
-      // Its slices start where its parent's ended; the baseline's are a count.
-      const { cases, known } = casesFor(
+      // Its slices start where its parent's ended, and its cases agree with
+      // what its siblings say of their parent.
+      const { cases, states } = casesFor(
         id,
         slices,
         {
@@ -391,10 +409,8 @@ export function checkoutSample(startedAt: number): ExperimentInput {
           fixed: Math.max(net, 0) + churn,
           broken: Math.max(-net, 0) + churn,
         },
-        parent.slices === undefined
-          ? { passing: Math.round((parent.test / 100) * testCases) }
-          : { slices: parent.slices },
-        parent.known,
+        parent.before,
+        parent.states,
       )
       runs.push({
         id,
@@ -427,8 +443,8 @@ export function checkoutSample(startedAt: number): ExperimentInput {
           test: testMean,
           cost,
           settledAt,
-          slices: cases.slices,
-          known,
+          before: { slices: cases.slices },
+          states,
         })
         kept.push({ id, settledAt })
       }

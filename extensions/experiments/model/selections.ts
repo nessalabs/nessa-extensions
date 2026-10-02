@@ -244,7 +244,11 @@ export function limitOf(
   }
 }
 
-/** Lines a change added and removed, over all its files. */
+/**
+ * Lines a change added and removed, over all its files: exact while each sum
+ * is below 2^53 (9 × 10^15 lines), which no count bounds for an unbounded
+ * number of files.
+ */
 export function lineTotals(change: RunChange): {
   readonly added: number
   readonly removed: number

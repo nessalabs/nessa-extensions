@@ -80,8 +80,8 @@ function rounded(exact: Decimal, places: number): bigint {
 }
 
 /**
- * `factor` times `value` in `metric`, exactly: the product of the two
- * decimals, written to the metric's decimals, and the number nearest it. A
+ * `factor` times `value` in `metric`: the number nearest the exact product
+ * of the two decimals, and that number written. A
  * limit relative to the baseline is its ratio of the baseline's measure, and
  * 1.05 × 1.9 is 1.995, written "2.00", where the binary product is
  * 1.9949999999999999 (`metric.test.ts`). For `selections.ts`'s `limitOf`, so
@@ -95,15 +95,15 @@ export function productOf(
   const left = decimal(factor)
   const right = decimal(value)
   const product = { units: left.units * right.units, scale: left.scale + right.scale }
-  const places = metric.decimals
-  const formatted =
-    `${signed(rounded(product, places), places)}${metric.unit}` as Formatted
-  // The nearest number to the exact product: its digits, read once.
+  // The number nearest the exact product, and that number written, so the
+  // two agree: a view that writes the value again writes the same text. (Only
+  // a product with more digits than a number holds, on a half, could round
+  // otherwise than the exact product.)
   const digits = Math.max(product.scale, 0)
   const exact = Number(
     `${product.units < 0n ? "-" : ""}${unscaled(product.units * 10n ** BigInt(digits - product.scale), digits)}`,
   )
-  return { value: exact, formatted }
+  return { value: exact, formatted: formatValue(metric, exact) }
 }
 
 /** The magnitude of `units` of the last of `places` places, written: 125 at 2 is "1.25". */

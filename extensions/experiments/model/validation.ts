@@ -398,13 +398,16 @@ function checkCases(
     listed.set(moved.slice, counts)
   }
   // A slice's coherence is checked only once what it is read with holds: the
-  // run's moved within its total, the page within the run's counts, the
-  // slice's name its own, and its counts within the run's and its own. So a
+  // run's moved within its total, the page within the run's counts with each
+  // case once, the slice's name its own, and its counts within the run's and
+  // its own. So a
   // fact is reported once, as itself (`validation.test.ts`).
   const movedWithin = movedCount(cases) <= cases.total
   const movedFixed = cases.moved.filter((moved) => moved.move === "fixed").length
   const pageWithin =
-    movedFixed <= cases.fixed && cases.moved.length - movedFixed <= cases.broken
+    movedFixed <= cases.fixed &&
+    cases.moved.length - movedFixed <= cases.broken &&
+    new Set(cases.moved.map((moved) => moved.id)).size === cases.moved.length
   const named = new Map<string, number>()
   for (const slice of cases.slices)
     named.set(slice.name, (named.get(slice.name) ?? 0) + 1)

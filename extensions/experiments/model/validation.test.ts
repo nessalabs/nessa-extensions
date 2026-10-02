@@ -970,6 +970,17 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         ],
       },
       {
+        name: "more broken listed than broken, in one slice: reported once, as this",
+        edit: (e) => {
+          for (const id of ["c4", "c5"]) {
+            cases(e).moved.push({ id, title: "Case", slice: "s1", move: "broken" })
+          }
+        },
+        problems: [
+          { rule: "moved-page-within-counts", path: ["runs", 0, "cases", "moved"] },
+        ],
+      },
+      {
         name: "more broken listed than broken",
         edit: (e) =>
           cases(e).moved.push({ id: "c4", title: "Case 4", slice: "s1", move: "broken" }),
@@ -996,6 +1007,19 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         edit: (e) => (cases(e).moved[1]!.id = "c1"),
         problems: [
           { rule: "moved-ids-unique", path: ["runs", 0, "cases", "moved", 1, "id"] },
+        ],
+      },
+      {
+        name: "a case listed three times in a slice: reported once, as this",
+        edit: (e) => {
+          // Counted three times, c1 would overflow s1; listed once, it fits.
+          cases(e).slices[0]!.passingBefore = 0
+          cases(e).slices[0]!.passingAfter = 2
+          cases(e).moved.push({ ...cases(e).moved[0]! }, { ...cases(e).moved[0]! })
+        },
+        problems: [
+          { rule: "moved-ids-unique", path: ["runs", 0, "cases", "moved", 2, "id"] },
+          { rule: "moved-ids-unique", path: ["runs", 0, "cases", "moved", 3, "id"] },
         ],
       },
     ],

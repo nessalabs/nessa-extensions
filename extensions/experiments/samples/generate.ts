@@ -80,14 +80,19 @@ export type Before =
  * for; and one page of the moved — at most `movedPageSize`, in proportion —
  * each in the slice it moved in. The slices cover the cases once, so each
  * agrees with the run (the rule `slice-coherent`).
+ *
+ * `version` is what is known of the cases of the version the run is built on,
+ * shared by every run built on it: a case one of them fixed was failing in
+ * it, one broken was passing, so no sibling says otherwise. This run's moves
+ * add to it, and what it returns is what is known of the run's own cases.
  */
 export function casesFor(
   seed: string,
   kinds: readonly SliceKind[],
   counts: { readonly total: number; readonly fixed: number; readonly broken: number },
   before: Before,
-  known: Known = new Map(),
-): { readonly cases: CasesInput; readonly known: Known } {
+  version: CaseStates = new Map(),
+): { readonly cases: CasesInput; readonly states: CaseStates } {
   const random = seeded(`cases-${seed}`)
   const { total } = counts
   const weights = kinds.map((kind) => kind.share * (0.7 + random() * 0.6))
@@ -128,12 +133,11 @@ export function casesFor(
   const pageBroken = Math.min(broken, movedPageSize - pageFixed)
   // A case is one of the suite: its number places it in a slice, by the
   // slices' sizes, and names it, so it is the same case in every run. A case
-  // the lineage last saw fixed is passing, so it is not fixed again; one it
-  // saw broken is not broken again.
+  // passing in the version is not fixed, and one failing is not broken.
   const starts = sizes.map((_, index) =>
     sizes.slice(0, index).reduce((sum, each) => sum + each, 0),
   )
-  const seen = new Map<string, "passing" | "failing" | "listed">(known)
+  const seen = new Map<string, "passing" | "failing" | "listed">(version)
   const page: CasesInput["moved"][number][] = []
   // Round the slices, each listing no more than it moved.
   for (const [move, listed, by] of [
@@ -162,15 +166,16 @@ export function casesFor(
       const number = start + offset
       const id = caseIdOf(number)
       seen.set(id, "listed")
+      version.set(id, move === "fixed" ? "failing" : "passing")
       page.push({ id, title: titleOf(kind, number), slice: kind.name, move })
       slice += 1
     }
   }
-  const after = new Map<string, "passing" | "failing">(known)
+  const after: CaseStates = new Map(version)
   for (const each of page)
     after.set(each.id, each.move === "fixed" ? "passing" : "failing")
   page.sort((a, b) => a.id.localeCompare(b.id))
-  return { cases: { total, fixed, broken, slices, moved: page }, known: after }
+  return { cases: { total, fixed, broken, slices, moved: page }, states: after }
 }
 
 /** The id of the suite's case `number` (from 0). */
@@ -180,8 +185,34 @@ const caseIdOf = (number: number) => `C-${String(number + 1).padStart(7, "0")}`
 const titleOf = (kind: SliceKind, number: number) =>
   kind.titles[number % kind.titles.length] ?? kind.name
 
-/** What a lineage last saw of a case: fixed (so passing) or broken (so failing). */
-export type Known = ReadonlyMap<string, "passing" | "failing">
+/** What is known of the cases of one version: each passing or failing in it. */
+export type CaseStates = Map<string, "passing" | "failing">
+
+/**
+ * A version's slices with no run before it, such as the baseline's:
+ * `passing` of the `total` cases spread over `kinds`, the same for every run
+ * built on it.
+ */
+export function slicesOf(
+  seed: string,
+  kinds: readonly SliceKind[],
+  total: number,
+  passing: number,
+): Before {
+  const random = seeded(`slices-${seed}`)
+  const weights = kinds.map((kind) => kind.share * (0.7 + random() * 0.6))
+  const sizes = spread(
+    total,
+    kinds.map((kind) => kind.share),
+  )
+  const passingBy = spread(passing, weights)
+  return {
+    slices: kinds.map((kind, index) => ({
+      name: kind.name,
+      passingAfter: Math.min(passingBy[index] ?? 0, sizes[index] ?? 0),
+    })),
+  }
+}
 
 const stems = [
   "refunds",

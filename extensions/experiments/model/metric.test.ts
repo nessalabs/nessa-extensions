@@ -199,6 +199,15 @@ describe("productOf", () => {
     })
     expect(productOf(cents, 1e-7, 3)).toEqual({ value: 3e-7, formatted: "0.00¢" })
   })
+
+  it("writes the value it gives, so a view writing it again agrees", () => {
+    // The exact product, 4.144999999999999171, has more digits than a number
+    // holds; the nearest number is 4.145, written 4.15.
+    const cents = { ...percent, unit: "¢", decimals: 2 }
+    const limit = productOf(cents, 0.9999999999999998, 4.145)
+    expect(limit).toEqual({ value: 4.145, formatted: "4.15¢" })
+    expect(formatValue(cents, limit.value)).toBe(limit.formatted)
+  })
 })
 
 describe("the brands", () => {

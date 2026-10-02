@@ -76,6 +76,27 @@ describe("the samples", () => {
     expect(compared).toBeGreaterThan(10)
   })
 
+  it("agree among siblings: runs built on one version give it the same slices and cases", () => {
+    const experiment = valid(checkoutSample(begun))
+    const before = new Map<string, string>()
+    const state = new Map<string, string>()
+    for (const run of experiment.runs) {
+      if (run.cases === undefined) continue
+      const slices = JSON.stringify(
+        run.cases.slices.map((s) => [s.name, s.passingBefore]),
+      )
+      expect(before.get(run.parentId) ?? slices, run.id).toBe(slices)
+      before.set(run.parentId, slices)
+      for (const moved of run.cases.moved) {
+        const key = `${run.parentId} ${moved.id}`
+        const was = moved.move === "fixed" ? "failing" : "passing"
+        expect(state.get(key) ?? was, `${key} in ${run.id}`).toBe(was)
+        state.set(key, was)
+      }
+    }
+    expect(before.size).toBeGreaterThan(3)
+  })
+
   it("name each case as one case: one slice and title in every run, moved in turn along a lineage", () => {
     const experiment = valid(checkoutSample(begun))
     const named = new Map<string, string>()
