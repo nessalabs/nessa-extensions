@@ -1,0 +1,14 @@
+{
+  "name": "@nessalabs/experiments",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "An experiment's climb, areas, runs, and run detail, as an MCP server with an MCP App.",
+  "license": "MIT",
+  "dependencies": {
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.7"
+  }
+}
