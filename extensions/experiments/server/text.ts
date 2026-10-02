@@ -307,7 +307,8 @@ export function missingRunText(experiment: Experiment, runId: string): string {
 function shownPart(text: string): string {
   const high = text.charCodeAt(downloadShown - 1)
   const end = high >= 0xd800 && high <= 0xdbff ? downloadShown - 1 : downloadShown
-  return `${text.slice(0, end)}\n…and ${count(text.length - end)} more characters`
+  // Characters, not code units: a character that takes two is one.
+  return `${text.slice(0, end)}\n…and ${count([...text.slice(end)].length)} more characters`
 }
 
 /** What `open_file` says about what it opened, or why it could not. */

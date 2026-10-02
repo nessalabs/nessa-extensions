@@ -21,7 +21,7 @@ export const metric = z
     /** Written straight after a value, as given: "%", " ms". */
     unit: z.string(),
     /** Written after a change instead of `unit`, when it differs: " pts". */
-    deltaUnit: z.string().optional(),
+    deltaUnit: z.string().exactOptional(),
     /** Which way is better. */
     better: z.enum(["up", "down"]),
     /** Decimals a value and a change are written with: a whole number, 0–10. */
@@ -39,7 +39,7 @@ export const limit = z
   .strictObject({
     bound: z.enum(["at-most", "at-least"]),
     value,
-    relativeTo: z.literal("baseline").optional(),
+    relativeTo: z.literal("baseline").exactOptional(),
   })
   .readonly()
 export type Limit = z.output<typeof limit>
@@ -77,16 +77,16 @@ export const experimentDefinition = z
     /** The verdicts runs are given, in the order a filter lists them. */
     verdicts: z.array(verdict).readonly(),
     /** Changes of the metric within it read as neutral: 0 or more. */
-    noise: value.nonnegative().optional(),
+    noise: value.nonnegative().exactOptional(),
     /** A value to draw a line at, with what it is ("best model, max effort"). */
-    reference: z.strictObject({ value, label: text }).readonly().optional(),
+    reference: z.strictObject({ value, label: text }).readonly().exactOptional(),
     /** How many runs the experiment may spend: a whole number, 1 or more. */
     budget: z
       .strictObject({ runs: z.number().int().min(1) })
       .readonly()
-      .optional(),
+      .exactOptional(),
     /** What a case is called: "test case", "prompt", "request". */
-    caseNoun: z.strictObject({ one: text, other: text }).readonly().optional(),
+    caseNoun: z.strictObject({ one: text, other: text }).readonly().exactOptional(),
   })
   .readonly()
 export type ExperimentDefinition = z.output<typeof experimentDefinition>

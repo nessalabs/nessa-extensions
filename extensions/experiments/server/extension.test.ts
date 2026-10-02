@@ -232,6 +232,27 @@ describe("show_experiment", () => {
     expect(result.structuredContent).toBeUndefined()
   })
 
+  it("refuses an experiment with a field given as undefined, which JSON cannot carry", async () => {
+    const sample = checkoutSample(startedAt)
+    const client = await connect(
+      clients[0],
+      sourceWith({
+        experiment: async () => ({
+          ...sample,
+          definition: { ...sample.definition, noise: undefined },
+        }),
+      }),
+    )
+    const result = await client.callTool({
+      name: "show_experiment",
+      arguments: { experimentId: checkoutExperimentId },
+    })
+    expect(result.isError).toBe(true)
+    expect(textOf(result)).toMatch(
+      /^show_experiment failed: Experiment "checkout-hillclimb" can't be shown: it is not a valid experiment\.\n- shape at definition\.noise: /,
+    )
+  })
+
   it("refuses an answer for another experiment than the one asked for", async () => {
     const client = await connect(
       clients[0],
@@ -571,13 +592,17 @@ describe("open_file", () => {
     )
   })
 
+  /** `run` without its `change` key. */
+  function withoutChange<Run extends { change?: unknown }>(run: Run) {
+    const { change: _change, ...rest } = run
+    return rest
+  }
+
   it("refuses a run with no change, and a run there is not", async () => {
     const sample = checkoutSample(startedAt)
     const unchanged = {
       ...sample,
-      runs: sample.runs.map((each) =>
-        each.id === run.id ? { ...each, change: undefined } : each,
-      ),
+      runs: sample.runs.map((each) => (each.id === run.id ? withoutChange(each) : each)),
     }
     const client = await connect(
       clients[1],
@@ -671,6 +696,11 @@ describe("open_file", () => {
     ],
     ["an opening of another kind", { kind: "editor" }],
     ["a key an opening does not have", { kind: "unavailable", reason: "x", extra: 1 }],
+    ["a key a link does not have", { kind: "link", url: "https://a.example", extra: 1 }],
+    [
+      "a key a download does not have",
+      { kind: "download", name: "a", mimeType: "text/plain", text: "", extra: 1 },
+    ],
     ["a blank reason", { kind: "unavailable", reason: " " }],
   ])("refuses a source that answers %s", async (_, answer) => {
     const result = await open(async () => answer as unknown as FileOpening, {

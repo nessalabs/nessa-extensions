@@ -22,9 +22,16 @@ import { count, id, instant, text, tone, value } from "./values.ts"
 
 /** A run's score on one split: its mean, and the half-width of its confidence interval. */
 export const score = z
-  .strictObject({ mean: value, interval: value.nonnegative().optional() })
+  .strictObject({ mean: value, interval: value.nonnegative().exactOptional() })
   .readonly()
 export type Score = z.output<typeof score>
+
+/**
+ * Every optional field here and in `definition.ts` is `exactOptional`: absent,
+ * or a value. An explicit `undefined`, which JSON cannot carry, is a `shape`
+ * problem, so a valid experiment is exactly what JSON carries
+ * (`validation.test.ts`, "is exactly what JSON carries").
+ */
 
 /**
  * Refuses an own `__proto__` key, which zod's record skips without a word
@@ -129,13 +136,13 @@ export const run = z
     number: z.number().int().min(1),
     startedAt: instant,
     /** While it is being evaluated, when the harness says. */
-    progress: progress.optional(),
+    progress: progress.exactOptional(),
     /**
      * When its outcome last changed: a keep decided after reruns moves it, a
      * rerun that confirms the same outcome does not. Present exactly when its
      * verdict's outcome is not `pending` (the rule `settled-when-decided`).
      */
-    settledAt: instant.optional(),
+    settledAt: instant.exactOptional(),
     /** What it was built on: the baseline's id, or an earlier run's. */
     parentId: id,
     scores,
@@ -144,10 +151,10 @@ export const run = z
     verdict: id,
     /** The harness's reason for its verdict. */
     reason: text,
-    areaId: id.optional(),
-    agentId: id.optional(),
-    cases: cases.optional(),
-    change: runChange.optional(),
+    areaId: id.exactOptional(),
+    agentId: id.exactOptional(),
+    cases: cases.exactOptional(),
+    change: runChange.exactOptional(),
   })
   .readonly()
 export type Run = z.output<typeof run>
@@ -198,8 +205,8 @@ export const agent = z
     since: instant,
     /** The brief it was given. */
     brief: text,
-    areaId: id.optional(),
-    model: text.optional(),
+    areaId: id.exactOptional(),
+    model: text.exactOptional(),
     activity,
   })
   .readonly()
@@ -207,7 +214,7 @@ export type Agent = z.output<typeof agent>
 
 /** Something the harness said, and the run it is about, if any. */
 export const note = z
-  .strictObject({ tone, text, at: instant, runId: id.optional() })
+  .strictObject({ tone, text, at: instant, runId: id.exactOptional() })
   .readonly()
 export type Note = z.output<typeof note>
 

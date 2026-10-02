@@ -57,7 +57,9 @@ beside what they test.
   ...experiment }` is not an `Experiment`. `validation.ts` says what each rule
   holds; `validation.test.ts` tests each one both ways.
 - **It travels as JSON.** Everything in it is JSON — times are milliseconds
-  since the epoch — so the server can return it as a tool's `data`, and the
+  since the epoch, and an optional field is absent or a value, never
+  `undefined` — so a valid experiment is exactly what JSON carries, the server
+  can return it as a tool's `data`, and the
   app, which receives that `data` from its host, validates it again before it
   draws anything.
 - **The harness decides.** Whether a run was kept, which is best (the last of
@@ -124,8 +126,9 @@ built into `dist/main.js`). Its tools, all read-only:
   experiment answered for another id is refused too, as is an id the source
   lists but does not have. An unknown id is answered with the ids there are. A
   link to open is `http` or `https` only: a `javascript:` or `data:` URL from
-  a source would run what the source wrote. Text names at most the first 50
-  runs, 20 files and 20 problems, and counts the rest.
+  a source would run what the source wrote. Text names only the first of a
+  long list — of runs, files, problems or ids — and counts the rest, and shows
+  only the start of a long download; the limits are `text.ts`'s constants.
 - **The source is the samples, for now** (`server/samples-source.ts`), dated
   from when the server starts; they record what a run changed, not the files,
   so `open_file` says it cannot open one. A real harness plugs in as another

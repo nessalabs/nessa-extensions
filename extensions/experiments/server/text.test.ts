@@ -223,7 +223,7 @@ describe("openingText", () => {
       { kind: "download", name: "a.txt", mimeType: "text/plain", text },
     )
     expect(shown).toMatch(
-      new RegExp(`\\na{${downloadShown - 1}}\\n…and 12 more characters$`),
+      new RegExp(`\\na{${downloadShown - 1}}\\n…and 11 more characters$`),
     )
   })
 
