@@ -85,6 +85,11 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         problems: [{ rule: "shape", path: ["runs", 0, "number"] }],
       },
       {
+        name: "a time past the latest a Date holds",
+        edit: (e) => (run(e, 0).settledAt = 8.64e15 + 1),
+        problems: [{ rule: "shape", path: ["runs", 0, "settledAt"] }],
+      },
+      {
         name: "a count beyond the bound",
         edit: (e) => (cases(e).total = 1e15 + 1),
         problems: [{ rule: "shape", path: ["runs", 0, "cases", "total"] }],
@@ -182,6 +187,10 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
     ],
     holds: [
       { name: "decimals 0", edit: (e) => (e.definition.metric.decimals = 0) },
+      {
+        name: "a time at the latest a Date holds",
+        edit: (e) => (run(e, 0).settledAt = 8.64e15),
+      },
       {
         name: "values at the bound, either side",
         edit: (e) => {

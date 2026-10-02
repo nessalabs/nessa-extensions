@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
 import { Client } from "@modelcontextprotocol/client"
@@ -13,13 +14,33 @@ afterEach(async () => {
   await Promise.all(opened.splice(0).map((close) => close()))
 })
 
-describe("main", () => {
-  it.each(["legacy", "modern"] as const)(
-    "serves the samples over stdio, as a child process, to a %s-era client",
-    async (era) => {
+/** The bin's source, and what `pnpm build` makes of it: what `npx` runs. */
+const entries = [
+  { name: "server/main.ts", path: fileURLToPath(new URL("./main.ts", import.meta.url)) },
+  {
+    name: "dist/main.js",
+    path: fileURLToPath(new URL("../dist/main.js", import.meta.url)),
+  },
+]
+
+describe("the bin", () => {
+  it("is built before the tests run in CI, so the bundle is tested there", () => {
+    // Locally the bundle is tested once `pnpm build` has made it.
+    if (process.env.CI !== undefined) expect(existsSync(entries[1]!.path)).toBe(true)
+  })
+
+  it.each(
+    entries
+      .filter((entry) => existsSync(entry.path))
+      .flatMap((entry) =>
+        (["legacy", "modern"] as const).map((era) => ({ ...entry, era })),
+      ),
+  )(
+    "$name serves the samples over stdio, as a child process, to a $era-era client",
+    async ({ path, era }) => {
       const transport = new StdioClientTransport({
         command: process.execPath,
-        args: [fileURLToPath(new URL("./main.ts", import.meta.url))],
+        args: [path],
         stderr: "pipe",
       })
       const client = new Client(

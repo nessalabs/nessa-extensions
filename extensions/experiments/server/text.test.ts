@@ -4,6 +4,8 @@ import { validateExperiment, type Experiment, type Problem } from "../model/inde
 import { checkoutSample, latencySample, scaleSample } from "../samples/index.ts"
 import {
   downloadShown,
+  runsNamed,
+  runsText,
   experimentText,
   filesNamed,
   invalidText,
@@ -108,6 +110,27 @@ describe("runText", () => {
     expect(files.at(-1)).toBe("…and 9,980 more")
   })
 
+  it("writes one file and one line as one", () => {
+    const sample = checkoutSample(startedAt)
+    const one = validated({
+      ...sample,
+      runs: sample.runs.map((each, at) =>
+        at === 0
+          ? {
+              ...each,
+              change: {
+                summary: "One line.",
+                files: [{ path: "a.ts", status: "modified", added: 1, removed: 1 }],
+              },
+            }
+          : each,
+      ),
+    })
+    expect(runText(one, one.runs[0]!)).toContain(
+      "\nChange: One line. 1 file, 1 line added and 1 removed:\n- a.ts (modified, +1 −1)",
+    )
+  })
+
   it("says what a run was built on, and how far its evaluation is", () => {
     const checkout = validated(checkoutSample(startedAt))
     const evaluating = checkout.runs.find((each) => each.progress !== undefined)!
@@ -119,6 +142,22 @@ describe("runText", () => {
     expect(text).toContain(
       `\nProgress: ${evaluating.progress!.done.toLocaleString("en-US")} of ${evaluating.progress!.total.toLocaleString("en-US")}.\n`,
     )
+  })
+})
+
+describe("runsText", () => {
+  const checkout = validated(checkoutSample(startedAt))
+
+  it("names the first runs and counts the rest", () => {
+    const runs = Array.from({ length: runsNamed + 10 }, () => checkout.runs[0]!)
+    const lines = runsText(checkout, runs).split("\n")
+    expect(lines[0]).toBe(`The runs of ${checkout.title}, newest first:`)
+    expect(lines).toHaveLength(runsNamed + 2)
+    expect(lines.at(-1)).toBe("…and 10 more")
+  })
+
+  it("says when there are no runs", () => {
+    expect(runsText(checkout, [])).toBe(`Experiment ${checkout.id} has no runs yet.`)
   })
 })
 

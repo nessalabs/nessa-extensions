@@ -20,8 +20,14 @@ export const id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/, {
 /** Text a person reads: a title, a label, a reason. Never blank. */
 export const text = z.string().regex(/\S/, { error: "text is not blank" })
 
-/** A time, as milliseconds since the Unix epoch. */
-export const instant = z.number().int().nonnegative()
+/**
+ * The latest time a `Date` holds, in milliseconds since the epoch (ECMA-262's
+ * time value range), so every instant can be written as a date.
+ */
+const latestInstant = 8.64e15
+
+/** A time, as milliseconds since the Unix epoch, up to `latestInstant`. */
+export const instant = z.number().int().nonnegative().max(latestInstant)
 
 /**
  * The most a measured or scored number may be, either side of 0, and the most

@@ -121,8 +121,11 @@ built into `dist/main.js`). Its tools, all read-only:
   Nothing a source answers is trusted. `reading.ts` parses each answer into a
   copy and reads only the copy: an experiment through `validateExperiment`, so
   one that breaks a rule is refused with every problem named, and an
-  experiment answered for another id is refused too. An unknown id is answered
-  with the ids there are.
+  experiment answered for another id is refused too, as is an id the source
+  lists but does not have. An unknown id is answered with the ids there are. A
+  link to open is `http` or `https` only: a `javascript:` or `data:` URL from
+  a source would run what the source wrote. Text names at most the first 50
+  runs, 20 files and 20 problems, and counts the rest.
 - **The source is the samples, for now** (`server/samples-source.ts`), dated
   from when the server starts; they record what a run changed, not the files,
   so `open_file` says it cannot open one. A real harness plugs in as another

@@ -265,6 +265,67 @@ describe("show_experiment", () => {
     })
   })
 
+  it("refuses a source that lists an experiment it then does not have", async () => {
+    const client = await connect(
+      clients[0],
+      sourceWith({ experiment: async () => undefined }),
+    )
+    const result = await client.callTool({
+      name: "show_experiment",
+      arguments: { experimentId: checkoutExperimentId },
+    })
+    expect(result.isError).toBe(true)
+    expect(textOf(result)).toBe(
+      `show_experiment failed: the source lists experiment "${checkoutExperimentId}" but has none`,
+    )
+  })
+
+  it("reads the ids the source listed once, and names only its copy", async () => {
+    let reads = 0
+    const listed = Object.defineProperty(["a"], 0, {
+      enumerable: true,
+      get: () => (++reads === 1 ? "first" : "later"),
+    })
+    const client = await connect(clients[0], sourceWith({ ids: async () => listed }))
+    const result = await client.callTool({
+      name: "show_experiment",
+      arguments: { experimentId: "nope" },
+    })
+    expect(reads).toBe(1)
+    expect(textOf(result)).toBe(
+      `show_experiment failed: There is no experiment "nope". The experiments are: first.`,
+    )
+  })
+
+  it("hands the source the call's signal, so a cancelled call reaches it", async () => {
+    let sawAbort: (aborted: boolean) => void = () => {}
+    const aborted = new Promise<boolean>((resolve) => (sawAbort = resolve))
+    let begun: () => void = () => {}
+    const started = new Promise<void>((resolve) => (begun = resolve))
+    const client = await connect(
+      clients[1],
+      sourceWith({
+        experiment: (_id, signal) =>
+          new Promise((resolve) => {
+            signal.addEventListener("abort", () => {
+              sawAbort(true)
+              resolve(undefined)
+            })
+            begun()
+          }),
+      }),
+    )
+    const cancel = new AbortController()
+    const call = client.callTool(
+      { name: "show_experiment", arguments: { experimentId: checkoutExperimentId } },
+      { signal: cancel.signal },
+    )
+    await started
+    cancel.abort()
+    await expect(call).rejects.toThrow()
+    expect(await aborted).toBe(true)
+  })
+
   it("refuses a source that lists its experiments wrongly", async () => {
     const client = await connect(
       clients[0],
@@ -507,8 +568,61 @@ describe("open_file", () => {
     )
   })
 
+  it("hands the source the call's signal, so a cancelled call reaches it", async () => {
+    let sawAbort: (aborted: boolean) => void = () => {}
+    const aborted = new Promise<boolean>((resolve) => (sawAbort = resolve))
+    let begun: () => void = () => {}
+    const started = new Promise<void>((resolve) => (begun = resolve))
+    const client = await connect(
+      clients[1],
+      sourceWith({
+        openFile: (_request, signal) =>
+          new Promise((resolve) => {
+            signal.addEventListener("abort", () => {
+              sawAbort(true)
+              resolve({ kind: "unavailable", reason: "Cancelled." })
+            })
+            begun()
+          }),
+      }),
+    )
+    const cancel = new AbortController()
+    const call = client.callTool(
+      {
+        name: "open_file",
+        arguments: { experimentId: checkoutExperimentId, runId: run.id, path },
+      },
+      { signal: cancel.signal },
+    )
+    await started
+    cancel.abort()
+    await expect(call).rejects.toThrow()
+    expect(await aborted).toBe(true)
+  })
+
+  it("reads the opening the source answered once, and serves only its copy", async () => {
+    let reads = 0
+    const answer = Object.defineProperty(
+      { kind: "download", name: "a.diff", mimeType: "text/x-diff", text: "" },
+      "text",
+      { enumerable: true, get: () => (++reads === 1 ? "first" : "later") },
+    )
+    const result = await open(async () => answer as FileOpening, {
+      experimentId: checkoutExperimentId,
+      runId: run.id,
+      path,
+    })
+    expect(reads).toBe(1)
+    expect(textOf(result)).toMatch(/:\n\nfirst$/)
+    expect(result.structuredContent).toMatchObject({ opening: { text: "first" } })
+  })
+
   it.each([
     ["a link that is not a URL", { kind: "link", url: "not a url" }],
+    ["a javascript: link", { kind: "link", url: "javascript:alert(1)" }],
+    ["a data: link", { kind: "link", url: "data:text/html,<script>1</script>" }],
+    ["a file: link", { kind: "link", url: "file:///etc/passwd" }],
+    ["an editor's own scheme", { kind: "link", url: "vscode://file/a.ts" }],
     ["an opening of another kind", { kind: "editor" }],
     ["a key an opening does not have", { kind: "unavailable", reason: "x", extra: 1 }],
     ["a blank reason", { kind: "unavailable", reason: " " }],

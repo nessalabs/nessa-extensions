@@ -21,9 +21,11 @@ import {
   invalidText,
   missingRunText,
   missingText,
+  noChangeText,
   openingText,
   runText,
   runsText,
+  unchangedPathText,
 } from "./text.ts"
 import { experimentView } from "./view.ts"
 
@@ -109,12 +111,8 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
         run: async ({ experimentId }, { signal }) => {
           const experiment = await experimentOf(experimentId, signal)
           const runs = runsNewestFirst(experiment)
-          const lines = runsText(experiment, runs)
           return {
-            text:
-              lines.length === 0
-                ? `Experiment ${experiment.id} has no runs yet.`
-                : [`The runs of ${experiment.title}, newest first:`, ...lines].join("\n"),
+            text: runsText(experiment, runs),
             data: { experimentId: experiment.id, runs },
           }
         },
@@ -160,17 +158,13 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
           const run = runOf(experiment, runId)
           if (run === undefined) throw new Refusal(missingRunText(experiment, runId))
           if (run.change === undefined) {
-            throw new Refusal(
-              `Run ${run.id} of experiment ${experiment.id} records no change.`,
-            )
+            throw new Refusal(noChangeText(experiment, run))
           }
           if (
             path !== undefined &&
             !run.change.files.some((file) => file.path === path)
           ) {
-            throw new Refusal(
-              `Run ${run.id} of experiment ${experiment.id} did not change ${JSON.stringify(path)}.`,
-            )
+            throw new Refusal(unchangedPathText(experiment, run, path))
           }
           const request: FileRequest = {
             experimentId: experiment.id,

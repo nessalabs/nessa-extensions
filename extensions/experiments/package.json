@@ -8,13 +8,11 @@
   "bin": {
     "experiments": "./dist/main.js"
   },
-  "dependencies": {
-    "zod": "^4.6.5"
-  },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.2.0",
     "@nessalabs/server-kit": "workspace:*",
     "vite": "^8.3.1",
-    "vitest": "^3.2.7"
+    "vitest": "^3.2.7",
+    "zod": "^4.6.5"
   }
 }

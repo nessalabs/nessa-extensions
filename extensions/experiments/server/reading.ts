@@ -45,7 +45,15 @@ export async function readExperiment(
   signal: AbortSignal,
 ): Promise<Reading> {
   const held = await source.experiment(id, signal)
-  if (held === undefined) return { kind: "missing", ids: await readIds(source, signal) }
+  if (held === undefined) {
+    const known = await readIds(source, signal)
+    if (known.includes(id)) {
+      throw new SourceError(
+        `the source lists experiment ${JSON.stringify(id)} but has none`,
+      )
+    }
+    return { kind: "missing", ids: known }
+  }
   const validation = validateExperiment(held)
   if (validation.kind === "invalid") return validation
   if (validation.experiment.id !== id) {
@@ -56,8 +64,15 @@ export async function readExperiment(
   return { kind: "ready", experiment: validation.experiment }
 }
 
+/**
+ * A link a host may open: `http` or `https` only. A source is not trusted,
+ * and a `javascript:` or `data:` URL handed to `ui/open-link` would run what
+ * the source wrote; an editor's own scheme would be a decision of its own.
+ */
+const link = z.url({ protocol: /^https?$/ })
+
 const opening = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("link"), url: z.url() }).readonly(),
+  z.strictObject({ kind: z.literal("link"), url: link }).readonly(),
   z
     .strictObject({
       kind: z.literal("download"),

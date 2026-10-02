@@ -28,6 +28,9 @@ import type { FileOpening, FileRequest } from "./source.ts"
 /** How many of a run's files its text names; the rest are counted. */
 export const filesNamed = 20
 
+/** How many runs a list of runs names; the rest are counted. */
+export const runsNamed = 50
+
 /** How many of an invalid experiment's problems its text names; the rest are counted. */
 export const problemsNamed = 20
 
@@ -35,6 +38,10 @@ export const problemsNamed = 20
 export const downloadShown = 20_000
 
 const count = (value: number) => value.toLocaleString("en-US")
+
+/** `value` things: "1 file", "2 files". */
+const counted = (value: number, one: string, other: string) =>
+  `${count(value)} ${value === 1 ? one : other}`
 
 const time = (at: number) => new Date(at).toISOString()
 
@@ -163,15 +170,28 @@ export function experimentText(experiment: Experiment): string {
     lines.push(
       "",
       "Runs, newest first:",
-      ...runsText(experiment, runsNewestFirst(experiment)),
+      ...runLines(experiment, runsNewestFirst(experiment)),
     )
   }
   return lines.join("\n")
 }
 
-/** What `list_runs` says: one line for each of `runs`, in their order. */
-export function runsText(experiment: Experiment, runs: readonly Run[]): string[] {
-  return runs.map((run) => runLine(experiment, run))
+/** One line for each of `runs`, in their order, capped at `runsNamed`. */
+function runLines(experiment: Experiment, runs: readonly Run[]): string[] {
+  return capped(
+    runs.map((run) => runLine(experiment, run)),
+    runsNamed,
+  )
+}
+
+/** What `list_runs` says about `runs`, the experiment's runs newest first. */
+export function runsText(experiment: Experiment, runs: readonly Run[]): string {
+  return runs.length === 0
+    ? `Experiment ${experiment.id} has no runs yet.`
+    : [
+        `The runs of ${experiment.title}, newest first:`,
+        ...runLines(experiment, runs),
+      ].join("\n")
 }
 
 /** What `get_run` says: the run in full, its files capped at `filesNamed`. */
@@ -224,7 +244,7 @@ export function runText(experiment: Experiment, run: Run): string {
   if (run.change !== undefined) {
     const { added, removed } = lineTotals(run.change)
     lines.push(
-      `Change: ${run.change.summary} ${count(run.change.files.length)} ${run.change.files.length === 1 ? "file" : "files"}, ${count(added)} lines added and ${count(removed)} removed:`,
+      `Change: ${run.change.summary} ${counted(run.change.files.length, "file", "files")}, ${counted(added, "line", "lines")} added and ${count(removed)} removed:`,
       ...capped(
         run.change.files.map(
           (file) =>
@@ -256,6 +276,20 @@ export function invalidText(id: string, problems: readonly Problem[]): string {
       problemsNamed,
     ),
   ].join("\n")
+}
+
+/** What `open_file` says when the run records no change. */
+export function noChangeText(experiment: Experiment, run: Run): string {
+  return `Run ${run.id} of experiment ${experiment.id} records no change.`
+}
+
+/** What `open_file` says when the run did not change `path`. */
+export function unchangedPathText(
+  experiment: Experiment,
+  run: Run,
+  path: string,
+): string {
+  return `Run ${run.id} of experiment ${experiment.id} did not change ${JSON.stringify(path)}.`
 }
 
 /** What a tool says when the experiment has no run `runId`. */
