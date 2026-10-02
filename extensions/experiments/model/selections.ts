@@ -6,30 +6,22 @@
  * run is not found here by score or by order (nessa-agent ADR 333, "The
  * harness decides, the window shows"; `selections.test.ts`, "bestVersion").
  */
-import type { Baseline, Cases, Experiment, Run, RunChange, Score } from "./experiment.ts"
+import {
+  scoreOf,
+  measureOf,
+  type Baseline,
+  type Experiment,
+  type Run,
+  type RunChange,
+} from "./experiment.ts"
 import { changeBetween, formatValue, type Change, type Formatted } from "./metric.ts"
-
-/** Something scored and measured: the baseline or a run. */
-type Scored = Pick<Baseline, "scores" | "measures">
-
-/** `owner`'s score on `splitId`, if it has one. */
-export function scoreOf(owner: Scored, splitId: string): Score | undefined {
-  return Object.hasOwn(owner.scores, splitId) ? owner.scores[splitId] : undefined
-}
-
-/** `owner`'s measure for `guardrailId`, if it has one. */
-export function measureOf(owner: Scored, guardrailId: string): number | undefined {
-  return Object.hasOwn(owner.measures, guardrailId)
-    ? owner.measures[guardrailId]
-    : undefined
-}
 
 /** The run with `id`, if there is one. */
 export function runOf(experiment: Experiment, id: string): Run | undefined {
   return experiment.runs.find((run) => run.id === id)
 }
 
-/** The runs by id. Validation holds that ids are unique. */
+/** The runs by id; validation holds them unique (`run-ids-unique`). */
 const runsById = (experiment: Experiment): ReadonlyMap<string, Run> =>
   new Map(experiment.runs.map((run) => [run.id, run]))
 
@@ -45,7 +37,7 @@ export type BestVersion =
 
 export function bestVersion(experiment: Experiment): BestVersion {
   const last = experiment.bestSoFar.at(-1)
-  // Validation holds that every bestSoFar id names a run.
+  // Validation holds that every bestSoFar id names a run (`best-runs-kept`).
   const run = last === undefined ? undefined : runOf(experiment, last)
   return run === undefined
     ? { kind: "baseline", baseline: experiment.baseline }
@@ -96,11 +88,38 @@ export function climb(experiment: Experiment): Climb {
   for (const runId of experiment.bestSoFar) {
     const run = byId.get(runId)
     const score = run === undefined ? undefined : scoreOf(run, primarySplit)
-    // Validation holds that each is a kept, settled run scored on the primary split.
+    // Validation holds that each is a kept, settled run scored on the primary
+    // split (`best-runs-kept`, `settled-when-decided`, `best-runs-scored`).
     if (run?.settledAt === undefined || score === undefined) continue
     best.push({ runId, at: run.settledAt, value: score.mean })
   }
   return { points, best }
+}
+
+/**
+ * The change from `from` to `to` in the experiment's own metric, read
+ * against its `noise`. Which noise applies is decided here and nowhere else.
+ */
+export function metricChange(experiment: Experiment, from: number, to: number): Change {
+  const { metric, noise } = experiment.definition
+  return changeBetween(metric, from, to, noise)
+}
+
+/**
+ * The change from `from` to `to` in the metric of the guardrail with
+ * `guardrailId`, with no noise: the definition's is its own metric's. Or
+ * `undefined` when there is no such guardrail.
+ */
+export function guardrailChange(
+  experiment: Experiment,
+  guardrailId: string,
+  from: number,
+  to: number,
+): Change | undefined {
+  const guardrail = experiment.definition.guardrails.find(
+    (each) => each.id === guardrailId,
+  )
+  return guardrail === undefined ? undefined : changeBetween(guardrail.metric, from, to)
 }
 
 /** A step on the path to the best version, and what it gained on the one before. */
@@ -112,7 +131,7 @@ export interface PathStep {
 
 /** `bestSoFar` in order, each with its gain. */
 export function pathToBest(experiment: Experiment): readonly PathStep[] {
-  const { metric, primarySplit, noise } = experiment.definition
+  const { primarySplit } = experiment.definition
   const byId = runsById(experiment)
   let before = scoreOf(experiment.baseline, primarySplit)?.mean
   return experiment.bestSoFar.flatMap((runId) => {
@@ -122,7 +141,7 @@ export function pathToBest(experiment: Experiment): readonly PathStep[] {
     const gain =
       before === undefined || mean === undefined
         ? undefined
-        : changeBetween(metric, before, mean, noise)
+        : metricChange(experiment, before, mean)
     before = mean
     return [gain === undefined ? { run } : { run, gain }]
   })
@@ -208,11 +227,6 @@ export function limitOf(
     value *= measure
   }
   return { kind: "limit", bound, value, formatted: formatValue(guardrail.metric, value) }
-}
-
-/** How many of a run's cases moved: those fixed and those broken. */
-export function movedCount(cases: Cases): number {
-  return cases.fixed + cases.broken
 }
 
 /** Lines a change added and removed, over all its files. */

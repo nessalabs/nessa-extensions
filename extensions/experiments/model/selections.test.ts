@@ -1,22 +1,21 @@
 import { describe, expect, it } from "vitest"
 
 import { checkoutSample, latencySample } from "../samples/index.ts"
-import type { Experiment } from "./experiment.ts"
+import { measureOf, movedCount, scoreOf, type Experiment } from "./experiment.ts"
 import { fixture, start, type Fixture } from "./fixture.ts"
 import {
   bestVersion,
   climb,
   isBaselineScored,
+  guardrailChange,
   limitOf,
   lineage,
   lineTotals,
-  measureOf,
-  movedCount,
+  metricChange,
   pathToBest,
   runOf,
   runsByScore,
   runsNewestFirst,
-  scoreOf,
 } from "./selections.ts"
 import { validateExperiment } from "./validation.ts"
 
@@ -146,6 +145,39 @@ describe("pathToBest", () => {
   it("is up on the hill-climb, where higher is better", () => {
     const tones = pathToBest(checkout).map((step) => step.gain?.tone)
     expect(tones).toEqual(checkout.bestSoFar.map(() => "good"))
+  })
+})
+
+describe("metricChange and guardrailChange", () => {
+  it("read the experiment's own metric against its noise", () => {
+    expect(metricChange(latency, 462, 450)).toEqual({
+      value: -12,
+      size: "12 ms",
+      tone: "neutral",
+    })
+    expect(metricChange(latency, 462, 446)).toEqual({
+      value: -16,
+      size: "16 ms",
+      tone: "good",
+    })
+  })
+
+  it("read a guardrail's metric with no noise, for the experiment's is its own metric's", () => {
+    // Within the latency experiment's noise of 15, were it applied: still bad.
+    expect(guardrailChange(latency, "accuracy", 98, 97.9)).toEqual({
+      value: -0.1,
+      size: "0.1%",
+      tone: "bad",
+    })
+    expect(guardrailChange(checkout, "cost", 5.2, 5.0)).toEqual({
+      value: -0.2,
+      size: "0.20¢",
+      tone: "good",
+    })
+  })
+
+  it("is undefined for a guardrail that is not one", () => {
+    expect(guardrailChange(checkout, "toString", 1, 2)).toBeUndefined()
   })
 })
 

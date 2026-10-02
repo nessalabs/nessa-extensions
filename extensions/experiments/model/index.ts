@@ -31,9 +31,12 @@ export {
   type RunChange,
   type Score,
   type Slice,
+  measureOf,
+  movedCount,
+  scoreOf,
 } from "./experiment.ts"
 export {
-  changeBetween,
+  formatSize,
   formatValue,
   type Change,
   type ChangeTone,

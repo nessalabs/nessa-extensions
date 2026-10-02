@@ -66,13 +66,16 @@ export function casesFor(
   const fixedBy = spread(fixed, weights)
   const brokenBy = spread(broken, weights)
   const passingBy = spread(passing, weights)
+  // Each slice's own fixed and broken cases are fixedBy and brokenBy, so its
+  // passing before leaves room for both — a fixed case failed before, a
+  // broken one passed — and after is before moved by them.
   const slices = kinds.map((kind, index) => {
     const size = sizes[index]
-    const passingBefore = Math.min(size, Math.max(brokenBy[index], passingBy[index]))
-    const passingAfter = Math.min(
-      size,
-      Math.max(0, passingBefore + fixedBy[index] - brokenBy[index]),
+    const passingBefore = Math.min(
+      size - fixedBy[index],
+      Math.max(brokenBy[index], passingBy[index]),
     )
+    const passingAfter = passingBefore + fixedBy[index] - brokenBy[index]
     return { name: kind.name, total: size, passingBefore, passingAfter }
   })
   const moved = fixed + broken
@@ -87,13 +90,16 @@ export function casesFor(
     return `C-${String(number).padStart(7, "0")}`
   }
   const page: CasesInput["moved"][number][] = []
+  // Round the slices, each listing no more than it moved.
   for (const [move, listed, by] of [
     ["fixed", pageFixed, fixedBy],
     ["broken", pageBroken, brokenBy],
   ] as const) {
+    const left = [...by]
     let slice = 0
     for (let each = 0; each < listed; each += 1) {
-      while (by[slice % kinds.length] === 0) slice += 1
+      while (left[slice % kinds.length] === 0) slice += 1
+      left[slice % kinds.length] -= 1
       const kind = kinds[slice % kinds.length]
       page.push({
         id: caseId(),

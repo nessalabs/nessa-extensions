@@ -24,9 +24,9 @@ declare class ChangeBrand {
 }
 
 /**
- * A change in a metric, as a view draws it. `value` is the change rounded to
- * the metric's decimals (not `-0`: `metric.test.ts`), so its sign, `size` and `tone` agree;
- * `size` is its magnitude written in the delta unit, with no sign.
+ * A change in a metric, as a view draws it: `value`, the change as written
+ * (never `-0`: `metric.test.ts`), so its sign, `size` and `tone` agree;
+ * `size`, its magnitude written in the delta unit, with no sign.
  */
 export type Change = ChangeBrand & {
   readonly value: number
@@ -57,20 +57,10 @@ function digits(value: number, decimals: number): string {
   return writer.format(Math.abs(value))
 }
 
-/**
- * `value` rounded as it is written to `decimals`. A negative that rounds to
- * nothing is `-0`, which `written` writes as "0" and a `Change`'s second
- * rounding makes `0` (`metric.test.ts`).
- */
-function rounded(value: number, decimals: number): number {
-  const magnitude = Number(digits(value, decimals))
-  return value < 0 ? -magnitude : magnitude
-}
-
-/** `value` to `decimals` places, a negative with a minus sign: "−3.5". */
+/** `value` to `decimals` places, a negative with a minus sign ("−3.5"), and nothing as "0". */
 function written(value: number, decimals: number): string {
-  const result = rounded(value, decimals)
-  return result < 0 ? `${minus}${digits(result, decimals)}` : digits(result, decimals)
+  const text = digits(value, decimals)
+  return value < 0 && Number(text) !== 0 ? `${minus}${text}` : text
 }
 
 /** A value of `metric`: its number to the metric's decimals, then its unit as given. */
@@ -78,13 +68,37 @@ export function formatValue(metric: Metric, value: number): Formatted {
   return `${written(value, metric.decimals)}${metric.unit}` as Formatted
 }
 
+/** What a size of `metric` is written in: its delta unit, or its unit. */
+const sizeUnit = (metric: Metric) => metric.deltaUnit ?? metric.unit
+
+/**
+ * A size in `metric`, such as a score's interval or the noise: its magnitude
+ * to the metric's decimals, with no sign, in the delta unit ("1.2 pts").
+ */
+export function formatSize(metric: Metric, size: number): Formatted {
+  return `${digits(size, metric.decimals)}${sizeUnit(metric)}` as Formatted
+}
+
+/** `value` as written to `places`, in units of its last place: 1.25 at 2 is 125. */
+function scaled(value: number, places: number): bigint {
+  const units = BigInt(digits(value, places).replace(".", ""))
+  return value < 0 ? -units : units
+}
+
+/** The magnitude of `units` of the last of `places` places, written: 125 at 2 is "1.25". */
+function unscaled(units: bigint, places: number): string {
+  const text = (units < 0n ? -units : units).toString().padStart(places + 1, "0")
+  return places === 0 ? text : `${text.slice(0, -places)}.${text.slice(-places)}`
+}
+
 /**
  * The change in `metric` from `from` to `to`, as two values written side by
- * side read: the difference of the two rounded as they are written, so the
- * change agrees with them (`metric.test.ts`). Its tone is `neutral` when its
- * magnitude is 0 or within `noise` (the definition's, for its own metric;
- * none for a guardrail's), and otherwise `good` when it moves the way the
- * metric's `better` says and `bad` when it does not.
+ * side read: the exact difference of the two as they are written, so the
+ * change agrees with them at any size (`metric.test.ts`). Its tone is
+ * `neutral` when its magnitude is 0 or within `noise`, and otherwise `good`
+ * when it moves the way the metric's `better` says and `bad` when it does
+ * not. Which noise applies is `selections.ts`'s to say (`metricChange`,
+ * `guardrailChange`), so the model's barrel does not export this.
  */
 export function changeBetween(
   metric: Metric,
@@ -92,17 +106,14 @@ export function changeBetween(
   to: number,
   noise?: number,
 ): Change {
-  const { decimals } = metric
-  // Rounded again: the difference of two rounded decimals can carry a binary
-  // remainder (0.30000000000000004).
-  const value = rounded(rounded(to, decimals) - rounded(from, decimals), decimals)
-  const magnitude = Math.abs(value)
+  const units = scaled(to, metric.decimals) - scaled(from, metric.decimals)
+  const magnitude = unscaled(units, metric.decimals)
+  const value = units === 0n ? 0 : Number(units < 0n ? `-${magnitude}` : magnitude)
   const tone: ChangeTone =
-    magnitude === 0 || (noise !== undefined && magnitude <= noise)
+    units === 0n || (noise !== undefined && Math.abs(value) <= noise)
       ? "neutral"
       : value > 0 === (metric.better === "up")
         ? "good"
         : "bad"
-  const size = `${written(magnitude, decimals)}${metric.deltaUnit ?? metric.unit}`
-  return Object.freeze({ value, size, tone }) as Change
+  return Object.freeze({ value, size: `${magnitude}${sizeUnit(metric)}`, tone }) as Change
 }

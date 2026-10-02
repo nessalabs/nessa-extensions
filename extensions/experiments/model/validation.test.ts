@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest"
 
-import type { Experiment, ExperimentData } from "./experiment.ts"
+import { scoreOf, type Experiment, type ExperimentData } from "./experiment.ts"
 import { fixture, start, type Fixture } from "./fixture.ts"
-import { scoreOf } from "./selections.ts"
 import { rules, validateExperiment, type Path, type Rule } from "./validation.ts"
 
 /** The rule and path of each problem `input` has; empty when it is valid. */
@@ -200,6 +199,7 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         name: "counts of 0",
         edit: (e) => {
           cases(e).slices[1] = { name: "s2", total: 0, passingBefore: 0, passingAfter: 0 }
+          cases(e).moved = [cases(e).moved[0]!]
         },
       },
       {
@@ -207,6 +207,12 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         edit: (e) => {
           cases(e).total = 1000
           cases(e).fixed = 200
+          cases(e).slices[0] = {
+            name: "s1",
+            total: 600,
+            passingBefore: 300,
+            passingAfter: 500,
+          }
           cases(e).moved = Array.from({ length: 200 }, (_, index) => ({
             id: `m${index}`,
             title: "Moved",
@@ -681,10 +687,20 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
     ],
     holds: [
       {
-        name: "every case passing",
+        name: "every case passing, after in one slice and before in another",
         edit: (e) => {
-          cases(e).slices[0]!.passingBefore = 60
-          cases(e).slices[0]!.passingAfter = 60
+          cases(e).slices[0] = {
+            name: "s1",
+            total: 60,
+            passingBefore: 58,
+            passingAfter: 60,
+          }
+          cases(e).slices[1] = {
+            name: "s2",
+            total: 20,
+            passingBefore: 20,
+            passingAfter: 19,
+          }
         },
       },
     ],
@@ -706,27 +722,66 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
       { name: "a slice of every case", edit: (e) => (cases(e).slices[0]!.total = 100) },
     ],
   },
-  "slice-change-within-moved": {
+  "slice-coherent": {
     breaks: [
       {
         name: "a slice passing more by more than were fixed",
         edit: (e) => (cases(e).slices[0]!.passingAfter = 34),
-        problems: [
-          {
-            rule: "slice-change-within-moved",
-            path: ["runs", 0, "cases", "slices", 0, "passingAfter"],
-          },
-        ],
+        problems: [{ rule: "slice-coherent", path: ["runs", 0, "cases", "slices", 0] }],
       },
       {
         name: "a slice passing fewer by more than were broken",
         edit: (e) => (cases(e).slices[1]!.passingAfter = 18),
-        problems: [
-          {
-            rule: "slice-change-within-moved",
-            path: ["runs", 0, "cases", "slices", 1, "passingAfter"],
-          },
-        ],
+        problems: [{ rule: "slice-coherent", path: ["runs", 0, "cases", "slices", 1] }],
+      },
+      {
+        name: "a broken case listed in a slice with no cases",
+        edit: (e) => {
+          cases(e).slices[1] = { name: "s2", total: 0, passingBefore: 0, passingAfter: 0 }
+        },
+        problems: [{ rule: "slice-coherent", path: ["runs", 0, "cases", "slices", 1] }],
+      },
+      {
+        name: "a broken case listed in a slice with nothing passing before",
+        edit: (e) => {
+          cases(e).slices[1] = {
+            name: "s2",
+            total: 40,
+            passingBefore: 0,
+            passingAfter: 0,
+          }
+        },
+        problems: [{ rule: "slice-coherent", path: ["runs", 0, "cases", "slices", 1] }],
+      },
+      {
+        name: "a fixed case listed in a slice that was all passing before",
+        edit: (e) => {
+          cases(e).fixed = 1
+          cases(e).slices[0] = {
+            name: "s1",
+            total: 60,
+            passingBefore: 60,
+            passingAfter: 60,
+          }
+        },
+        problems: [{ rule: "slice-coherent", path: ["runs", 0, "cases", "slices", 0] }],
+      },
+      {
+        name: "more fixed listed in a slice than its fall leaves room for",
+        edit: (e) => {
+          cases(e).fixed = 3
+          cases(e).broken = 2
+          cases(e).slices = [
+            { name: "s1", total: 60, passingBefore: 30, passingAfter: 28 },
+          ]
+          cases(e).moved = [1, 2, 3].map((n) => ({
+            id: `c${n}`,
+            title: "Fixed",
+            slice: "s1",
+            move: "fixed" as const,
+          }))
+        },
+        problems: [{ rule: "slice-coherent", path: ["runs", 0, "cases", "slices", 0] }],
       },
     ],
     holds: [
@@ -735,6 +790,35 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         edit: (e) => {
           cases(e).slices[0]!.passingAfter = 33
           cases(e).slices[1]!.passingAfter = 19
+        },
+      },
+      {
+        name: "slices that overlap: one of every case beside the others",
+        edit: (e) =>
+          cases(e).slices.push({
+            name: "all",
+            total: 100,
+            passingBefore: 50,
+            passingAfter: 52,
+          }),
+      },
+      {
+        name: "one slice covering some of the cases",
+        edit: (e) => {
+          cases(e).slices = [{ name: "s1", total: 10, passingBefore: 5, passingAfter: 5 }]
+          cases(e).moved = []
+        },
+      },
+      {
+        name: "churn: as many fixed as broken, and no change",
+        edit: (e) => {
+          cases(e).fixed = 1
+          cases(e).broken = 1
+          cases(e).slices[0]!.passingAfter = 30
+          cases(e).moved = [
+            { id: "c1", title: "Case 1", slice: "s1", move: "fixed" },
+            { id: "c2", title: "Case 2", slice: "s1", move: "broken" },
+          ]
         },
       },
     ],
@@ -769,10 +853,12 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
   "moved-page-within-counts": {
     breaks: [
       {
+        // Each slice alone could hold its one fixed case; together they list two.
         name: "more fixed listed than fixed",
         edit: (e) => {
-          cases(e).fixed = 0
-          cases(e).slices[0]!.passingAfter = 30
+          cases(e).fixed = 1
+          cases(e).slices[0]!.passingAfter = 31
+          cases(e).moved.push({ id: "c3", title: "Case 3", slice: "s2", move: "fixed" })
         },
         problems: [
           { rule: "moved-page-within-counts", path: ["runs", 0, "cases", "moved"] },
@@ -780,7 +866,8 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
       },
       {
         name: "more broken listed than broken",
-        edit: (e) => (cases(e).broken = 0),
+        edit: (e) =>
+          cases(e).moved.push({ id: "c4", title: "Case 4", slice: "s1", move: "broken" }),
         problems: [
           { rule: "moved-page-within-counts", path: ["runs", 0, "cases", "moved"] },
         ],

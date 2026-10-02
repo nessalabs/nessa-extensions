@@ -62,7 +62,7 @@ export function scaleSample(startedAt: number): ExperimentInput {
           total: scaleCases,
           fixed: 41_820,
           broken: 23_115,
-          passing: 980_000,
+          passing: 900_000,
         }),
         change: changeFor(
           "planner",

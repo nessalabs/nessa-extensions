@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest"
 
 import type { Metric } from "./definition.ts"
-import { changeBetween, formatValue, type Change, type Formatted } from "./metric.ts"
+import {
+  changeBetween,
+  formatSize,
+  formatValue,
+  type Change,
+  type Formatted,
+} from "./metric.ts"
 
 const percent: Metric = {
   id: "resolution",
@@ -123,12 +129,33 @@ describe("changeBetween", () => {
     expect(changeBetween(percent, 50.04, 50.56, 0.5).tone).toBe("good")
   })
 
+  it("is exact at any size the definition allows, past what a double holds", () => {
+    const fine = { ...percent, decimals: 10 }
+    expect(formatValue(fine, 598173.4644613)).toBe("598173.4644613000%")
+    expect(changeBetween(fine, 466000, 598173.4644613).size).toBe("132173.4644613000 pts")
+    const coarse = { ...percent, decimals: 3 }
+    expect(changeBetween(coarse, 87020800000000, 81172513580495.73)).toEqual({
+      value: -5848286419504.27,
+      size: "5848286419504.270 pts",
+      tone: "bad",
+    })
+  })
+
   it("carries no binary remainder", () => {
     expect(changeBetween(percent, 0.1, 0.4).value).toBe(0.3)
   })
 
   it("is frozen", () => {
     expect(Object.isFrozen(changeBetween(percent, 0, 1))).toBe(true)
+  })
+})
+
+describe("formatSize", () => {
+  it("writes a size in the delta unit, with no sign", () => {
+    expect(formatSize(percent, 1.24)).toBe("1.2 pts")
+    expect(formatSize(percent, -1.24)).toBe("1.2 pts")
+    expect(formatSize(latency, 15)).toBe("15 ms")
+    expect(formatSize(percent, 0.35)).toBe("0.4 pts")
   })
 })
 

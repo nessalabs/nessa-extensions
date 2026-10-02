@@ -21,7 +21,13 @@
  *
  * `validation.test.ts` tests each rule both ways.
  */
-import { experimentData, type Experiment, type ExperimentData } from "./experiment.ts"
+import {
+  experimentData,
+  movedCount,
+  scoreOf,
+  type Experiment,
+  type ExperimentData,
+} from "./experiment.ts"
 
 /** The rules, each named for what it holds. */
 export const rules = [
@@ -57,7 +63,7 @@ export const rules = [
   // Cases and changes.
   "slice-passing-within-total",
   "slice-within-cases",
-  "slice-change-within-moved",
+  "slice-coherent",
   "slice-names-unique",
   "moved-within-total",
   "moved-page-within-counts",
@@ -352,7 +358,7 @@ function problemsOf(experiment: ExperimentData): Problem[] {
       report("best-runs-kept", at, `${runId} is not a kept run`)
       return
     }
-    if (!Object.hasOwn(run.scores, definition.primarySplit)) {
+    if (scoreOf(run, definition.primarySplit) === undefined) {
       report("best-runs-scored", at, `${runId} has no score on the primary split`)
     }
     // A kept run's outcome is decided, so its settledAt is present; when it is
@@ -382,9 +388,15 @@ function checkCases(
   at: Path,
   report: (rule: Rule, path: Path, message: string) => void,
 ) {
+  // How many of the page's cases each slice lists, fixed and broken.
+  const listed = new Map<string, { fixed: number; broken: number }>()
+  for (const moved of cases.moved) {
+    const counts = listed.get(moved.slice) ?? { fixed: 0, broken: 0 }
+    counts[moved.move] += 1
+    listed.set(moved.slice, counts)
+  }
   cases.slices.forEach((slice, index) => {
-    // A slice is a group of the run's cases: no larger than they are, and
-    // moved by no more of them than were fixed, or broken.
+    // A slice is a group of the run's cases: no larger than they are.
     if (slice.total > cases.total) {
       report(
         "slice-within-cases",
@@ -392,22 +404,23 @@ function checkCases(
         `slice ${slice.name} has more cases than the run`,
       )
     }
-    const change = slice.passingAfter - slice.passingBefore
-    if (change > cases.fixed || -change > cases.broken) {
-      report(
-        "slice-change-within-moved",
-        [...at, "slices", index, "passingAfter"],
-        `slice ${slice.name} moved by more cases than were ${change > 0 ? "fixed" : "broken"}`,
-      )
-    }
+    let passingWithin = true
     for (const key of ["passingBefore", "passingAfter"] as const) {
       if (slice[key] > slice.total) {
+        passingWithin = false
         report(
           "slice-passing-within-total",
           [...at, "slices", index, key],
           `slice ${slice.name} has more passing than it has cases`,
         )
       }
+    }
+    if (passingWithin && !coherent(slice, cases, listed.get(slice.name))) {
+      report(
+        "slice-coherent",
+        [...at, "slices", index],
+        `no number of cases fixed and broken in slice ${slice.name} agrees with its counts, the run's, and the cases it lists`,
+      )
     }
   })
   const sliceNames = uniqueIds(
@@ -419,7 +432,7 @@ function checkCases(
         `slice ${duplicate} is listed twice`,
       ),
   )
-  if (cases.fixed + cases.broken > cases.total) {
+  if (movedCount(cases) > cases.total) {
     report("moved-within-total", at, "more cases moved than the run has")
   }
   const movedFixed = cases.moved.filter((moved) => moved.move === "fixed").length
@@ -455,6 +468,43 @@ function checkCases(
       )
     }
   })
+}
+
+/**
+ * Whether some number of a slice's cases fixed and broken agrees with what is
+ * said of it. Of a slice with `total` cases, `before` passing before the run
+ * and `after` after, `f` fixed and `b` broken must have
+ *
+ * - `f - b = after - before`: passing changes only by cases moving;
+ * - `f ≤` the run's `fixed` and `b ≤` its `broken`;
+ * - `b ≤ before`: a broken case passed before (and so `f ≤ after`, a fixed
+ *   case passes after, once `f - b` is fixed);
+ * - `b ≤ total - after`: a broken case fails after (and so `f ≤ total -
+ *   before`, a fixed case failed before);
+ * - `f` and `b` at least the cases the page lists as fixed and broken in it
+ *   (and so neither below 0).
+ *
+ * With `f = b + (after - before)`, that is a lowest `b` no higher than the
+ * highest. It holds whether slices overlap or cover only some of the cases.
+ */
+function coherent(
+  slice: {
+    readonly total: number
+    readonly passingBefore: number
+    readonly passingAfter: number
+  },
+  cases: { readonly fixed: number; readonly broken: number },
+  listed: { readonly fixed: number; readonly broken: number } = { fixed: 0, broken: 0 },
+): boolean {
+  const change = slice.passingAfter - slice.passingBefore
+  const lowest = Math.max(listed.broken, listed.fixed - change)
+  const highest = Math.min(
+    cases.broken,
+    slice.passingBefore,
+    slice.total - slice.passingAfter,
+    cases.fixed - change,
+  )
+  return lowest <= highest
 }
 
 /** `items` by id, the first with each id. */

@@ -212,6 +212,29 @@ export const note = z
   .readonly()
 export type Note = z.output<typeof note>
 
+/** Something scored and measured: the baseline or a run. */
+type Scored = Pick<Baseline, "scores" | "measures">
+
+/**
+ * `owner`'s score on `splitId`, if it has one: the table's own entry only, as
+ * the ids that key it come from outside (`selections.test.ts`).
+ */
+export function scoreOf(owner: Scored, splitId: string): Score | undefined {
+  return Object.hasOwn(owner.scores, splitId) ? owner.scores[splitId] : undefined
+}
+
+/** `owner`'s measure for `guardrailId`, if it has one, read as `scoreOf` reads. */
+export function measureOf(owner: Scored, guardrailId: string): number | undefined {
+  return Object.hasOwn(owner.measures, guardrailId)
+    ? owner.measures[guardrailId]
+    : undefined
+}
+
+/** How many of a run's cases moved: those fixed and those broken. */
+export function movedCount(cases: Cases): number {
+  return cases.fixed + cases.broken
+}
+
 /** The shape of an experiment, before the rules that span its fields are checked. */
 export const experimentData = z
   .strictObject({
@@ -248,9 +271,11 @@ declare class Validated {
 }
 
 /**
- * An experiment `validateExperiment` checked. Only it makes one — by a cast,
- * in one place, of the frozen copy its parser made — so a view cannot be
- * handed one that was not checked (`validation.test.ts`, "is the only way to
- * an Experiment").
+ * An experiment `validateExperiment` checked. It makes one by a cast, in one
+ * place, of the frozen copy its parser made. The brand keeps a spread copy
+ * or a bare shape from passing for one (`validation.test.ts`, "is the only
+ * way to an Experiment"); what a type cannot see — a cast elsewhere, or
+ * `Object.assign`, whose type is the intersection of its arguments — is held
+ * by review.
  */
 export type Experiment = ExperimentData & Validated

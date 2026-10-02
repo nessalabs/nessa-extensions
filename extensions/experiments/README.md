@@ -24,7 +24,7 @@ model/            the domain: pure, no DOM, no Node, no clock; imports neither s
   definition.ts   ExperimentDefinition, Metric, Limit, splits, guardrails, verdicts
   experiment.ts   runs, the baseline, cases, changes, areas, agents, notes; the Experiment brand
   validation.ts   validateExperiment: the only maker of an Experiment, and its rules
-  metric.ts       formatValue and changeBetween: the one place a metric's numbers are written
+  metric.ts       formatValue, formatSize, changeBetween: the one place a metric's numbers are written
   selections.ts   what the views read: the best version, the climb, the path, lineage, order, limits
   index.ts        the model's exports; nothing sample-shaped
   fixture.ts      test support: the smallest experiment with one of everything
@@ -55,11 +55,15 @@ beside what they test.
 - **Numbers are written in `metric.ts`.** A value is `Formatted` text: its
   number to the metric's `decimals`, then its `unit` exactly as given (so a
   definition writes `" ms"` for a space), rounded half away from zero on the
-  decimal it reads as. A change is a `Change`, made from the two values it is
-  between — the difference of the two as written, its size in `deltaUnit`,
-  and its tone by `better` and `noise` — for nessa_ui's `Delta` to draw.
-  Measured numbers stay within ±10¹⁵, so what is worked out from two of them
-  stays finite. Counts are not metric values.
+  decimal it reads as. A size — an interval, the noise — is `Formatted` in
+  `deltaUnit`, with no sign. A change is a `Change`, made from the two values
+  it is between: the exact difference of the two as written, its size in
+  `deltaUnit`, and its tone by `better` and the noise, for nessa_ui's `Delta`
+  to draw. Which noise applies is decided once, in `selections.ts`
+  (`metricChange` for the experiment's metric, `guardrailChange` with none),
+  so the barrel exports those, not `changeBetween`. Measured numbers stay
+  within ±10¹⁵, so what is worked out from two of them stays finite. Counts
+  are not metric values.
 - **Tables are read for what they own.** A run's `scores` and `measures` are
   keyed by ids from outside; `scoreOf` and `measureOf` read them with
   `Object.hasOwn`. A table's own `__proto__` key, which zod's record would
