@@ -65,8 +65,11 @@ serveOverStdio(board)
   refusing keys they do not name, a permission's included — and keeps only
   the copy, so what was checked is what is served. One thing is not copied:
   a tool's `input` is the zod schema it was given, which the kit lists once
-  and parses every call with; it must not be changed after `defineTool`. It throws a `DefinitionError` naming every
-  problem and where it is; the rules are listed on `defineExtension`.
+  and parses every call with, so it must not be changed after `defineTool`.
+  (It is not frozen either: zod shares parts of a schema across the
+  process, such as the regex behind `z.email()`, and freezing them breaks
+  zod for everyone.) It throws a `DefinitionError` naming every problem and where it is; the
+  rules are listed on `defineExtension`.
 - **What a tool answers is parsed too.** Its input is parsed inside the same
   guard as `run`; its `data` is read once, without running getters, into a
   fresh JSON copy at most 256 levels deep, and the copy is what is sent.

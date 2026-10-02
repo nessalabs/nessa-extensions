@@ -9,9 +9,9 @@
  * freezes a copy of each tool. Both record what they made in this module's
  * own registries, and `checkedOf` serves only from those: a tool copied or
  * built by hand, an extension spread into another, or anything changed after
- * the check is refused or never seen — except a tool's `input`, a zod
- * schema that is not copied (see the README). The brands on `Tool` and
- * `Extension` only let the compiler say so first.
+ * the check is refused or never seen. A tool's `input` is the one thing
+ * not copied (see the README). The brands on `Tool` and `Extension` only
+ * let the compiler say so first.
  *
  * What a tool declares and answers is the package README's "Using it".
  */
@@ -395,25 +395,33 @@ function isViewUri(uri: string): boolean {
 const cspSchemes: ReadonlySet<string> = new Set(["http:", "https:", "ws:", "wss:"])
 
 /**
- * Whether `domain` is an origin a CSP source list can hold: `URL` reads it
- * back as exactly its own origin — so no path, query, fragment, credentials,
- * trailing dot or anything a CSP would read as another token — with an
- * allowed scheme. A leading `*.` stands for subdomains of a name with at
- * least two labels.
+ * Whether `domain` is an origin a CSP source list can hold: an `http`,
+ * `https`, `ws` or `wss` scheme, a host, an optional port, and nothing else
+ * — no path, query, fragment, credentials, trailing dot, or anything a CSP
+ * would read as another token, and nothing `URL` would rewrite. Case and
+ * an explicit default port are allowed, as CSP allows them. A leading `*.` stands for subdomains of a
+ * name with at least two labels, never of an address.
  */
 function isOrigin(domain: string): boolean {
-  const wildcard = /^([a-z]+:\/\/)\*\.(.+)$/i.exec(domain)
-  const origin = wildcard ? `${wildcard[1]}${wildcard[2]}` : domain
+  const match =
+    /^([a-z]+):\/\/(\*\.)?((?:[a-z0-9-]+\.)*[a-z0-9-]+|\[[0-9a-f:.]+\])(?::(\d{1,5}))?$/i.exec(
+      domain,
+    )
+  if (match === null) return false
+  const [, scheme = "", wildcard, host = "", port] = match
+  if (!cspSchemes.has(`${scheme.toLowerCase()}:`)) return false
+  // A port is written plainly: no leading zero.
+  if (port !== undefined && !/^(?:0|[1-9]\d*)$/.test(port)) return false
   let url: URL
   try {
-    url = new URL(origin)
+    // Refuses a port past 65535 and a malformed IPv6 address.
+    url = new URL(`${scheme}://${host}${port === undefined ? "" : `:${port}`}`)
   } catch {
     return false
   }
-  if (!cspSchemes.has(url.protocol) || url.origin !== origin) return false
-  if (!/^(?:[a-z0-9-]+(?:\.[a-z0-9-]+)*|\[[0-9a-f:.]+\])$/i.test(url.hostname))
-    return false
-  if (wildcard === null) return true
-  // A wildcard stands for subdomains of a name, not of an address.
-  return url.hostname.split(".").length >= 2 && !/^[\d.]+$|^\[/.test(url.hostname)
+  // `URL` rewrites a host it reads as an address (`0x7f.1`, `1.2.3`); a CSP
+  // compares hosts as written, so a host `URL` changes is not one to hold.
+  if (url.hostname !== host.toLowerCase()) return false
+  if (wildcard === undefined) return true
+  return host.split(".").length >= 2 && !/^[\d.]+$|^\[/.test(host)
 }
