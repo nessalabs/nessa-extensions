@@ -31,6 +31,9 @@ export const filesNamed = 20
 /** How many runs a list of runs names; the rest are counted. */
 export const runsNamed = 50
 
+/** How many experiments' ids a text names; the rest are counted. */
+export const idsNamed = 50
+
 /** How many of an invalid experiment's problems its text names; the rest are counted. */
 export const problemsNamed = 20
 
@@ -261,7 +264,7 @@ export function runText(experiment: Experiment, run: Run): string {
 export function missingText(id: string, ids: readonly string[]): string {
   return ids.length === 0
     ? `There is no experiment ${JSON.stringify(id)}: there are no experiments.`
-    : `There is no experiment ${JSON.stringify(id)}. The experiments are: ${ids.join(", ")}.`
+    : `There is no experiment ${JSON.stringify(id)}. The experiments are: ${capped(ids, idsNamed).join(", ")}.`
 }
 
 /** What a tool says when the experiment `id` is not one the views can show. */
@@ -297,6 +300,16 @@ export function missingRunText(experiment: Experiment, runId: string): string {
   return `Experiment ${experiment.id} has no run ${JSON.stringify(runId)}.`
 }
 
+/**
+ * The first `downloadShown` code units of `text`, never ending inside a
+ * character that takes two, then how many more there are.
+ */
+function shownPart(text: string): string {
+  const high = text.charCodeAt(downloadShown - 1)
+  const end = high >= 0xd800 && high <= 0xdbff ? downloadShown - 1 : downloadShown
+  return `${text.slice(0, end)}\n…and ${count(text.length - end)} more characters`
+}
+
 /** What `open_file` says about what it opened, or why it could not. */
 export function openingText(request: FileRequest, opening: FileOpening): string {
   const what =
@@ -310,9 +323,7 @@ export function openingText(request: FileRequest, opening: FileOpening): string 
       return [
         `Ready to download ${what} as ${opening.name} (${opening.mimeType}):`,
         "",
-        opening.text.length <= downloadShown
-          ? opening.text
-          : `${opening.text.slice(0, downloadShown)}\n…and ${count(opening.text.length - downloadShown)} more characters`,
+        opening.text.length <= downloadShown ? opening.text : shownPart(opening.text),
       ].join("\n")
     case "unavailable":
       return `Can't open ${what}: ${opening.reason}`

@@ -4,6 +4,8 @@ import { validateExperiment, type Experiment, type Problem } from "../model/inde
 import { checkoutSample, latencySample, scaleSample } from "../samples/index.ts"
 import {
   downloadShown,
+  idsNamed,
+  missingText,
   runsNamed,
   runsText,
   experimentText,
@@ -56,6 +58,28 @@ describe("experimentText", () => {
     )
     expect(text).toContain(
       "\nAreas: System prompt, Tool descriptions, Policy retrieval, Model & effort, Harness.\nAgents: 6.\n",
+    )
+  })
+
+  it("names the first runs and counts the rest", () => {
+    const sample = checkoutSample(startedAt)
+    const many = validated({
+      ...sample,
+      runs: [
+        ...sample.runs,
+        ...Array.from({ length: runsNamed }, (_, at) => ({
+          ...sample.runs[0]!,
+          id: `extra${at}`,
+          number: 1000 + at,
+        })),
+      ],
+    })
+    const runLines = experimentText(many)
+      .split("\n")
+      .filter((line) => line.startsWith("- run "))
+    expect(runLines).toHaveLength(runsNamed)
+    expect(experimentText(many)).toMatch(
+      new RegExp(`\\n…and ${sample.runs.length} more$`),
     )
   })
 
@@ -176,7 +200,33 @@ describe("invalidText", () => {
   })
 })
 
+describe("missingText", () => {
+  it("names the first experiments and counts the rest", () => {
+    const ids = Array.from({ length: idsNamed + 4 }, (_, at) => `e${at}`)
+    expect(missingText("nope", ids)).toBe(
+      `There is no experiment "nope". The experiments are: ${ids.slice(0, idsNamed).join(", ")}, …and 4 more.`,
+    )
+  })
+
+  it("says when there are none", () => {
+    expect(missingText("nope", [])).toBe(
+      `There is no experiment "nope": there are no experiments.`,
+    )
+  })
+})
+
 describe("openingText", () => {
+  it("never cuts a character in two", () => {
+    const text = `${"a".repeat(downloadShown - 1)}😀${"b".repeat(10)}`
+    const shown = openingText(
+      { experimentId: "x", runId: "r1" },
+      { kind: "download", name: "a.txt", mimeType: "text/plain", text },
+    )
+    expect(shown).toMatch(
+      new RegExp(`\\na{${downloadShown - 1}}\\n…and 12 more characters$`),
+    )
+  })
+
   it("shows a download's first characters and counts the rest", () => {
     const text = "a".repeat(downloadShown + 5)
     expect(

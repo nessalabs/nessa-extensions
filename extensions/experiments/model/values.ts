@@ -17,6 +17,11 @@ export const id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/, {
   error: "an id is 1–128 of A–Z a–z 0–9 . _ : -, starting with a letter or digit",
 })
 
+/** Whether `value` is an id, by `id`'s rule: for checking what names one outside an experiment. */
+export function isId(value: string): boolean {
+  return id.safeParse(value).success
+}
+
 /** Text a person reads: a title, a label, a reason. Never blank. */
 export const text = z.string().regex(/\S/, { error: "text is not blank" })
 

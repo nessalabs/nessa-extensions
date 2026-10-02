@@ -37,7 +37,10 @@ export interface ExperimentSource {
   ids(signal: AbortSignal): Promise<readonly string[]>
   /**
    * What it holds for the experiment `id`, as it holds it, or `undefined`
-   * when it has none. The server validates it before reading it.
+   * when it has none. The server validates it before reading it. When it has
+   * none, the server asks `ids` next to say which there are, and an id listed
+   * there is the source contradicting itself, which the call reports as the
+   * source's failure.
    */
   experiment(id: string, signal: AbortSignal): Promise<unknown>
   /**

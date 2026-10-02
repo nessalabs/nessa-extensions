@@ -51,4 +51,4 @@ export {
   type Rule,
   type Validation,
 } from "./validation.ts"
-export type { Tone } from "./values.ts"
+export { isId, type Tone } from "./values.ts"

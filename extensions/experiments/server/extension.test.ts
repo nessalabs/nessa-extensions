@@ -326,10 +326,43 @@ describe("show_experiment", () => {
     expect(await aborted).toBe(true)
   })
 
-  it("refuses a source that lists its experiments wrongly", async () => {
+  it("hands the source the call's signal when it lists the experiments", async () => {
+    let sawAbort: (aborted: boolean) => void = () => {}
+    const aborted = new Promise<boolean>((resolve) => (sawAbort = resolve))
+    let begun: () => void = () => {}
+    const started = new Promise<void>((resolve) => (begun = resolve))
+    const client = await connect(
+      clients[1],
+      sourceWith({
+        ids: (signal) =>
+          new Promise((resolve) => {
+            signal.addEventListener("abort", () => {
+              sawAbort(true)
+              resolve([])
+            })
+            begun()
+          }),
+      }),
+    )
+    const cancel = new AbortController()
+    const call = client.callTool(
+      { name: "show_experiment", arguments: { experimentId: "nope" } },
+      { signal: cancel.signal },
+    )
+    await started
+    cancel.abort()
+    await expect(call).rejects.toThrow()
+    expect(await aborted).toBe(true)
+  })
+
+  it.each([
+    ["an id that is not a string", [7]],
+    ["a blank id", [""]],
+    ["an id with a line break", ["a\nInjected line"]],
+  ])("refuses a source that lists %s", async (_, listed) => {
     const client = await connect(
       clients[0],
-      sourceWith({ ids: async () => [7] as unknown as string[] }),
+      sourceWith({ ids: async () => listed as unknown as string[] }),
     )
     const result = await client.callTool({
       name: "show_experiment",
@@ -623,6 +656,19 @@ describe("open_file", () => {
     ["a data: link", { kind: "link", url: "data:text/html,<script>1</script>" }],
     ["a file: link", { kind: "link", url: "file:///etc/passwd" }],
     ["an editor's own scheme", { kind: "link", url: "vscode://file/a.ts" }],
+    ["a scheme that starts as http does", { kind: "link", url: "httpx://a.example/" }],
+    [
+      "a scheme that starts as https does",
+      { kind: "link", url: "https-evil://a.example/" },
+    ],
+    [
+      "a download with a blank name",
+      { kind: "download", name: " ", mimeType: "text/plain", text: "" },
+    ],
+    [
+      "a download with a blank media type",
+      { kind: "download", name: "a.txt", mimeType: "", text: "" },
+    ],
     ["an opening of another kind", { kind: "editor" }],
     ["a key an opening does not have", { kind: "unavailable", reason: "x", extra: 1 }],
     ["a blank reason", { kind: "unavailable", reason: " " }],

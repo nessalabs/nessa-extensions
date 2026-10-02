@@ -7,7 +7,12 @@
  */
 import { z } from "zod/v4"
 
-import { validateExperiment, type Experiment, type Problem } from "../model/index.ts"
+import {
+  isId,
+  validateExperiment,
+  type Experiment,
+  type Problem,
+} from "../model/index.ts"
 import type { ExperimentSource, FileOpening, FileRequest } from "./source.ts"
 
 /** What reading one experiment found. */
@@ -22,7 +27,7 @@ export class SourceError extends Error {
   override readonly name = "SourceError"
 }
 
-const ids = z.array(z.string()).readonly()
+const ids = z.array(z.string().refine(isId, { error: "is not an id" })).readonly()
 
 /** The ids of the experiments `source` has, checked. */
 export async function readIds(
