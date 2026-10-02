@@ -16,6 +16,8 @@ import {
   runOf,
   runsByScore,
   runsNewestFirst,
+  primarySplitOf,
+  verdictOf,
 } from "./selections.ts"
 import { validateExperiment } from "./validation.ts"
 
@@ -36,6 +38,23 @@ function edited(edit: (experiment: Fixture) => void): Experiment {
 const checkout = valid(checkoutSample(begun))
 const latency = valid(latencySample(begun))
 const ids = (runs: readonly { readonly id: string }[]) => runs.map((run) => run.id)
+
+describe("verdictOf", () => {
+  it("is the definition's verdict the run was given", () => {
+    for (const run of checkout.runs) {
+      const verdict = verdictOf(checkout, run)
+      expect(verdict.id).toBe(run.verdict)
+      expect(checkout.definition.verdicts).toContain(verdict)
+    }
+  })
+})
+
+describe("primarySplitOf", () => {
+  it("is the definition's split the climb follows", () => {
+    expect(primarySplitOf(checkout)).toEqual({ id: "test", label: "Test" })
+    expect(primarySplitOf(latency)).toEqual({ id: "replay", label: "Replayed traffic" })
+  })
+})
 
 describe("bestVersion", () => {
   it("is the last of bestSoFar", () => {

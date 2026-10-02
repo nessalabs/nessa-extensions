@@ -30,6 +30,15 @@ describe("the samples", () => {
     }
   })
 
+  it("validate into exactly what JSON carries: nothing is lost on the wire", () => {
+    for (const sample of [checkoutSample, latencySample, scaleSample]) {
+      const experiment = valid(sample(begun))
+      expect(JSON.parse(JSON.stringify(experiment)), sample.name).toStrictEqual(
+        experiment,
+      )
+    }
+  })
+
   it("read the same every time, and are dated from when they began", () => {
     expect(checkoutSample(begun)).toEqual(checkoutSample(begun))
     const later = checkoutSample(begun + 1000)

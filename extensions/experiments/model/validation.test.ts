@@ -85,6 +85,41 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         problems: [{ rule: "shape", path: ["runs", 0, "number"] }],
       },
       {
+        name: "an optional field given as undefined, which JSON cannot carry",
+        edit: (e) => Object.assign(run(e, 0), { settledAt: undefined }),
+        problems: [{ rule: "shape", path: ["runs", 0, "settledAt"] }],
+      },
+      {
+        name: "an optional field of the definition given as undefined",
+        edit: (e) => Object.assign(e.definition, { noise: undefined }),
+        problems: [{ rule: "shape", path: ["definition", "noise"] }],
+      },
+      {
+        name: "a count of -0, which JSON writes as 0",
+        edit: (e) => (cases(e).broken = -0),
+        problems: [{ rule: "shape", path: ["runs", 0, "cases", "broken"] }],
+      },
+      {
+        name: "a value of -0",
+        edit: (e) => (run(e, 1).measures = { g: -0 }),
+        problems: [{ rule: "shape", path: ["runs", 1, "measures", "g"] }],
+      },
+      {
+        name: "a time of -0",
+        edit: (e) => (run(e, 0).settledAt = -0),
+        problems: [{ rule: "shape", path: ["runs", 0, "settledAt"] }],
+      },
+      {
+        name: "decimals of -0",
+        edit: (e) => (e.definition.metric.decimals = -0),
+        problems: [{ rule: "shape", path: ["definition", "metric", "decimals"] }],
+      },
+      {
+        name: "a time past the latest a Date holds",
+        edit: (e) => (run(e, 0).settledAt = 8.64e15 + 1),
+        problems: [{ rule: "shape", path: ["runs", 0, "settledAt"] }],
+      },
+      {
         name: "a count beyond the bound",
         edit: (e) => (cases(e).total = 1e15 + 1),
         problems: [{ rule: "shape", path: ["runs", 0, "cases", "total"] }],
@@ -182,6 +217,10 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
     ],
     holds: [
       { name: "decimals 0", edit: (e) => (e.definition.metric.decimals = 0) },
+      {
+        name: "a time at the latest a Date holds",
+        edit: (e) => (run(e, 0).settledAt = 8.64e15),
+      },
       {
         name: "values at the bound, either side",
         edit: (e) => {
@@ -1253,6 +1292,11 @@ describe("what validateExperiment returns", () => {
     if (validation.kind !== "valid") throw new Error(JSON.stringify(validation.problems))
     return validation.experiment
   }
+
+  it("is exactly what JSON carries, so the server can send it as it is", () => {
+    const experiment = valid(fixture())
+    expect(JSON.parse(JSON.stringify(experiment))).toStrictEqual(experiment)
+  })
 
   it("is a copy, and the input changing afterwards does not change it", () => {
     const input = fixture()

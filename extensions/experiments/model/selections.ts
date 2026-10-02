@@ -21,10 +21,36 @@ import {
   type Change,
   type Formatted,
 } from "./metric.ts"
+import type { Split, Verdict } from "./definition.ts"
 
 /** The run with `id`, if there is one. */
 export function runOf(experiment: Experiment, id: string): Run | undefined {
   return experiment.runs.find((run) => run.id === id)
+}
+
+/**
+ * The verdict `run` was given. Validation holds that it is one of the
+ * definition's (`verdict-defined`); this is the one place that is relied on.
+ */
+export function verdictOf(experiment: Experiment, run: Run): Verdict {
+  const verdict = experiment.definition.verdicts.find((each) => each.id === run.verdict)
+  if (verdict === undefined) {
+    throw new Error(`run ${run.id}'s verdict ${run.verdict} is not defined`)
+  }
+  return verdict
+}
+
+/**
+ * The split the climb follows. Validation holds that it is one of the
+ * definition's (`primary-split-defined`); this is the one place that is
+ * relied on.
+ */
+export function primarySplitOf(experiment: Experiment): Split {
+  const { splits, primarySplit } = experiment.definition
+  const split = splits.find((each) => each.id === primarySplit)
+  if (split === undefined)
+    throw new Error(`the primary split ${primarySplit} is not defined`)
+  return split
 }
 
 /** The runs by id; validation holds them unique (`run-ids-unique`). */
