@@ -16,8 +16,10 @@ import {
   metricChange,
   movedCount,
   runOf,
+  primarySplitOf,
   runsNewestFirst,
   scoreOf,
+  verdictOf,
   type Change,
   type Experiment,
   type Problem,
@@ -64,19 +66,6 @@ function parentName(experiment: Experiment, parentId: string): string {
   return parent === undefined ? "the baseline" : runName(parent)
 }
 
-function verdictLabel(experiment: Experiment, run: Run): string {
-  // Validation holds that every run's verdict is defined (`verdict-defined`).
-  return (
-    experiment.definition.verdicts.find((verdict) => verdict.id === run.verdict)?.label ??
-    run.verdict
-  )
-}
-
-function outcomeOf(experiment: Experiment, run: Run) {
-  return experiment.definition.verdicts.find((verdict) => verdict.id === run.verdict)
-    ?.outcome
-}
-
 const toneWords = { good: "better", bad: "worse", neutral: "neutral" } as const
 
 /** A change from the baseline as text: its sign, its size, and how it reads. */
@@ -86,10 +75,7 @@ function onBaseline(change: Change): string {
 }
 
 /** The primary split's label. */
-function primaryLabel(experiment: Experiment): string {
-  const { splits, primarySplit } = experiment.definition
-  return splits.find((split) => split.id === primarySplit)?.label ?? primarySplit
-}
+const primaryLabel = (experiment: Experiment) => primarySplitOf(experiment).label
 
 /** A run's score on the primary split, or that it has none yet. */
 function primaryScore(experiment: Experiment, run: Run): string {
@@ -101,7 +87,7 @@ function primaryScore(experiment: Experiment, run: Run): string {
 
 /** One line for a run, as a list of runs shows it. */
 function runLine(experiment: Experiment, run: Run): string {
-  return `- ${runName(run)}: ${verdictLabel(experiment, run)}, ${primaryScore(experiment, run)}. ${run.reason}`
+  return `- ${runName(run)}: ${verdictOf(experiment, run).label}, ${primaryScore(experiment, run)}. ${run.reason}`
 }
 
 /** What `show_experiment` and `get_experiment` say: the experiment, then its runs. */
@@ -153,8 +139,7 @@ export function experimentText(experiment: Experiment): string {
   }
   const outcomes = { kept: 0, rejected: 0, pending: 0 }
   for (const run of experiment.runs) {
-    const outcome = outcomeOf(experiment, run)
-    if (outcome !== undefined) outcomes[outcome] += 1
+    outcomes[verdictOf(experiment, run).outcome] += 1
   }
   lines.push(
     `Runs: ${count(experiment.runs.length)}${
@@ -202,7 +187,7 @@ export function runText(experiment: Experiment, run: Run): string {
   const { definition } = experiment
   const { metric } = definition
   const lines = [
-    `Run ${run.number} (${run.id}) of ${experiment.title} (experiment ${experiment.id}): ${verdictLabel(experiment, run)}.`,
+    `Run ${run.number} (${run.id}) of ${experiment.title} (experiment ${experiment.id}): ${verdictOf(experiment, run).label}.`,
     `Reason: ${run.reason}`,
     `Built on ${parentName(experiment, run.parentId)}. Started ${time(run.startedAt)}${
       run.settledAt === undefined ? "" : `, settled ${time(run.settledAt)}`

@@ -286,6 +286,18 @@ describe("show_experiment", () => {
     })
   })
 
+  it("takes null from the source as no experiment", async () => {
+    const client = await connect(clients[0], sourceWith({ experiment: async () => null }))
+    const result = await client.callTool({
+      name: "show_experiment",
+      arguments: { experimentId: "nope" },
+    })
+    expect(result.isError).toBe(true)
+    expect(textOf(result)).toBe(
+      `show_experiment failed: There is no experiment "nope". The experiments are: ${checkoutExperimentId}, ${latencyExperimentId}, ${scaleExperimentId}.`,
+    )
+  })
+
   it("refuses a source that lists an experiment it then does not have", async () => {
     const client = await connect(
       clients[0],
@@ -380,6 +392,7 @@ describe("show_experiment", () => {
     ["an id that is not a string", [7]],
     ["a blank id", [""]],
     ["an id with a line break", ["a\nInjected line"]],
+    ["an id twice", ["a", "a"]],
   ])("refuses a source that lists %s", async (_, listed) => {
     const client = await connect(
       clients[0],

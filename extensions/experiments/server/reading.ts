@@ -27,7 +27,12 @@ export class SourceError extends Error {
   override readonly name = "SourceError"
 }
 
-const ids = z.array(z.string().refine(isId, { error: "is not an id" })).readonly()
+const ids = z
+  .array(z.string().refine(isId, { error: "is not an id" }))
+  .refine((listed) => new Set(listed).size === listed.length, {
+    error: "lists an experiment twice",
+  })
+  .readonly()
 
 /** The ids of the experiments `source` has, checked. */
 export async function readIds(
@@ -50,7 +55,8 @@ export async function readExperiment(
   signal: AbortSignal,
 ): Promise<Reading> {
   const held = await source.experiment(id, signal)
-  if (held === undefined) {
+  // `null` is none too: what a JSON-backed store answers for a missing key.
+  if (held === undefined || held === null) {
     const known = await readIds(source, signal)
     if (known.includes(id)) {
       throw new SourceError(
