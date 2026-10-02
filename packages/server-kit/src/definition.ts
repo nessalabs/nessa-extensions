@@ -165,7 +165,7 @@ export function defineExtension(definition: ExtensionDefinition): Extension {
   const shape = extensionShape.safeParse(definition)
   if (!shape.success) {
     throw new DefinitionError(
-      `${String((definition as { name?: unknown }).name)} is not a valid extension:\n- ${shape.error.issues.map(describeIssue).join("\n- ")}`,
+      `${nameOf(definition)} is not a valid extension:\n- ${shape.error.issues.map(describeIssue).join("\n- ")}`,
     )
   }
   // The parsed copy, not the caller's objects, is what is checked and kept.
@@ -184,6 +184,13 @@ export function defineExtension(definition: ExtensionDefinition): Extension {
   checkedExtensions.set(extension, Object.freeze({ ...extension, inputSchemas }))
   // The brand is a type only; `checkedExtensions` is what `checkedOf` trusts.
   return extension as unknown as Extension
+}
+
+/** What to call a definition that did not parse: its name, if it has a string one. */
+function nameOf(definition: unknown): string {
+  if (typeof definition !== "object" || definition === null) return "The definition"
+  const name: unknown = Object.getOwnPropertyDescriptor(definition, "name")?.value
+  return typeof name === "string" && name.length > 0 ? name : "The definition"
 }
 
 const isFunction = (value: unknown): value is (...args: never[]) => unknown =>

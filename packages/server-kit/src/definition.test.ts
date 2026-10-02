@@ -202,6 +202,18 @@ describe("defineExtension", () => {
 })
 
 describe("a definition of the wrong shape", () => {
+  it.each([null, undefined, 7, "probe"])(
+    "refuses %j as a DefinitionError",
+    (definition) => {
+      expect(() => defineExtension(definition as unknown as ExtensionDefinition)).toThrow(
+        DefinitionError,
+      )
+      expect(() => defineExtension(definition as unknown as ExtensionDefinition)).toThrow(
+        /^The definition is not a valid extension:\n- /,
+      )
+    },
+  )
+
   /** The problems `defineExtension` names for `definition`, as an untyped caller could write it. */
   const shapeProblems = (definition: unknown) =>
     problemsOf(definition as ExtensionDefinition)
