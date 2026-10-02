@@ -11,20 +11,21 @@
  */
 export {
   DefinitionError,
-  defaultCallers,
   defineExtension,
   defineTool,
-  toolAnnotations,
   type Caller,
   type Effects,
+  type Extension,
   type ExtensionDefinition,
+  type InputSchema,
+  type Json,
+  type Tool,
   type ToolCall,
   type ToolDefinition,
   type ToolOutcome,
   type ViewDefinition,
   type ViewUri,
 } from "./definition.ts"
-export { rendersApps } from "./negotiation.ts"
 export { serverFactory } from "./server.ts"
 export {
   serveOverHttp,

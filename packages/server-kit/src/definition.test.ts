@@ -7,6 +7,7 @@ import {
   defineTool,
   toolAnnotations,
   type ExtensionDefinition,
+  type Tool,
   type ToolDefinition,
   type ViewDefinition,
 } from "./definition.ts"
@@ -18,7 +19,7 @@ const view = (uri: string, ui?: ViewDefinition["ui"]): ViewDefinition => ({
   ...(ui === undefined ? {} : { ui }),
 })
 
-const tool = (overrides: Partial<ToolDefinition> = {}): ToolDefinition =>
+const tool = (overrides: Partial<ToolDefinition> = {}): Tool =>
   defineTool({
     name: "tool",
     description: "A tool",
@@ -30,7 +31,7 @@ const tool = (overrides: Partial<ToolDefinition> = {}): ToolDefinition =>
 
 const extension = (
   views: readonly ViewDefinition[],
-  tools: readonly ToolDefinition[],
+  tools: readonly Tool[],
 ): ExtensionDefinition => ({ name: "probe", version: "0.0.0", views, tools })
 
 function problemsOf(definition: ExtensionDefinition): string[] {
@@ -43,13 +44,30 @@ function problemsOf(definition: ExtensionDefinition): string[] {
   }
 }
 
+const cspKeys = [
+  "connectDomains",
+  "resourceDomains",
+  "frameDomains",
+  "baseUriDomains",
+] as const
+
 describe("defineExtension", () => {
-  it("returns a valid definition unchanged", () => {
-    const valid = extension(
+  it("makes a valid definition an extension, with each tool's input as JSON Schema", () => {
+    const definition = extension(
       [view("ui://probe/a")],
-      [tool({ view: "ui://probe/a", callers: ["app"] })],
+      [
+        tool({
+          input: z.object({ rows: z.number().int().optional() }),
+          view: "ui://probe/a",
+        }),
+      ],
     )
-    expect(defineExtension(valid)).toBe(valid)
+    const made = defineExtension(definition)
+    expect(made).toMatchObject(definition)
+    expect(made.inputSchemas.get("tool")).toMatchObject({
+      type: "object",
+      properties: { rows: { type: "integer" } },
+    })
   })
 
   it.each([
@@ -60,24 +78,25 @@ describe("defineExtension", () => {
     expect(problemsOf(extension([view(uri)], []))).toEqual([problem])
   })
 
-  it("refuses a view declared twice", () => {
+  it("refuses a view declared twice, or with an empty name", () => {
     expect(
       problemsOf(extension([view("ui://probe/a"), view("ui://probe/a")], [])),
     ).toEqual(["view ui://probe/a is declared twice"])
+    expect(problemsOf(extension([{ ...view("ui://probe/a"), name: "" }], []))).toEqual([
+      "view ui://probe/a has an empty name",
+    ])
   })
 
   it.each([
     "https://api.example.com",
     "https://*.example.com",
     "wss://realtime.example.com:8443",
+    "ws://localhost:3000",
     "http://localhost:3000",
+    "http://127.0.0.1:8080",
+    "http://[::1]:8080",
   ])("takes CSP origin %s", (origin) => {
-    const csp = {
-      connectDomains: [origin],
-      resourceDomains: [origin],
-      frameDomains: [origin],
-      baseUriDomains: [origin],
-    }
+    const csp = Object.fromEntries(cspKeys.map((key) => [key, [origin]]))
     expect(problemsOf(extension([view("ui://probe/a", { csp })], []))).toEqual([])
   })
 
@@ -93,59 +112,89 @@ describe("defineExtension", () => {
     "https://exa mple.com",
     "https://",
     "*",
+    "https://*",
+    "https://*.",
+    "https://*.com",
+    "https://a.com.",
+    "https://API.example.com",
+    "https://api.example.com:443",
+    "http://a.com;script-src",
+    "javascript://x",
+    "data://x",
+    "ftp://files.example.com",
   ])("refuses CSP domain %s in every list", (domain) => {
-    const csp = {
-      connectDomains: [domain],
-      resourceDomains: [domain],
-      frameDomains: [domain],
-      baseUriDomains: [domain],
-    }
+    const csp = Object.fromEntries(cspKeys.map((key) => [key, [domain]]))
     expect(problemsOf(extension([view("ui://probe/a", { csp })], []))).toEqual(
-      ["connectDomains", "resourceDomains", "frameDomains", "baseUriDomains"].map(
+      cspKeys.map(
         (key) =>
           `view ui://probe/a: csp.${key} ${JSON.stringify(domain)} is not an origin`,
       ),
     )
   })
 
-  it("refuses a tool with an empty name, or declared twice", () => {
-    expect(problemsOf(extension([], [tool({ name: "" })]))).toEqual([
-      "a tool has an empty name",
-    ])
+  it.each(["", "has space", "slash/name", "a".repeat(129), "naïve"])(
+    "refuses tool name %j",
+    (name) => {
+      expect(problemsOf(extension([], [tool({ name })]))).toEqual([
+        `tool ${JSON.stringify(name)} is not 1 to 128 letters, digits, "_", "-" or "."`,
+      ])
+    },
+  )
+
+  it.each(["show_board", "ns.tool-1", "A".repeat(128)])("takes tool name %j", (name) => {
+    expect(problemsOf(extension([], [tool({ name })]))).toEqual([])
+  })
+
+  it("refuses a tool declared twice", () => {
     expect(problemsOf(extension([], [tool(), tool()]))).toEqual([
-      "tool tool is declared twice",
+      'tool "tool" is declared twice',
     ])
   })
 
   it("refuses a tool naming a view that is not declared", () => {
     expect(
       problemsOf(extension([view("ui://probe/a")], [tool({ view: "ui://probe/b" })])),
-    ).toEqual(["tool tool names view ui://probe/b, which is not declared"])
+    ).toEqual(['tool "tool" names view ui://probe/b, which is not declared'])
   })
 
   it("refuses callers that are empty, repeated, or unknown", () => {
-    expect(problemsOf(extension([], [tool({ callers: [] })]))).toEqual([
-      "tool tool has no callers",
+    expect(
+      problemsOf(extension([view("ui://probe/a")], [tool({ callers: [] })])),
+    ).toEqual(['tool "tool" has no callers'])
+    expect(
+      problemsOf(extension([view("ui://probe/a")], [tool({ callers: ["app", "app"] })])),
+    ).toEqual(['tool "tool" lists a caller twice'])
+    expect(
+      problemsOf(
+        extension([view("ui://probe/a")], [tool({ callers: ["user" as "app"] })]),
+      ),
+    ).toEqual(['tool "tool" lists caller "user"'])
+  })
+
+  it("refuses a tool only the app may call when there is no view to call it from", () => {
+    expect(problemsOf(extension([], [tool({ callers: ["app"] })]))).toEqual([
+      'tool "tool" is only for the app, and the extension has no view',
     ])
-    expect(problemsOf(extension([], [tool({ callers: ["app", "app"] })]))).toEqual([
-      "tool tool lists a caller twice",
-    ])
-    expect(problemsOf(extension([], [tool({ callers: ["user" as "app"] })]))).toEqual([
-      'tool tool lists caller "user"',
+    expect(
+      problemsOf(extension([view("ui://probe/a")], [tool({ callers: ["app"] })])),
+    ).toEqual([])
+  })
+
+  it("refuses an input JSON Schema cannot describe", () => {
+    expect(
+      problemsOf(extension([], [tool({ input: z.object({ at: z.date() }) })])),
+    ).toEqual([
+      expect.stringMatching(/^tool "tool" has an input JSON Schema cannot describe: .+/),
     ])
   })
 
   it("names every problem at once, and the extension", () => {
-    expect(() =>
-      defineExtension(
-        extension([view("x")], [tool({ name: "" }), tool({ view: "ui://probe/z" })]),
-      ),
-    ).toThrow(/^probe is not a valid extension:\n- /)
-    expect(
-      problemsOf(
-        extension([view("x")], [tool({ name: "" }), tool({ view: "ui://probe/z" })]),
-      ),
-    ).toHaveLength(3)
+    const broken = extension(
+      [view("x")],
+      [tool({ name: "" }), tool({ view: "ui://probe/z" })],
+    )
+    expect(() => defineExtension(broken)).toThrow(/^probe is not a valid extension:\n- /)
+    expect(problemsOf(broken)).toHaveLength(3)
   })
 })
 

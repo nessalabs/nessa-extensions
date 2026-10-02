@@ -1,13 +1,9 @@
 /**
- * An extension's MCP server, built from its definition: `tools/list`,
- * `tools/call`, `resources/list` and `resources/read`, each answered for the
- * client that sent the request (`negotiation.ts`).
- *
- * For a client that renders MCP Apps, a tool lists its view and callers in
- * `_meta.ui`, and the views are resources. For one that does not, the server
- * is a plain MCP server: tools list without `_meta.ui`, a tool only the app
- * may call is neither listed nor callable, and views are neither listed nor
- * readable. Either way a call answers in text (`ToolOutcome.text`).
+ * An extension's MCP server: `tools/list`, `tools/call`, `resources/list`,
+ * `resources/templates/list` and `resources/read`, each answered for the
+ * client that sent the request. What a client that renders MCP Apps is
+ * offered, and what any other client is, is the package README's
+ * "Negotiation, per request" table.
  *
  * It is built on the SDK's low-level `Server`, not `McpServer`, because
  * `McpServer` lists one fixed set of tools, and this list depends on who asks.
@@ -19,114 +15,136 @@ import {
   ResourceNotFoundError,
   Server,
   type CallToolResult,
-  type McpServerFactory,
+  type McpRequestContext,
   type Resource,
-  type ServerContext,
-  type Tool,
+  type Tool as ListedTool,
 } from "@modelcontextprotocol/server"
 import { z } from "zod/v4"
 
 import {
   defaultCallers,
   toolAnnotations,
-  type ExtensionDefinition,
-  type ToolDefinition,
+  type Extension,
+  type Tool,
   type ViewDefinition,
 } from "./definition.ts"
-import { clientCapabilitiesOf, rendersApps } from "./negotiation.ts"
+import { capabilitiesReader, rendersApps } from "./negotiation.ts"
 
 /**
- * A factory the SDK's serving entries call for each connection (stdio) or
- * request (HTTP), each time with a fresh `Server` over the same definition.
+ * A factory the SDK's serving entries call for each connection (stdio), each
+ * 2025-era session or each 2026-07-28 request (HTTP), each time with a fresh
+ * `Server` over the same extension.
  */
-export function serverFactory(definition: ExtensionDefinition): McpServerFactory {
-  const tools = new Map(definition.tools.map((tool) => [tool.name, tool]))
-  const views = new Map(definition.views.map((view) => [view.uri as string, view]))
-  return () => createServer(definition, tools, views)
-}
-
-function createServer(
-  definition: ExtensionDefinition,
-  tools: ReadonlyMap<string, ToolDefinition>,
-  views: ReadonlyMap<string, ViewDefinition>,
-): Server {
-  const server = new Server(
-    { name: definition.name, version: definition.version },
-    {
-      capabilities: {
-        tools: {},
-        resources: {},
-        extensions: { [EXTENSION_ID]: { mimeTypes: [RESOURCE_MIME_TYPE] } },
-      },
-      ...(definition.instructions === undefined
-        ? {}
-        : { instructions: definition.instructions }),
-    },
-  )
-  const apps = (ctx: ServerContext) => rendersApps(clientCapabilitiesOf(server, ctx))
-
-  server.setRequestHandler("tools/list", (_request, ctx) => {
-    const withApps = apps(ctx)
-    return {
-      tools: [...tools.values()]
-        .filter((tool) => withApps || offeredWithoutApps(tool))
-        .map((tool) => listedTool(tool, withApps)),
-    }
-  })
-
-  server.setRequestHandler("tools/call", async (request, ctx) => {
-    const { name, arguments: args } = request.params
-    const tool = tools.get(name)
-    if (tool === undefined || (!apps(ctx) && !offeredWithoutApps(tool))) {
-      throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Unknown tool: ${name}`)
-    }
-    return callTool(tool, args ?? {}, ctx.mcpReq.signal)
-  })
-
-  server.setRequestHandler("resources/list", (_request, ctx) => ({
-    resources: apps(ctx) ? [...views.values()].map(listedView) : [],
-  }))
-
-  server.setRequestHandler("resources/read", async (request, ctx) => {
-    const { uri } = request.params
-    const view = views.get(uri)
-    if (view === undefined || !apps(ctx)) throw new ResourceNotFoundError(uri)
-    const html = await view.html()
-    return {
-      contents: [
-        {
-          uri: view.uri,
-          mimeType: RESOURCE_MIME_TYPE,
-          text: html,
-          ...(view.ui === undefined ? {} : { _meta: { ui: view.ui } }),
+export function serverFactory(extension: Extension): (ctx: McpRequestContext) => Server {
+  const tools = new Map(extension.tools.map((tool) => [tool.name, tool]))
+  const views = new Map(extension.views.map((view) => [view.uri as string, view]))
+  return ({ era }) => {
+    const server = new Server(
+      { name: extension.name, version: extension.version },
+      {
+        capabilities: {
+          tools: {},
+          resources: {},
+          extensions: { [EXTENSION_ID]: { mimeTypes: [RESOURCE_MIME_TYPE] } },
         },
-      ],
-    }
-  })
+        ...(extension.instructions === undefined
+          ? {}
+          : { instructions: extension.instructions }),
+      },
+    )
+    const capabilities = capabilitiesReader(server, era)
 
-  return server
+    server.setRequestHandler("tools/list", (_request, ctx) => {
+      const apps = rendersApps(capabilities(ctx))
+      return {
+        tools: [...tools.values()]
+          .filter((tool) => apps || offeredWithoutApps(tool))
+          .map((tool) => listedTool(extension, tool, apps)),
+      }
+    })
+
+    server.setRequestHandler("tools/call", async (request, ctx) => {
+      const { name, arguments: args } = request.params
+      const tool = tools.get(name)
+      if (
+        tool === undefined ||
+        (!rendersApps(capabilities(ctx)) && !offeredWithoutApps(tool))
+      ) {
+        throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Unknown tool: ${name}`)
+      }
+      return callTool(tool, args ?? {}, ctx.mcpReq.signal)
+    })
+
+    server.setRequestHandler("resources/list", (_request, ctx) => ({
+      resources: rendersApps(capabilities(ctx))
+        ? [...views.values()].map(listedView)
+        : [],
+    }))
+
+    server.setRequestHandler("resources/templates/list", () => ({
+      resourceTemplates: [],
+    }))
+
+    // A view is read whatever the client declared: the standard lets a server
+    // leave views out of `resources/list`, not refuse to read them, and a host
+    // that renders apps without declaring the extension still finds a view
+    // by its URI.
+    server.setRequestHandler("resources/read", async (request) => {
+      const { uri } = request.params
+      const view = views.get(uri)
+      if (view === undefined) throw new ResourceNotFoundError(uri)
+      const html: unknown = await view.html()
+      if (typeof html !== "string") {
+        throw new ProtocolError(
+          ProtocolErrorCode.InternalError,
+          `View ${view.uri} gave no HTML document`,
+        )
+      }
+      return {
+        contents: [
+          {
+            uri: view.uri,
+            mimeType: RESOURCE_MIME_TYPE,
+            text: html,
+            ...(view.ui === undefined ? {} : { _meta: { ui: view.ui } }),
+          },
+        ],
+      }
+    })
+
+    return server
+  }
 }
 
 /** Whether a client without MCP Apps is offered `tool`: only when the model may call it. */
-function offeredWithoutApps(tool: ToolDefinition): boolean {
+function offeredWithoutApps(tool: Tool): boolean {
   return (tool.callers ?? defaultCallers).includes("model")
 }
 
-function listedTool(tool: ToolDefinition, withApps: boolean): Tool {
+/**
+ * The tool as listed. A client that renders apps sees `_meta.ui` when the
+ * tool has a view or callers other than the default. The deprecated flat
+ * `_meta["ui/resourceUri"]` is not written (one current contract).
+ */
+function listedTool(extension: Extension, tool: Tool, apps: boolean): ListedTool {
+  const callers = tool.callers ?? defaultCallers
+  const defaultVisibility =
+    callers.length === defaultCallers.length &&
+    defaultCallers.every((caller) => callers.includes(caller))
   const ui =
-    tool.view === undefined && tool.callers === undefined
+    tool.view === undefined && defaultVisibility
       ? undefined
       : {
           ...(tool.view === undefined ? {} : { resourceUri: tool.view }),
-          visibility: [...(tool.callers ?? defaultCallers)],
+          visibility: [...callers],
         }
   return {
     name: tool.name,
     ...(tool.title === undefined ? {} : { title: tool.title }),
     description: tool.description,
-    inputSchema: z.toJSONSchema(tool.input, { io: "input" }) as Tool["inputSchema"],
+    inputSchema: extension.inputSchemas.get(tool.name) as ListedTool["inputSchema"],
     annotations: toolAnnotations(tool.effects),
-    ...(withApps && ui !== undefined ? { _meta: { ui } } : {}),
+    ...(apps && ui !== undefined ? { _meta: { ui } } : {}),
   }
 }
 
@@ -143,11 +161,12 @@ function listedView(view: ViewDefinition): Resource {
 
 /**
  * Runs `tool` on `args`. Input that does not parse, a `run` that throws, and
- * an answer without text are each a tool error the caller can read — never a
- * success, and never a protocol error that hides which tool failed.
+ * an answer that is not text with optional JSON data are each a tool error
+ * naming the tool — never a success, and never a protocol error that hides
+ * which tool failed.
  */
 async function callTool(
-  tool: ToolDefinition,
+  tool: Tool,
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<CallToolResult> {
@@ -157,7 +176,7 @@ async function callTool(
       `${tool.name} was given input it does not take: ${z.prettifyError(input.error)}`,
     )
   }
-  let outcome
+  let outcome: unknown
   try {
     outcome = await tool.run(input.data, { signal })
   } catch (error) {
@@ -165,13 +184,42 @@ async function callTool(
       `${tool.name} failed: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
-  if (typeof outcome.text !== "string" || outcome.text.trim().length === 0) {
+  if (!isPlainObject(outcome)) return failure(`${tool.name} answered with no outcome`)
+  const { text, data } = outcome
+  if (typeof text !== "string" || text.trim().length === 0) {
     return failure(`${tool.name} answered without text, which every tool must give`)
   }
-  return {
-    content: [{ type: "text", text: outcome.text }],
-    ...(outcome.data === undefined ? {} : { structuredContent: outcome.data }),
+  if (data !== undefined && !(isPlainObject(data) && isJson(data, new Set()))) {
+    return failure(`${tool.name} answered with data that is not a JSON object`)
   }
+  return {
+    content: [{ type: "text", text }],
+    ...(data === undefined ? {} : { structuredContent: data }),
+  }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null) return false
+  const prototype: unknown = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+
+/**
+ * Whether JSON carries `value` as it is: null, booleans, strings, finite
+ * numbers, and arrays and plain objects of those, without cycles. `inside`
+ * holds the containers being walked.
+ */
+function isJson(value: unknown, inside: Set<object>): boolean {
+  if (value === null || typeof value === "boolean" || typeof value === "string")
+    return true
+  if (typeof value === "number") return Number.isFinite(value)
+  if (typeof value !== "object" || inside.has(value)) return false
+  if (!Array.isArray(value) && !isPlainObject(value)) return false
+  inside.add(value)
+  const items: unknown[] = Array.isArray(value) ? value : Object.values(value)
+  const json = items.every((item) => isJson(item, inside))
+  inside.delete(value)
+  return json
 }
 
 function failure(text: string): CallToolResult {

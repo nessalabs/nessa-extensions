@@ -28,7 +28,13 @@ function raw(
     method = "POST",
     headers = {},
     body,
-  }: { method?: string; headers?: Record<string, string>; body?: unknown },
+    target,
+  }: {
+    method?: string
+    headers?: Record<string, string>
+    body?: unknown
+    target?: string
+  },
 ): Promise<{
   status: number
   headers: Record<string, string | string[] | undefined>
@@ -39,6 +45,7 @@ function raw(
       url,
       {
         method,
+        ...(target === undefined ? {} : { path: target }),
         headers: {
           "content-type": "application/json",
           accept: "application/json, text/event-stream",
@@ -100,6 +107,15 @@ describe("serveOverHttp", () => {
     ).toBe(200)
   })
 
+  it("answers a target that is not a path with 400", async () => {
+    const { url } = await serving()
+    const absolute = await raw(url, {
+      body: initialize,
+      target: `http://evil.example${url.pathname}`,
+    })
+    expect(absolute.status).toBe(400)
+  })
+
   it("answers only on its path", async () => {
     const { url } = await serving({ path: "/extension" })
     expect(url.pathname).toBe("/extension")
@@ -135,26 +151,80 @@ describe("a 2025-era session over HTTP", () => {
     expect((await client.listTools()).tools).toHaveLength(3)
   })
 
-  it("is refused past the cap, and the cap frees when a session ends", async () => {
-    const { url } = await serving({ maxSessions: 1 })
-    const first = new StreamableHTTPClientTransport(url)
-    const holder = new Client(
-      { name: "first", version: "1" },
-      { capabilities: capabilitiesFor({ era: "legacy" }) },
-    )
-    await holder.connect(first)
-    const refused = await raw(url, { body: initialize })
-    expect(refused.status).toBe(503)
-    expect(JSON.parse(refused.text).error).toEqual({
-      code: -32000,
-      message: "Too many open sessions",
-    })
+  it("closes the session used longest ago when a new one would pass the cap", async () => {
+    const { url } = await serving({ maxSessions: 2 })
+    const open = async () => {
+      const opened = await raw(url, { body: initialize })
+      const id = opened.headers["mcp-session-id"] as string
+      await raw(url, {
+        headers: { "mcp-session-id": id },
+        body: { jsonrpc: "2.0", method: "notifications/initialized" },
+      })
+      return id
+    }
+    const list = (id: string) =>
+      raw(url, {
+        headers: { "mcp-session-id": id, "mcp-protocol-version": "2025-06-18" },
+        body: { jsonrpc: "2.0", id: 2, method: "tools/list" },
+      })
+    const first = await open()
+    const second = await open()
+    expect((await list(first)).status).toBe(200) // the first is now the one used last
+    const third = await open()
+    expect((await list(third)).status).toBe(200)
+    expect((await list(first)).status).toBe(200)
+    expect((await list(second)).status).toBe(404)
+  })
 
-    await first.terminateSession()
-    await holder.close()
-    const next = await clientAt(url, { era: "legacy", mimeTypes: apps })
-    opened.push(() => next.close())
-    expect((await next.listTools()).tools).toHaveLength(3)
+  it("keeps accepting clients that close without ending their session", async () => {
+    const { url } = await serving({ maxSessions: 2 })
+    for (let round = 0; round < 5; round++) {
+      const client = await clientAt(url, { era: "legacy", mimeTypes: apps })
+      expect((await client.listTools()).tools).toHaveLength(3)
+      await client.close()
+    }
+    for (let round = 0; round < 5; round++) {
+      expect((await raw(url, { body: initialize })).status).toBe(200)
+    }
+  })
+
+  it("frees a session's place when it is ended, so no other session is closed for it", async () => {
+    const { url } = await serving({ maxSessions: 2 })
+    const open = async () => {
+      const opened = await raw(url, { body: initialize })
+      const id = opened.headers["mcp-session-id"] as string
+      await raw(url, {
+        headers: { "mcp-session-id": id },
+        body: { jsonrpc: "2.0", method: "notifications/initialized" },
+      })
+      return id
+    }
+    const list = (id: string) =>
+      raw(url, {
+        headers: { "mcp-session-id": id, "mcp-protocol-version": "2025-06-18" },
+        body: { jsonrpc: "2.0", id: 2, method: "tools/list" },
+      })
+    const ending = await open()
+    const staying = await open()
+    expect((await list(ending)).status).toBe(200) // the ending one is now used last
+    const ended = await raw(url, {
+      method: "DELETE",
+      headers: { "mcp-session-id": ending, "mcp-protocol-version": "2025-06-18" },
+    })
+    expect(ended.status).toBe(200)
+    expect((await list(ending)).status).toBe(404)
+    await open()
+    expect((await list(staying)).status).toBe(200)
+  })
+
+  it("tells onerror of a request it refused", async () => {
+    const errors: string[] = []
+    const { url } = await serving({ onerror: (error) => errors.push(error.message) })
+    await raw(url, {
+      headers: { "mcp-session-id": "not-a-session" },
+      body: { jsonrpc: "2.0", id: 2, method: "tools/list" },
+    })
+    expect(errors).toContain("Refused with 404: Session not found")
   })
 })
 

@@ -12,7 +12,7 @@ import {
 import { EXTENSION_ID, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server"
 import { serveStdio } from "@modelcontextprotocol/server/stdio"
 
-import { defineExtension, defineTool, type ExtensionDefinition } from "./definition.ts"
+import { defineExtension, defineTool, type Extension } from "./definition.ts"
 import { serverFactory } from "./server.ts"
 import { serveOverHttp } from "./transports.ts"
 import { z } from "zod/v4"
@@ -44,7 +44,7 @@ function newClient(setup: ClientSetup): Client {
 }
 
 /** A client connected over the SDK's stdio entry; `close` ends both sides. */
-export async function overStdio(definition: ExtensionDefinition, setup: ClientSetup) {
+export async function overStdio(definition: Extension, setup: ClientSetup) {
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair()
   const serving = serveStdio(serverFactory(definition), { transport: serverSide })
   const client = newClient(setup)
@@ -66,7 +66,7 @@ export async function clientAt(url: URL, setup: ClientSetup): Promise<Client> {
 }
 
 /** A client connected over HTTP on a loopback port; `close` ends both sides. */
-export async function overHttp(definition: ExtensionDefinition, setup: ClientSetup) {
+export async function overHttp(definition: Extension, setup: ClientSetup) {
   const serving = await serveOverHttp(definition)
   const client = await clientAt(serving.url, setup)
   return {
