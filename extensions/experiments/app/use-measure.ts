@@ -4,29 +4,33 @@
  * chart. Both start from a fallback, so a host that reports no size — a test,
  * a first frame — still draws.
  */
-import { useLayoutEffect, useRef, useState, type RefObject } from "react"
+import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react"
 
 import { placeCard, type Box, type Point } from "./geometry.ts"
 
 export function useElementWidth<T extends HTMLElement>(
   fallback: number,
-): readonly [RefObject<T | null>, number] {
-  const ref = useRef<T>(null)
+): readonly [(node: T | null) => void, number] {
   const [width, setWidth] = useState(fallback)
-  useLayoutEffect(() => {
-    const node = ref.current
+  const observer = useRef<ResizeObserver | null>(null)
+  const ref = useCallback((node: T | null) => {
+    observer.current?.disconnect()
+    observer.current = null
     if (node === null) return
     const measure = () => {
       // clientWidth is the width children can fill. A border box is wider
       // than that by the border, and a chart drawn at that width overflows.
       const next = node.clientWidth
-      if (next > 0) setWidth(Math.round(next))
+      if (next > 0) {
+        const rounded = Math.round(next)
+        setWidth((current) => (current === rounded ? current : rounded))
+      }
     }
     measure()
     if (typeof ResizeObserver === "undefined") return
-    const observer = new ResizeObserver(measure)
-    observer.observe(node)
-    return () => observer.disconnect()
+    const watching = new ResizeObserver(measure)
+    watching.observe(node)
+    observer.current = watching
   }, [])
   return [ref, width]
 }
@@ -44,9 +48,11 @@ export function useAnchoredCard(
 } {
   const ref = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 220, height: 96 })
+  const x = anchor?.x
+  const y = anchor?.y
   useLayoutEffect(() => {
     const node = ref.current
-    if (node === null || anchor === undefined) return
+    if (node === null || x === undefined || y === undefined) return
     const rect = node.getBoundingClientRect()
     if (rect.width <= 0 || rect.height <= 0) return
     if (
@@ -55,7 +61,7 @@ export function useAnchoredCard(
     )
       return
     setSize({ width: rect.width, height: rect.height })
-  }, [anchor, size.width, size.height])
+  }, [x, y, size.width, size.height])
   const place =
     anchor === undefined ? undefined : placeCard({ anchor, card: size, bounds })
   return { ref, ...(place === undefined ? {} : { place }) }

@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { StrictMode } from "react"
 import { afterEach, describe, expect, it } from "vitest"
 
 import type { Opening } from "./open-file.ts"
@@ -35,6 +36,7 @@ function clock() {
   }
   return {
     schedule,
+    pending: () => pending.length,
     fire() {
       const runs = pending
       pending = []
@@ -176,5 +178,52 @@ describe("useOpenFile", () => {
     await flush()
     expect(screen.getByTestId("file").textContent).toBe("idle")
     expect(screen.getByTestId("reason").textContent).toBe("")
+  })
+
+  it("accepts a later answer after StrictMode re-runs the effect", async () => {
+    const first = defer<Opening>()
+    const second = defer<Opening>()
+    const answers = [first, second]
+    const time = clock()
+    render(
+      <StrictMode>
+        <Probe
+          experimentId="search-latency"
+          runId="l5"
+          open={() => answers.shift()?.promise ?? Promise.resolve({ kind: "opened" })}
+          schedule={time.schedule}
+        />
+      </StrictMode>,
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Open file" }))
+    expect(screen.getByTestId("file").textContent).toBe("asked")
+    first.resolve({ kind: "opened" })
+    await flush()
+    expect(screen.getByTestId("file").textContent).toBe("idle")
+
+    fireEvent.click(screen.getByRole("button", { name: "Open file" }))
+    expect(screen.getByTestId("file").textContent).toBe("asked")
+    second.resolve({ kind: "refused", reason: "No editor" })
+    await flush()
+    expect(screen.getByTestId("file").textContent).toBe("refused")
+    expect(screen.getByTestId("reason").textContent).toBe("No editor")
+  })
+
+  it("cancels a refusal timer when the control unmounts", async () => {
+    const time = clock()
+    const view = render(
+      <Probe
+        experimentId="search-latency"
+        runId="l5"
+        open={() => Promise.resolve({ kind: "refused", reason: "No editor" })}
+        schedule={time.schedule}
+      />,
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Open file" }))
+    await flush()
+    expect(screen.getByTestId("file").textContent).toBe("refused")
+    expect(time.pending()).toBe(1)
+    view.unmount()
+    expect(time.pending()).toBe(0)
   })
 })

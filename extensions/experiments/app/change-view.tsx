@@ -4,6 +4,8 @@
  * mount them. Opening a file, or the whole change, is the state `useOpenFile`
  * already decided; this view only shows it.
  */
+import type { Ref } from "react"
+
 import type { ChangeFileRead } from "./reading.ts"
 import type { Shown } from "./open-file.ts"
 import "./change-view.css"
@@ -25,7 +27,7 @@ export interface ChangeViewProps {
   readonly total: number
   readonly start: number
   readonly rowHeight: number
-  readonly viewport: number
+  readonly scrollRef: Ref<HTMLDivElement>
   readonly query: string
   readonly listKey: string
   readonly onQuery: (query: string) => void
@@ -52,7 +54,7 @@ export function ChangeView({
   total,
   start,
   rowHeight,
-  viewport,
+  scrollRef,
   query,
   listKey,
   onQuery,
@@ -84,8 +86,8 @@ export function ChangeView({
       </label>
       <div
         key={listKey}
+        ref={scrollRef}
         className="change-scroll"
-        style={{ maxHeight: viewport }}
         onScroll={(event) => onScroll(event.currentTarget.scrollTop)}
       >
         <div style={{ height: total * rowHeight }}>

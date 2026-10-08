@@ -4,12 +4,11 @@
  * comes from the model (`selections.ts`'s `climb` and `bestSoFar`). Nothing
  * here decides a best.
  *
- * Axis ticks are the chart's own 1-2-5 steps. nessa_ui's `niceTicks` and
- * `stepPath` are the shared ones (`packages/react/src/lib/chart-geometry.ts`),
- * and these views call those once `@nessalabs/ui` is on npm
- * (nessalabs/nessa_ui#115). Until then the chart cannot import them, and a
- * copy of that module would be a second owner of its edge cases, so this file
- * owns only what these two charts draw.
+ * The 1-2-5 ticks (`axisTicks`) and the step-after path (`stepAfter`) are
+ * nessa_ui's `niceTicks` and `stepPath`
+ * (`packages/react/src/lib/chart-geometry.ts`), copied here while
+ * `@nessalabs/ui` is not on npm (nessalabs/nessa_ui#115). The noise band,
+ * the map's columns, and where a card sits are this chart's own.
  */
 
 export interface Point {
@@ -30,7 +29,7 @@ export interface Box {
   readonly height: number
 }
 
-const margins = { top: 20, right: 16, bottom: 32, left: 56 }
+export const margins = { top: 20, right: 16, bottom: 32, left: 56 }
 
 /** A hundredth of a pixel: finer is invisible and noisy in a path. */
 const px = (value: number) => Math.round(value * 100) / 100
@@ -323,7 +322,9 @@ export function mapLayout(input: MapLayoutInput): MapLayout {
     return { width, height, columns: [], dots: [], thread: "" }
   }
   // Inset so a column's name, centered on the column, stays inside the chart.
-  const padX = 88
+  // Clamped so two or more columns cannot meet and then reverse when the
+  // chart is narrower than the inset.
+  const padX = Math.min(88, (width - 1) / 2)
   const padTop = 28
   const padBottom = 20
   const span = width - padX * 2

@@ -6,8 +6,11 @@
 
 /** `count` with thousands separated, for a person to read: 10000 is "10,000". */
 export function formatCount(count: number): string {
-  const negative = count < 0
-  const digits = String(Math.abs(Math.trunc(count)))
+  const whole = Math.trunc(count)
+  // `Math.trunc(-0.4)` is `-0`, and `-0 < 0` is false, so the sign comes from
+  // the truncated value. Otherwise a fraction between -1 and 0 reads "−0".
+  const negative = whole < 0
+  const digits = String(Math.abs(whole))
   const grouped = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",")
   return negative ? `−${grouped}` : grouped
 }

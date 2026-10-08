@@ -5,6 +5,7 @@
  */
 import type { Ref } from "react"
 
+import { margins } from "./geometry.ts"
 import { ChartCard, Delta } from "./stand-in.tsx"
 import type { Formatted, Tone } from "../model/index.ts"
 import type { ScoreRead } from "./reading.ts"
@@ -51,7 +52,6 @@ export interface ClimbChartProps {
   readonly card?: { readonly left: number; readonly top: number }
   readonly cardRef: Ref<HTMLDivElement>
   readonly onHover: (runId: string | undefined) => void
-  readonly onPick?: (runId: string) => void
 }
 
 export function ClimbChart({
@@ -69,7 +69,6 @@ export function ClimbChart({
   card,
   cardRef,
   onHover,
-  onPick,
 }: ClimbChartProps) {
   return (
     <figure className="climb" style={{ width }}>
@@ -94,8 +93,8 @@ export function ClimbChart({
             <g key={tick.y}>
               <line
                 className="climb-grid"
-                x1={56}
-                x2={width - 16}
+                x1={margins.left}
+                x2={width - margins.right}
                 y1={tick.y}
                 y2={tick.y}
               />
@@ -125,8 +124,8 @@ export function ClimbChart({
           {reference === undefined ? null : (
             <line
               className="climb-reference"
-              x1={56}
-              x2={width - 16}
+              x1={margins.left}
+              x2={width - margins.right}
               y1={reference.y}
               y2={reference.y}
             />
@@ -146,7 +145,6 @@ export function ClimbChart({
             onFocus={() => onHover(point.runId)}
             onPointerLeave={() => onHover(undefined)}
             onBlur={() => onHover(undefined)}
-            onClick={() => onPick?.(point.runId)}
           />
         ))}
         {hover === undefined || card === undefined ? null : (

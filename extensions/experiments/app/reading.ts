@@ -12,6 +12,7 @@ import type {
   Change,
   Experiment,
   Formatted,
+  MovedCase,
   Outcome,
   Run,
   Tone,
@@ -45,7 +46,6 @@ export interface ClimbPointRead {
   readonly reason: string
   readonly area?: string
   readonly agent?: string
-  readonly score: Formatted
   readonly scores: readonly ScoreRead[]
 }
 
@@ -53,7 +53,6 @@ export interface ClimbRead {
   readonly title: string
   /** The primary split's label, from the definition. */
   readonly caption: string
-  readonly metricName: string
   readonly noise?: number
   readonly reference?: {
     readonly value: number
@@ -130,7 +129,6 @@ export function climbRead(experiment: Experiment): ClimbRead {
         ...(run.change === undefined ? {} : { summary: run.change.summary }),
         reason: run.reason,
         ...(agent === undefined ? {} : { agent }),
-        score: formatValue(metric, point.value),
         scores,
       },
     ]
@@ -138,7 +136,6 @@ export function climbRead(experiment: Experiment): ClimbRead {
   return {
     title: metric.name,
     caption: caption ?? metric.name,
-    metricName: metric.name,
     ...(noise === undefined ? {} : { noise }),
     ...(reference === undefined
       ? {}
@@ -267,10 +264,10 @@ export function mapRead(experiment: Experiment): MapRead {
     name: area.name,
     hue: area.hue,
   }))
-  const known = new Set(areas.map((area) => area.id))
+  const byId = new Map(areas.map((area) => [area.id, area]))
   const runs = experiment.runs.flatMap((run) => {
-    if (run.areaId === undefined || !known.has(run.areaId)) return []
-    const area = areaOf(experiment, run.areaId)
+    if (run.areaId === undefined) return []
+    const area = byId.get(run.areaId)
     if (area === undefined) return []
     const verdict = verdictRead(experiment, run)
     return [
@@ -322,12 +319,7 @@ export interface CaseResultsRead {
     readonly value: number
   }[]
   readonly slices: readonly SliceRead[]
-  readonly moved: readonly {
-    readonly id: string
-    readonly title: string
-    readonly slice: string
-    readonly move: "fixed" | "broken"
-  }[]
+  readonly moved: readonly MovedCase[]
 }
 
 /** A run's cases, in the definition's case noun. Undefined when the run has none. */
@@ -355,12 +347,7 @@ export function caseResults(
       filled: slice.total === 0 ? 0 : slice.passingAfter / slice.total,
       text: `${formatCount(slice.passingBefore)} to ${formatCount(slice.passingAfter)} of ${formatCount(slice.total)}`,
     })),
-    moved: cases.moved.map((item) => ({
-      id: item.id,
-      title: item.title,
-      slice: item.slice,
-      move: item.move,
-    })),
+    moved: cases.moved,
   }
 }
 

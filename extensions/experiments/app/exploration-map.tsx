@@ -37,7 +37,6 @@ export interface ExplorationMapProps {
   readonly card?: { readonly left: number; readonly top: number }
   readonly cardRef: Ref<HTMLDivElement>
   readonly onHover: (runId: string | undefined) => void
-  readonly onPick?: (runId: string) => void
 }
 
 export function ExplorationMap({
@@ -50,7 +49,6 @@ export function ExplorationMap({
   card,
   cardRef,
   onHover,
-  onPick,
 }: ExplorationMapProps) {
   if (columns.length === 0) return null
   return (
@@ -89,7 +87,6 @@ export function ExplorationMap({
           onFocus={() => onHover(dot.runId)}
           onPointerLeave={() => onHover(undefined)}
           onBlur={() => onHover(undefined)}
-          onClick={() => onPick?.(dot.runId)}
         />
       ))}
       {hover === undefined || card === undefined ? null : (

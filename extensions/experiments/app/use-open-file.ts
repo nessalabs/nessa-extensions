@@ -44,20 +44,19 @@ export function useOpenFile(options: {
   const machine = useRef(openFileMachine())
   const timers = useRef(new Map<string, () => void>())
   const generation = useRef(0)
-  const mounted = useRef(true)
+  const mounted = useRef(false)
   const optionsRef = useRef(options)
   optionsRef.current = options
   const [, setVersion] = useState(0)
   const identity = `${options.experimentId}\0${options.runId}`
   const [tracked, setTracked] = useState(identity)
-  // A new run starts idle in this render, and an answer still in flight from
-  // the previous one no longer matches the generation it was asked in.
+  // A new run is idle in this render. An answer still in flight no longer
+  // matches the generation it was asked in. Cancelling its timer is a side
+  // effect, so the effect keyed on this identity does that.
   if (tracked !== identity) {
     setTracked(identity)
     generation.current += 1
     machine.current = openFileMachine()
-    for (const cancel of timers.current.values()) cancel()
-    timers.current.clear()
   }
   const commit = (next: ReturnType<typeof openFileMachine>) => {
     machine.current = next
@@ -80,13 +79,21 @@ export function useOpenFile(options: {
     timers.current.set(id, cancel)
   }
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mounted.current = true
+    return () => {
       mounted.current = false
       for (const cancel of timers.current.values()) cancel()
-    },
-    [],
-  )
+      timers.current.clear()
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      for (const cancel of timers.current.values()) cancel()
+      timers.current.clear()
+    }
+  }, [identity])
 
   const click = (target: Target) => {
     const id = targetId(target)

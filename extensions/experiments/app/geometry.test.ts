@@ -125,6 +125,18 @@ describe("mapLayout", () => {
       mapLayout({ areas: [], runs: [], thread: ["l1", "l3"], width: 400, height: 200 }),
     ).toMatchObject({ columns: [], dots: [], thread: "" })
   })
+
+  it("keeps column order when the width is under the insets", () => {
+    const layout = mapLayout({
+      areas: [{ id: "a" }, { id: "b" }],
+      runs: [],
+      thread: [],
+      width: 160,
+      height: 200,
+    })
+    const [first, second] = layout.columns
+    expect(first?.x).toBeLessThan(second?.x ?? 0)
+  })
 })
 
 describe("placeCard", () => {

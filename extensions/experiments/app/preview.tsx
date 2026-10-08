@@ -1,9 +1,8 @@
 /**
  * Mounts each component for one experiment: the climb, the map, the area
  * cards, the verdicts, one run's cases and one run's change. State stays in
- * the hooks; each view receives props. The component tests and the
- * screenshots render this. #7's pages do the same wiring for navigation,
- * which this preview does not.
+ * the hooks; each view receives props. The component tests render this.
+ * #7's pages do the same wiring for navigation, which this preview does not.
  */
 import { useMemo } from "react"
 

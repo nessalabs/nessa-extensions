@@ -47,14 +47,14 @@ app/              the components, in the browser; the pages are #7
   reading.ts      what a view shows; labels from the definition, numbers from metric.ts
   stand-in.tsx    Delta, StatusLabel, Stat, Meter, ProportionBar, the hover card,
                   until @nessalabs/ui is on npm (nessa_ui#115)
-  tokens.css      nessa_ui's token defaults; the only colours the components write
+  tokens.css      nessa_ui's token defaults, generated from the pin in nessa-ui-tokens.ts
   use-climb.ts, use-map.ts, use-change.ts, use-open-file.ts, use-measure.ts
                   hover, the file window, opening a file, measurement
   climb-chart.tsx, exploration-map.tsx, area-card.tsx, verdict-label.tsx,
   case-results.tsx, change-view.tsx
                   the views: props in, no state of their own
   index.ts        what #7's pages import
-  preview.tsx     mounts every component, for the tests and the screenshots
+  preview.tsx     mounts every component, for the tests
 vite.config.ts    the build: server/main.ts bundled into dist/main.js, the bin
 ```
 

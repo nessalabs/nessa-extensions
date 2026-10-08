@@ -1,7 +1,7 @@
 /**
  * Stand-ins for the nessa_ui primitives these views draw with, until
- * `@nessalabs/ui` is on npm (nessalabs/nessa_ui#115). Each one follows that
- * package's contract for the part the views use, and nothing else:
+ * `@nessalabs/ui` is on npm (nessalabs/nessa_ui#115). They are not that
+ * package's components. The props differ from the kit's:
  *
  * - `Delta` adds the sign and does not judge. `format` is called with the
  *   absolute value, never a negative and never `-0`. The digits are whatever
@@ -9,12 +9,16 @@
  * - `StatusLabel` is a mark and a word. The word is the verdict's label; the
  *   tone is the verdict's tone. The mark is decorative.
  * - `Stat` is a formatted figure, an optional delta, and a caption.
- * - `Meter` fills a fraction the caller computed. It does not judge it.
- * - `ProportionBar` sizes segments by their share of the positive values.
+ * - `Meter` fills a fraction the caller computed. The kit's `Meter` requires
+ *   `label`; this one does not, and `case-results.tsx` passes none — the
+ *   slice's name is the text beside the meter.
+ * - `ProportionBar` draws segments the caller already sized and coloured.
+ *   The kit's takes `label`, `value`, `color`, and `formatValue` and sizes
+ *   the bar itself.
  * - `ChartCard` is the hover card, already placed by `placeCard`.
  *
- * When the package publishes, these are replaced by its exports and this
- * file goes. The views' props do not change.
+ * When the package publishes, this file goes and these call sites change
+ * to the kit's props.
  */
 import type { ReactNode, Ref } from "react"
 

@@ -14,6 +14,12 @@ describe("formatCount", () => {
 
   it("writes a negative with a minus sign", () => {
     expect(formatCount(-1200)).toBe("−1,200")
+    expect(formatCount(-1.2)).toBe("−1")
+  })
+
+  it("writes zero when a fraction truncates to zero, including negative zero", () => {
+    expect(formatCount(-0.4)).toBe("0")
+    expect(formatCount(-0)).toBe("0")
   })
 })
 

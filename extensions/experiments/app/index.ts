@@ -21,8 +21,6 @@ export {
   changeRead,
   climbRead,
   mapRead,
-  runWithCases,
-  runWithChange,
   verdicts,
   type AreaCardRead,
   type CaseResultsRead,
