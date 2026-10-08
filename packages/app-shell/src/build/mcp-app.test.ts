@@ -124,6 +124,124 @@ describe("mcpApp", () => {
     )
   })
 
+  it("takes in a binary asset the page names, instead of calling it outside the build", async () => {
+    const root = app({
+      "index.html":
+        "<!doctype html><html><head>" +
+        '<link rel="modulepreload" href="./other.js">' +
+        '<link rel="stylesheet" href="./bytes.css">' +
+        '</head><body><script type="module" src="./main.ts"></script></body></html>',
+      "main.ts": "document.body.append('hi')",
+    })
+    await build({
+      root,
+      configFile: false,
+      logLevel: "silent",
+      plugins: [
+        {
+          name: "emits-a-binary-asset",
+          generateBundle() {
+            this.emitFile({
+              type: "asset",
+              fileName: "other.js",
+              source: new TextEncoder().encode("/* from-the-binary-asset */"),
+            })
+            this.emitFile({
+              type: "asset",
+              fileName: "bytes.css",
+              source: new TextEncoder().encode("body{color:red}"),
+            })
+          },
+        },
+        mcpApp(),
+      ],
+      build: { outDir: join(root, "dist") },
+    })
+    expect(readdirSync(join(root, "dist"))).toEqual(["index.html"])
+    const html = readFileSync(join(root, "dist", "index.html"), "utf8")
+    expect(html).not.toContain("modulepreload")
+    expect(html).not.toContain("other.js")
+    expect(html).not.toContain("from-the-binary-asset")
+    expect(html).toContain("<style>body{color:red}</style>")
+    expect(html).toMatch(/<script type="module">[\s\S]*hi[\s\S]*<\/script>/)
+  })
+
+  it("refuses a stylesheet whose bytes are not UTF-8, instead of inlining a replacement character", async () => {
+    const root = app({
+      "index.html":
+        '<!doctype html><html><head><link rel="stylesheet" href="./bytes.css"></head>' +
+        '<body><script type="module" src="./main.ts"></script></body></html>',
+      "main.ts": "document.body.append('hi')",
+    })
+    await expect(
+      build({
+        root,
+        configFile: false,
+        logLevel: "silent",
+        plugins: [
+          {
+            name: "emits-non-utf8",
+            generateBundle() {
+              this.emitFile({
+                type: "asset",
+                fileName: "bytes.css",
+                source: Uint8Array.of(0xff),
+              })
+            },
+          },
+          mcpApp(),
+        ],
+        build: { outDir: join(root, "dist") },
+      }),
+    ).rejects.toThrow(
+      "these are not UTF-8, so they cannot be written inline: ./bytes.css (not UTF-8)",
+    )
+  })
+
+  it("refuses two entry points with Rolldown's message, not the plugin's", async () => {
+    const root = app({
+      "index.html":
+        '<!doctype html><html><head></head><body><script type="module" src="./main.ts"></script></body></html>',
+      "other.html":
+        '<!doctype html><html><head></head><body><script type="module" src="./main.ts"></script></body></html>',
+      "main.ts": "export {}",
+    })
+    await expect(
+      build({
+        root,
+        configFile: false,
+        logLevel: "silent",
+        plugins: [mcpApp()],
+        build: {
+          outDir: join(root, "dist"),
+          rolldownOptions: {
+            input: { index: join(root, "index.html"), other: join(root, "other.html") },
+          },
+        },
+      }),
+    ).rejects.toThrow(/multiple inputs are not supported/)
+  })
+
+  it("refuses preserveModules with Rolldown's message, not the plugin's", async () => {
+    const root = app({
+      "index.html":
+        '<!doctype html><html><head></head><body><script type="module" src="./main.ts"></script></body></html>',
+      "main.ts": "export {}",
+    })
+    await expect(
+      build({
+        root,
+        configFile: false,
+        logLevel: "silent",
+        plugins: [mcpApp()],
+        build: {
+          outDir: join(root, "dist"),
+          rolldownOptions: { output: { preserveModules: true } },
+        },
+      }),
+    ).rejects.toThrow(/preserveModules/)
+  })
+
   it("refuses a build with a file the HTML does not take in, such as another plugin's", async () => {
     const root = app({
       "index.html":

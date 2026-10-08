@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  formatValue,
   limitOf,
   measureOf,
   validateExperiment,
@@ -154,6 +155,14 @@ describe("the samples", () => {
       const experiment = valid(sample(begun))
       expect(valid(JSON.parse(JSON.stringify(experiment)))).toEqual(experiment)
     }
+  })
+
+  it("write a cost with its unit before the value", () => {
+    const cost = valid(checkoutSample(begun)).definition.guardrails[0]!.metric
+    expect(cost).toMatchObject({ unit: "$", position: "before", decimals: 2 })
+    expect(formatValue(cost, 0.05)).toBe("$0.05")
+    expect(formatValue(cost, -0.05)).toBe("\u2212$0.05")
+    expect(formatValue(cost, 0)).toBe("$0.00")
   })
 
   it("are two kinds: a percent that rises with areas and agents, and a latency that falls with none", () => {

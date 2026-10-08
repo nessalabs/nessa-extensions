@@ -214,6 +214,24 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
         edit: (e) => (run(e, 0).reason = "  "),
         problems: [{ rule: "shape", path: ["runs", 0, "reason"] }],
       },
+      {
+        name: "a unit position that is not before or after",
+        edit: (e) => Object.assign(e.definition.metric, { position: "beside" }),
+        problems: [{ rule: "shape", path: ["definition", "metric", "position"] }],
+      },
+      {
+        name: "a guardrail unit position that is not before or after",
+        edit: (e) =>
+          Object.assign(e.definition.guardrails[0]!.metric, { position: "beside" }),
+        problems: [
+          { rule: "shape", path: ["definition", "guardrails", 0, "metric", "position"] },
+        ],
+      },
+      {
+        name: "a unit position given as undefined, which JSON cannot carry",
+        edit: (e) => Object.assign(e.definition.metric, { position: undefined }),
+        problems: [{ rule: "shape", path: ["definition", "metric", "position"] }],
+      },
     ],
     holds: [
       { name: "decimals 0", edit: (e) => (e.definition.metric.decimals = 0) },
@@ -277,6 +295,22 @@ const table: Record<Rule, { breaks: readonly Breaks[]; holds: readonly Case[] }>
           e.baseline.scores = { constructor: { mean: 50 }, b: { mean: 50 } }
           run(e, 0).scores = { constructor: { mean: 1 }, b: { mean: 54 } }
         },
+      },
+      {
+        name: "a unit written before its value",
+        edit: (e) => (e.definition.metric.position = "before"),
+      },
+      {
+        name: "a guardrail unit written before its value",
+        edit: (e) => (e.definition.guardrails[0]!.metric.position = "before"),
+      },
+      {
+        name: "a unit written after its value",
+        edit: (e) => (e.definition.metric.position = "after"),
+      },
+      {
+        name: "no unit position",
+        edit: (e) => delete e.definition.metric.position,
       },
       {
         name: "no areas, agents or notes",
@@ -1292,6 +1326,18 @@ describe("what validateExperiment returns", () => {
     if (validation.kind !== "valid") throw new Error(JSON.stringify(validation.problems))
     return validation.experiment
   }
+
+  it("keeps a unit's position, and leaves it absent when the input does", () => {
+    const absent = valid(fixture())
+    expect(Object.hasOwn(absent.definition.metric, "position")).toBe(false)
+    const before = valid(edited((e) => (e.definition.metric.position = "before")))
+    expect(before.definition.metric.position).toBe("before")
+    const after = valid(
+      edited((e) => (e.definition.guardrails[0]!.metric.position = "after")),
+    )
+    expect(after.definition.guardrails[0]!.metric.position).toBe("after")
+    expect(Object.hasOwn(after.definition.metric, "position")).toBe(false)
+  })
 
   it("is exactly what JSON carries, so the server can send it as it is", () => {
     const experiment = valid(fixture())

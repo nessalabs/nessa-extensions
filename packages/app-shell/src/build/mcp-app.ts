@@ -23,6 +23,20 @@ import type { Plugin } from "vite"
 
 import { inlineIntoHtml } from "./inline.ts"
 
+/**
+ * An asset's text. Vite gives some files as bytes. UTF-8 is text, read the
+ * same way as the page. Bytes that are not UTF-8 are not text, and the caller
+ * lists them unresolved (`mcp-app.test.ts`).
+ */
+function textOf(source: string | Uint8Array): string | undefined {
+  if (typeof source === "string") return source
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(source)
+  } catch {
+    return undefined
+  }
+}
+
 export function mcpApp(): Plugin {
   let publicDir = ""
   return {
@@ -49,6 +63,8 @@ export function mcpApp(): Plugin {
         assetsInlineLimit: () => true,
         cssCodeSplit: false,
         modulePreload: false,
+        // One script. Multiple inputs, and `preserveModules`, are then
+        // Rolldown's own refusal (`mcp-app.test.ts`), not rephrased here.
         rolldownOptions: { output: { codeSplitting: false } },
       },
     }),
@@ -62,16 +78,30 @@ export function mcpApp(): Plugin {
       const page = pages[0]
       if (page === undefined || page.type !== "asset") return
       const files = new Map<string, string>()
+      const notText = new Set<string>()
       for (const file of Object.values(bundle)) {
         if (file === page) continue
         if (file.type === "chunk") files.set(file.fileName, file.code)
-        else if (typeof file.source === "string") files.set(file.fileName, file.source)
+        else {
+          const text = textOf(file.source)
+          if (text === undefined) notText.add(file.fileName)
+          else files.set(file.fileName, text)
+        }
       }
-      const html =
-        typeof page.source === "string"
-          ? page.source
-          : new TextDecoder().decode(page.source)
-      const result = inlineIntoHtml(html, files, page.fileName)
+      const html = textOf(page.source)
+      if (html === undefined) {
+        this.error(`${page.fileName} is not UTF-8, so it cannot be the page`)
+        return
+      }
+      const result = inlineIntoHtml(html, files, page.fileName, notText)
+      const notUtf8 = result.unresolved.filter((reference) =>
+        reference.endsWith(" (not UTF-8)"),
+      )
+      if (notUtf8.length > 0) {
+        this.error(
+          `these are not UTF-8, so they cannot be written inline: ${notUtf8.join(", ")}`,
+        )
+      }
       if (result.unresolved.length > 0) {
         this.error(
           `the HTML names what is not a file of the build: ${result.unresolved.join(", ")}. A page's tags can name only the app's own files: a host's default policy fetches nothing, and a resource from an origin the app declares in _meta.ui.csp is loaded at run time, not by the page's tags`,

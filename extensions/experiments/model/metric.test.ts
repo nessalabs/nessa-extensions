@@ -25,6 +25,14 @@ const latency: Metric = {
   better: "down",
   decimals: 0,
 }
+const dollars: Metric = {
+  id: "cost",
+  name: "Cost",
+  unit: "$",
+  position: "before",
+  better: "down",
+  decimals: 2,
+}
 
 describe("formatValue", () => {
   it("writes the value to the metric's decimals, then its unit as given", () => {
@@ -69,6 +77,51 @@ describe("formatValue", () => {
   it("writes an empty unit as nothing", () => {
     expect(formatValue({ ...percent, unit: "" }, 2)).toBe("2.0")
   })
+
+  it("writes the unit before the number when the metric says so, and after when it does not", () => {
+    expect(formatValue(dollars, 0.05)).toBe("$0.05")
+    expect(formatValue({ ...dollars, position: "after" }, 0.05)).toBe("0.05$")
+    const { position: _position, ...absent } = dollars
+    expect(formatValue(absent, 0.05)).toBe("0.05$")
+    expect(formatValue({ ...percent, position: "after" }, 71.64)).toBe("71.6%")
+  })
+
+  it("writes a minus before a leading unit, and writes zero with no minus", () => {
+    expect(formatValue(dollars, -0.05)).toBe("\u2212$0.05")
+    expect(formatValue(dollars, 0)).toBe("$0.00")
+    expect(formatValue(dollars, -0)).toBe("$0.00")
+    expect(formatValue(dollars, -0.001)).toBe("$0.00")
+    expect(formatValue({ ...dollars, decimals: 0 }, 0)).toBe("$0")
+    expect(formatValue({ ...dollars, unit: "", position: "before" }, -2)).toBe(
+      "\u22122.00",
+    )
+  })
+
+  it("keeps the unit's own spacing on either side, and adds none", () => {
+    expect(formatValue({ ...dollars, unit: "$ " }, 0.05)).toBe("$ 0.05")
+    expect(formatValue({ ...dollars, unit: "$ " }, -0.05)).toBe("\u2212$ 0.05")
+    expect(formatValue({ ...dollars, unit: " $", position: "after" }, 0.05)).toBe(
+      "0.05 $",
+    )
+    expect(formatValue({ ...dollars, unit: " $", position: "after" }, -0.05)).toBe(
+      "\u22120.05 $",
+    )
+  })
+
+  it("keeps the precision rules when the unit is written first", () => {
+    const one = { ...dollars, decimals: 1 }
+    expect(formatValue(one, 0.35)).toBe("$0.4")
+    expect(formatValue(one, 0.25)).toBe("$0.3")
+    expect(formatValue(one, 0.15)).toBe("$0.2")
+    expect(formatValue(one, -0.35)).toBe("\u2212$0.4")
+    expect(formatValue(dollars, 1.005)).toBe("$1.01")
+    expect(formatValue({ ...dollars, decimals: 0 }, 2.5)).toBe("$3")
+    expect(formatValue({ ...dollars, decimals: 0 }, -2.5)).toBe("\u2212$3")
+    expect(formatValue({ ...dollars, decimals: 6 }, 5e-7)).toBe("$0.000001")
+    expect(formatValue({ ...dollars, decimals: 6 }, 1e-7)).toBe("$0.000000")
+    expect(formatValue({ ...dollars, decimals: 6 }, -1e-7)).toBe("$0.000000")
+    expect(formatValue(dollars, 1e15)).toBe("$1000000000000000.00")
+  })
 })
 
 describe("changeBetween", () => {
@@ -98,6 +151,24 @@ describe("changeBetween", () => {
   it("writes its size in the delta unit, or the unit when there is none", () => {
     expect(changeBetween(percent, 0, 2).size).toBe("2.0 pts")
     expect(changeBetween({ ...percent, deltaUnit: undefined }, 0, 2).size).toBe("2.0%")
+  })
+
+  it("writes its size on the side the unit is written, with no sign", () => {
+    expect(changeBetween(dollars, 1, 1.2).size).toBe("$0.20")
+    expect(changeBetween(dollars, 1.2, 1)).toEqual({
+      value: -0.2,
+      size: "$0.20",
+      tone: "good",
+    })
+    expect(changeBetween({ ...dollars, deltaUnit: "$" }, 0, 0.5).size).toBe("$0.50")
+    expect(changeBetween({ ...dollars, position: "after" }, 0, 0.5).size).toBe("0.50$")
+  })
+
+  it("writes a delta unit on the same side as the unit", () => {
+    const cost = { ...dollars, deltaUnit: "USD " }
+    expect(formatValue(cost, 0.05)).toBe("$0.05")
+    expect(formatSize(cost, 0.5)).toBe("USD 0.50")
+    expect(changeBetween(cost, 1, 1.5).size).toBe("USD 0.50")
   })
 
   it("is neutral within the noise, the noise included, and not beyond it", () => {
@@ -182,6 +253,13 @@ describe("formatSize", () => {
     expect(formatSize(latency, 15)).toBe("15 ms")
     expect(formatSize(percent, 0.35)).toBe("0.4 pts")
   })
+
+  it("writes a size on the side the unit is written, the unit's spacing kept", () => {
+    expect(formatSize(dollars, 0.2)).toBe("$0.20")
+    expect(formatSize(dollars, -0.2)).toBe("$0.20")
+    expect(formatSize({ ...dollars, deltaUnit: "USD " }, 1.5)).toBe("USD 1.50")
+    expect(formatSize({ ...dollars, position: "after" }, 0.2)).toBe("0.20$")
+  })
 })
 
 describe("productOf", () => {
@@ -198,6 +276,14 @@ describe("productOf", () => {
       formatted: "1000000000000000000000000000000.00¢",
     })
     expect(productOf(cents, 1e-7, 3)).toEqual({ value: 3e-7, formatted: "0.00¢" })
+  })
+
+  it("writes a leading unit on the product, through the one formatter", () => {
+    expect(productOf(dollars, 1.05, 1.9)).toEqual({ value: 1.995, formatted: "$2.00" })
+    expect(productOf(dollars, 0.9, -0.05)).toEqual({
+      value: -0.045,
+      formatted: "\u2212$0.05",
+    })
   })
 
   it("writes the value it gives, so a view writing it again agrees", () => {

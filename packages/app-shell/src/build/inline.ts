@@ -11,7 +11,11 @@ export interface Inlined {
   html: string
   /** The bundle's files now in the HTML. */
   inlined: Set<string>
-  /** Each `src` or `href` of a script or stylesheet that names no file of the bundle. */
+  /**
+   * Each `src` or `href` of a script or stylesheet that names no file of the
+   * bundle, or a file of the build whose bytes are not UTF-8. That one is the
+   * reference followed by ` (not UTF-8)`.
+   */
   unresolved: string[]
   /**
    * Each script or stylesheet that cannot be written inline as it is, left in
@@ -71,29 +75,33 @@ const bundleOrigin = "https://bundle.invalid"
 /**
  * The bundle file a reference in the page names, resolved against the page's
  * own place in the bundle (`./x.js`, `../assets/x.js`, `/assets/x.js`), or
- * undefined for one outside the bundle (another origin, a query, a hash).
+ * undefined for one outside it: another origin, a query, a hash, or a
+ * percent-encoding that does not decode (`inline.test.ts`).
  */
 function fileName(reference: string, page: string): string | undefined {
-  let url: URL
   try {
-    url = new URL(reference, `${bundleOrigin}/${page}`)
+    const url = new URL(reference, `${bundleOrigin}/${page}`)
+    if (url.origin !== bundleOrigin || url.search !== "" || url.hash !== "")
+      return undefined
+    return decodeURIComponent(url.pathname.slice(1))
   } catch {
     return undefined
   }
-  if (url.origin !== bundleOrigin || url.search !== "" || url.hash !== "")
-    return undefined
-  return decodeURIComponent(url.pathname.slice(1))
 }
 
 /**
  * `html`, the bundle's file `page`, with each `<script src>` and
  * `<link rel="stylesheet">` that names a file in `files` replaced by the
  * file's contents, and each `<link rel="modulepreload">` of one removed.
+ * A name in `notText` is a file of the build whose bytes are not UTF-8: its
+ * reference is listed unresolved with that reason, and not written in
+ * (`mcp-app.test.ts`).
  */
 export function inlineIntoHtml(
   html: string,
   files: ReadonlyMap<string, string>,
   page = "index.html",
+  notText: ReadonlySet<string> = new Set(),
 ): Inlined {
   const inlined = new Set<string>()
   const unresolved: string[] = []
@@ -102,6 +110,10 @@ export function inlineIntoHtml(
   const find = (reference: string | undefined) => {
     if (reference === undefined) return undefined
     const name = fileName(reference, page)
+    if (name !== undefined && notText.has(name)) {
+      unresolved.push(`${reference} (not UTF-8)`)
+      return undefined
+    }
     const contents = name === undefined ? undefined : files.get(name)
     if (name === undefined || contents === undefined) {
       unresolved.push(reference)
@@ -152,6 +164,8 @@ export function inlineIntoHtml(
       const file = find(href)
       if (file === undefined) return tag
       const extra = unknownAttribute(tag, understood.modulepreload)
+      // Removed, and counted written, though its code is not copied in: a
+      // preload does not run, and the tag would be a fetch (`inline.test.ts`).
       return extra === undefined
         ? written(file.name, "")
         : refuse(tag, `${href} (its ${extra} attribute)`)

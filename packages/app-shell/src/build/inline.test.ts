@@ -168,6 +168,67 @@ describe("inlineIntoHtml", () => {
     expect(result.html).toBe('<script src="a.js"></script>')
   })
 
+  it("does not inline another origin whose path matches a bundle file", () => {
+    const tag = '<script src="https://cdn.example/assets/index-abc.js"></script>'
+    const result = inlineIntoHtml(
+      tag,
+      new Map([["assets/index-abc.js", "console.log(1)"]]),
+    )
+    expect(result.unresolved).toEqual(["https://cdn.example/assets/index-abc.js"])
+    expect(result.inlined.size).toBe(0)
+    expect(result.html).toBe(tag)
+  })
+
+  it("does not inline a reference that carries a query", () => {
+    const tag = '<script src="./a.js?v=1"></script>'
+    const result = inlineIntoHtml(tag, new Map([["a.js", "1"]]))
+    expect(result.unresolved).toEqual(["./a.js?v=1"])
+    expect(result.inlined.size).toBe(0)
+    expect(result.html).toBe(tag)
+  })
+
+  it("does not inline a reference that carries a hash", () => {
+    const tag = '<script src="./a.js#part"></script>'
+    const result = inlineIntoHtml(tag, new Map([["a.js", "1"]]))
+    expect(result.unresolved).toEqual(["./a.js#part"])
+    expect(result.inlined.size).toBe(0)
+    expect(result.html).toBe(tag)
+  })
+
+  it("decodes a percent-encoded name before matching a bundle file", () => {
+    const result = inlineIntoHtml(
+      '<script src="./a%20b.js"></script>',
+      new Map([
+        ["a b.js", "decoded"],
+        ["a%20b.js", "raw"],
+      ]),
+    )
+    expect(result.html).toBe("<script>decoded</script>")
+    expect([...result.inlined]).toEqual(["a b.js"])
+    expect(result.unresolved).toEqual([])
+  })
+
+  it("lists a malformed percent escape as unresolved, and does not throw", () => {
+    const tag = '<script src="a%zz.js"></script>'
+    const files = new Map([["a%zz.js", "raw"]])
+    expect(() => inlineIntoHtml(tag, files)).not.toThrow()
+    const result = inlineIntoHtml(tag, files)
+    expect(result.unresolved).toEqual(["a%zz.js"])
+    expect(result.inlined.size).toBe(0)
+    expect(result.html).toBe(tag)
+  })
+
+  it("counts a modulepreload as written in, and does not put its code in the page", () => {
+    const result = inlineIntoHtml(
+      '<link rel="modulepreload" href="./other.js">',
+      new Map([["other.js", "console.log('from-the-preload')"]]),
+    )
+    expect(result.html).toBe("")
+    expect(result.html).not.toContain("from-the-preload")
+    expect([...result.inlined]).toEqual(["other.js"])
+    expect(result.unresolved).toEqual([])
+  })
+
   it("leaves a reference to no file of the bundle in place, and lists it", () => {
     const result = inlineIntoHtml(
       '<script src="https://cdn.example/x.js"></script><link rel="stylesheet" href="missing.css">',
