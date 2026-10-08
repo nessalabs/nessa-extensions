@@ -6,8 +6,8 @@
  * the same views (nessa-agent ADR 333, "The definition").
  *
  * The definition arrives over the wire, so it carries no functions: a unit, a
- * delta unit and a number of decimals say how a metric's numbers read
- * (`metric.ts`).
+ * delta unit, where that unit is written, and a number of decimals say how a
+ * metric's numbers read (`metric.ts`).
  */
 import { z } from "zod/v4"
 
@@ -18,10 +18,16 @@ export const metric = z
   .strictObject({
     id,
     name: text,
-    /** Written straight after a value, as given: "%", " ms". */
+    /** Written with a value as given, spacing included: "%", " ms", "$". */
     unit: z.string(),
-    /** Written after a change instead of `unit`, when it differs: " pts". */
+    /** Written with a change instead of `unit`, when it differs: " pts". */
     deltaUnit: z.string().exactOptional(),
+    /**
+     * Where `unit` and `deltaUnit` are written. Absent means after the number,
+     * which is what `metric.ts` reads; a value present must be `before` or
+     * `after` (`validation.test.ts`).
+     */
+    position: z.enum(["before", "after"]).exactOptional(),
     /** Which way is better. */
     better: z.enum(["up", "down"]),
     /** Decimals a value and a change are written with: a whole number, 0–10. */

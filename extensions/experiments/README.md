@@ -66,11 +66,13 @@ beside what they test.
   `bestSoFar`, or the baseline while it is empty), and why, are the harness's;
   `selections.ts` reads them and never works them out from scores.
 - **Numbers are written in `metric.ts`.** A value is `Formatted` text: its
-  number to the metric's `decimals`, then its `unit` exactly as given (so a
-  definition writes `" ms"` for a space), rounded half away from zero on the
-  decimal it reads as: its shortest round-trip digits, rounded exactly in
-  `bigint`, the same in every engine. A size — an interval, the noise — is `Formatted` in
-  `deltaUnit`, with no sign. A change is a `Change`, made from the two values
+  number to the metric's `decimals`, rounded half away from zero on the
+  decimal it reads as (its shortest round-trip digits, rounded exactly in
+  `bigint`, the same in every engine), and its `unit` exactly as given (so a
+  definition writes `" ms"` for a space), on the side `position` says. Absent
+  is after; `before` reads `$0.05`, and a minus leads both (`−$0.05`). A
+  size — an interval, the noise — is `Formatted` in `deltaUnit`, with no
+  sign, on that same side. A change is a `Change`, made from the two values
   it is between: the exact difference of the two as written, its size in
   `deltaUnit`, and its tone by `better` and the noise, for nessa_ui's `Delta`
   to draw. Which noise applies is decided once, in `selections.ts`
@@ -89,9 +91,10 @@ beside what they test.
 the `startedAt` it is given:
 
 - **`checkoutSample`**: the checkout-support hill-climb — percent, higher is
-  better, train and test, a cost guardrail relative to the baseline, five
-  areas, six agents, runs settled, running and queued, and a keep decided
-  after reruns, which settles after runs made later.
+  better, train and test, a cost guardrail in dollars (the unit before the
+  value) relative to the baseline, five areas, six agents, runs settled,
+  running and queued, and a keep decided after reruns, which settles after
+  runs made later.
 - **`latencySample`**: another kind — p95 latency in milliseconds, lower is
   better, one split, an accuracy guardrail at least a fixed value, no areas,
   no agents, no reference, no budget. If a view needs a change to show it, the

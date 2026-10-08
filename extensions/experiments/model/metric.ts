@@ -13,7 +13,7 @@ declare class FormattedBrand {
   private readonly formatted: true
 }
 
-/** A metric value written out: its number, then its unit. */
+/** A metric value written out: its number and its unit, where the metric says. */
 export type Formatted = string & FormattedBrand
 
 /** How a change reads against the metric's `better`. */
@@ -112,13 +112,22 @@ function unscaled(units: bigint, places: number): string {
   return places === 0 ? text : `${text.slice(0, -places)}.${text.slice(-places)}`
 }
 
-/** `units` written, a negative with a minus sign ("−3.5"). */
-const signed = (units: bigint, places: number) =>
-  units < 0n ? `${minus}${unscaled(units, places)}` : unscaled(units, places)
+/**
+ * `number` with `unit` on the side `position` says. Absent is after. The
+ * unit's own spacing is kept (`metric.test.ts`).
+ */
+const placed = (number: string, unit: string, position: Metric["position"]) =>
+  position === "before" ? `${unit}${number}` : `${number}${unit}`
 
-/** A value of `metric`: its number to the metric's decimals, then its unit as given. */
+/**
+ * A value of `metric`: its number to the metric's decimals, its unit where
+ * `position` says. A minus sign is written before both, so a leading unit
+ * reads "−$0.05" (`metric.test.ts`).
+ */
 export function formatValue(metric: Metric, value: number): Formatted {
-  return `${signed(scaled(value, metric.decimals), metric.decimals)}${metric.unit}` as Formatted
+  const units = scaled(value, metric.decimals)
+  const text = placed(unscaled(units, metric.decimals), metric.unit, metric.position)
+  return (units < 0n ? `${minus}${text}` : text) as Formatted
 }
 
 /** What a size of `metric` is written in: its delta unit, or its unit. */
@@ -129,7 +138,11 @@ const sizeUnit = (metric: Metric) => metric.deltaUnit ?? metric.unit
  * to the metric's decimals, with no sign, in the delta unit ("1.2 pts").
  */
 export function formatSize(metric: Metric, size: number): Formatted {
-  return `${unscaled(scaled(size, metric.decimals), metric.decimals)}${sizeUnit(metric)}` as Formatted
+  return placed(
+    unscaled(scaled(size, metric.decimals), metric.decimals),
+    sizeUnit(metric),
+    metric.position,
+  ) as Formatted
 }
 
 /**
@@ -158,6 +171,6 @@ export function changeBetween(
       : units > 0n === (metric.better === "up")
         ? "good"
         : "bad"
-  const size = `${unscaled(units, places)}${sizeUnit(metric)}`
+  const size = placed(unscaled(units, places), sizeUnit(metric), metric.position)
   return Object.freeze({ value, size, tone }) as Change
 }

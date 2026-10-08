@@ -1,10 +1,10 @@
 /**
  * The checkout-support hill-climb: six agents in five areas improving a
  * support agent's resolution rate, in percent, higher is better, on a train
- * and a test split, with a cost guardrail relative to the baseline. Each run
- * is written as a change against the best version when it was made, and its
- * scores derived from that, so lineage and numbers agree. Dated from
- * `startedAt`.
+ * and a test split, with a cost guardrail in dollars, the unit before the
+ * value, relative to the baseline. Each run is written as a change against
+ * the best version when it was made, and its scores derived from that, so
+ * lineage and numbers agree. Dated from `startedAt`.
  */
 import type { ExperimentInput } from "../model/index.ts"
 import {
@@ -534,7 +534,8 @@ export function checkoutSample(startedAt: number): ExperimentInput {
           metric: {
             id: "cost",
             name: "Cost per task",
-            unit: "¢",
+            unit: "$",
+            position: "before",
             better: "down",
             decimals: 2,
           },

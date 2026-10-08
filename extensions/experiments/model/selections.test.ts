@@ -190,7 +190,7 @@ describe("metricChange and guardrailChange", () => {
     })
     expect(guardrailChange(checkout, "cost", 5.2, 5.0)).toEqual({
       value: -0.2,
-      size: "0.20¢",
+      size: "$0.20",
       tone: "good",
     })
   })
@@ -270,7 +270,7 @@ describe("limitOf", () => {
       bound: "at-most",
       // Exactly 5.72; the binary product is 5.720000000000001.
       value: 5.72,
-      formatted: "5.72¢",
+      formatted: "$5.72",
     })
   })
 
