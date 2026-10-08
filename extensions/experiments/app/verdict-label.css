@@ -1,0 +1,9 @@
+.verdicts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--nessa-font-sans);
+}

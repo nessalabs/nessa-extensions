@@ -1,0 +1,116 @@
+.change {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--foreground);
+  font-family: var(--nessa-font-sans);
+  font-size: var(--nessa-font-size-3);
+  line-height: var(--nessa-line-height-3);
+}
+
+.change-summary {
+  margin: 0;
+  font-size: var(--nessa-font-size-4);
+  font-weight: 500;
+  line-height: var(--nessa-line-height-4);
+}
+
+.change-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+}
+
+.change-stat,
+.change-lines {
+  display: inline-flex;
+  gap: 8px;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.change-added {
+  color: var(--foreground);
+}
+
+.change-removed {
+  color: var(--muted-foreground);
+}
+
+.change-find {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.change-find-label {
+  color: var(--muted-foreground);
+  font-size: var(--nessa-font-size-2);
+}
+
+.change-find input {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+}
+
+.change-scroll {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.change-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.change-file {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.change-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.change-status {
+  color: var(--muted-foreground);
+}
+
+.change-path {
+  overflow: hidden;
+  font-family: var(--nessa-font-mono);
+  font-size: var(--nessa-font-size-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.change-open {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+}
+
+.change-refusal {
+  overflow: hidden;
+  max-width: 16rem;
+  color: var(--destructive);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

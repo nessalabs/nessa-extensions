@@ -1,0 +1,60 @@
+.map {
+  position: relative;
+  color: var(--foreground);
+  font-family: var(--nessa-font-sans);
+  font-size: var(--nessa-font-size-2);
+  line-height: var(--nessa-line-height-2);
+}
+
+.map-svg {
+  display: block;
+}
+
+.map-column {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.map-thread {
+  fill: none;
+  stroke: var(--foreground);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.map-name {
+  position: absolute;
+  top: 0;
+  max-width: 148px;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.map-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: 0;
+  padding: 0;
+  border: 1.5px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  transform: translate(-50%, -50%);
+}
+
+.map-dot[data-outcome="kept"] {
+  background: currentColor;
+}
+
+.map-card-title {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.map-card-area {
+  margin: 2px 0 0;
+  color: var(--muted-foreground);
+}

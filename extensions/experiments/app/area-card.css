@@ -1,0 +1,96 @@
+.areas {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.area {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--card-foreground);
+  font-family: var(--nessa-font-sans);
+  font-size: var(--nessa-font-size-3);
+  line-height: var(--nessa-line-height-3);
+}
+
+.area-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--foreground);
+}
+
+.area-heading {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.area-glyph {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.area-name {
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--nessa-font-size-4);
+  font-weight: 500;
+  line-height: var(--nessa-line-height-4);
+}
+
+.area-runs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.area-run {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid currentColor;
+  border-radius: 999px;
+}
+
+.area-run[data-outcome="kept"] {
+  background: currentColor;
+}
+
+.area-agents {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.area-agents li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.area-agent {
+  color: var(--foreground);
+}
+
+.area-note {
+  color: var(--muted-foreground);
+}

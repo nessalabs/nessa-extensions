@@ -1,0 +1,22 @@
+.preview {
+  box-sizing: border-box;
+  width: 760px;
+  padding: 16px;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--nessa-font-sans);
+}
+
+.preview-frame {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.preview-part {
+  min-height: 48px;
+  padding: 12px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
