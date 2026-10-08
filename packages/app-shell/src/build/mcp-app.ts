@@ -23,6 +23,14 @@ import type { Plugin } from "vite"
 
 import { inlineIntoHtml } from "./inline.ts"
 
+/**
+ * An asset's text. Vite gives some files as bytes; they are still files of
+ * the build, read as UTF-8 the same way the page is (`mcp-app.test.ts`).
+ */
+function textOf(source: string | Uint8Array): string {
+  return typeof source === "string" ? source : new TextDecoder().decode(source)
+}
+
 export function mcpApp(): Plugin {
   let publicDir = ""
   return {
@@ -49,6 +57,8 @@ export function mcpApp(): Plugin {
         assetsInlineLimit: () => true,
         cssCodeSplit: false,
         modulePreload: false,
+        // One script. Multiple inputs, and `preserveModules`, are then
+        // Rolldown's own refusal (`mcp-app.test.ts`), not rephrased here.
         rolldownOptions: { output: { codeSplitting: false } },
       },
     }),
@@ -65,12 +75,9 @@ export function mcpApp(): Plugin {
       for (const file of Object.values(bundle)) {
         if (file === page) continue
         if (file.type === "chunk") files.set(file.fileName, file.code)
-        else if (typeof file.source === "string") files.set(file.fileName, file.source)
+        else files.set(file.fileName, textOf(file.source))
       }
-      const html =
-        typeof page.source === "string"
-          ? page.source
-          : new TextDecoder().decode(page.source)
+      const html = textOf(page.source)
       const result = inlineIntoHtml(html, files, page.fileName)
       if (result.unresolved.length > 0) {
         this.error(

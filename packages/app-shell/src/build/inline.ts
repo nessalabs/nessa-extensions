@@ -71,18 +71,18 @@ const bundleOrigin = "https://bundle.invalid"
 /**
  * The bundle file a reference in the page names, resolved against the page's
  * own place in the bundle (`./x.js`, `../assets/x.js`, `/assets/x.js`), or
- * undefined for one outside the bundle (another origin, a query, a hash).
+ * undefined for one outside it: another origin, a query, a hash, or a
+ * percent-encoding that does not decode (`inline.test.ts`).
  */
 function fileName(reference: string, page: string): string | undefined {
-  let url: URL
   try {
-    url = new URL(reference, `${bundleOrigin}/${page}`)
+    const url = new URL(reference, `${bundleOrigin}/${page}`)
+    if (url.origin !== bundleOrigin || url.search !== "" || url.hash !== "")
+      return undefined
+    return decodeURIComponent(url.pathname.slice(1))
   } catch {
     return undefined
   }
-  if (url.origin !== bundleOrigin || url.search !== "" || url.hash !== "")
-    return undefined
-  return decodeURIComponent(url.pathname.slice(1))
 }
 
 /**
@@ -152,6 +152,8 @@ export function inlineIntoHtml(
       const file = find(href)
       if (file === undefined) return tag
       const extra = unknownAttribute(tag, understood.modulepreload)
+      // Removed, and counted written, though its code is not copied in: a
+      // preload does not run, and the tag would be a fetch (`inline.test.ts`).
       return extra === undefined
         ? written(file.name, "")
         : refuse(tag, `${href} (its ${extra} attribute)`)
