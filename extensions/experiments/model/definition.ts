@@ -23,9 +23,9 @@ export const metric = z
     /** Written with a change instead of `unit`, when it differs: " pts". */
     deltaUnit: z.string().exactOptional(),
     /**
-     * Where `unit` and `deltaUnit` are written. Absent means after the number,
-     * which is what `metric.ts` reads; a value present must be `before` or
-     * `after` (`validation.test.ts`).
+     * Where `unit` and `deltaUnit` are written: one position for both. Absent
+     * means after the number, which is what `metric.ts` reads; a value present
+     * is `before` or `after` (`metric.test.ts`, `validation.test.ts`).
      */
     position: z.enum(["before", "after"]).exactOptional(),
     /** Which way is better. */

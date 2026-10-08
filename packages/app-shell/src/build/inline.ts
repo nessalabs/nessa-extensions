@@ -11,7 +11,11 @@ export interface Inlined {
   html: string
   /** The bundle's files now in the HTML. */
   inlined: Set<string>
-  /** Each `src` or `href` of a script or stylesheet that names no file of the bundle. */
+  /**
+   * Each `src` or `href` of a script or stylesheet that names no file of the
+   * bundle, or a file of the build whose bytes are not UTF-8. That one is the
+   * reference followed by ` (not UTF-8)`.
+   */
   unresolved: string[]
   /**
    * Each script or stylesheet that cannot be written inline as it is, left in
@@ -89,11 +93,15 @@ function fileName(reference: string, page: string): string | undefined {
  * `html`, the bundle's file `page`, with each `<script src>` and
  * `<link rel="stylesheet">` that names a file in `files` replaced by the
  * file's contents, and each `<link rel="modulepreload">` of one removed.
+ * A name in `notText` is a file of the build whose bytes are not UTF-8: its
+ * reference is listed unresolved with that reason, and not written in
+ * (`mcp-app.test.ts`).
  */
 export function inlineIntoHtml(
   html: string,
   files: ReadonlyMap<string, string>,
   page = "index.html",
+  notText: ReadonlySet<string> = new Set(),
 ): Inlined {
   const inlined = new Set<string>()
   const unresolved: string[] = []
@@ -102,6 +110,10 @@ export function inlineIntoHtml(
   const find = (reference: string | undefined) => {
     if (reference === undefined) return undefined
     const name = fileName(reference, page)
+    if (name !== undefined && notText.has(name)) {
+      unresolved.push(`${reference} (not UTF-8)`)
+      return undefined
+    }
     const contents = name === undefined ? undefined : files.get(name)
     if (name === undefined || contents === undefined) {
       unresolved.push(reference)

@@ -164,6 +164,13 @@ describe("changeBetween", () => {
     expect(changeBetween({ ...dollars, position: "after" }, 0, 0.5).size).toBe("0.50$")
   })
 
+  it("writes a delta unit on the same side as the unit", () => {
+    const cost = { ...dollars, deltaUnit: "USD " }
+    expect(formatValue(cost, 0.05)).toBe("$0.05")
+    expect(formatSize(cost, 0.5)).toBe("USD 0.50")
+    expect(changeBetween(cost, 1, 1.5).size).toBe("USD 0.50")
+  })
+
   it("is neutral within the noise, the noise included, and not beyond it", () => {
     expect(changeBetween(percent, 0, 0.5, 0.5).tone).toBe("neutral")
     expect(changeBetween(percent, 0, -0.5, 0.5).tone).toBe("neutral")

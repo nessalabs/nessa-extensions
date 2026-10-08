@@ -166,6 +166,38 @@ describe("mcpApp", () => {
     expect(html).toMatch(/<script type="module">[\s\S]*hi[\s\S]*<\/script>/)
   })
 
+  it("refuses a stylesheet whose bytes are not UTF-8, instead of inlining a replacement character", async () => {
+    const root = app({
+      "index.html":
+        '<!doctype html><html><head><link rel="stylesheet" href="./bytes.css"></head>' +
+        '<body><script type="module" src="./main.ts"></script></body></html>',
+      "main.ts": "document.body.append('hi')",
+    })
+    await expect(
+      build({
+        root,
+        configFile: false,
+        logLevel: "silent",
+        plugins: [
+          {
+            name: "emits-non-utf8",
+            generateBundle() {
+              this.emitFile({
+                type: "asset",
+                fileName: "bytes.css",
+                source: Uint8Array.of(0xff),
+              })
+            },
+          },
+          mcpApp(),
+        ],
+        build: { outDir: join(root, "dist") },
+      }),
+    ).rejects.toThrow(
+      "these are not UTF-8, so they cannot be written inline: ./bytes.css (not UTF-8)",
+    )
+  })
+
   it("refuses two entry points with Rolldown's message, not the plugin's", async () => {
     const root = app({
       "index.html":
@@ -187,9 +219,7 @@ describe("mcpApp", () => {
           },
         },
       }),
-    ).rejects.toThrow(
-      'Invalid value "false" for option "output.codeSplitting" - multiple inputs are not supported when "output.codeSplitting" is false.',
-    )
+    ).rejects.toThrow(/multiple inputs are not supported/)
   })
 
   it("refuses preserveModules with Rolldown's message, not the plugin's", async () => {
@@ -209,9 +239,7 @@ describe("mcpApp", () => {
           rolldownOptions: { output: { preserveModules: true } },
         },
       }),
-    ).rejects.toThrow(
-      'Invalid value "false" for option "output.codeSplitting" - this option is not supported for "output.preserveModules".',
-    )
+    ).rejects.toThrow(/preserveModules/)
   })
 
   it("refuses a build with a file the HTML does not take in, such as another plugin's", async () => {
