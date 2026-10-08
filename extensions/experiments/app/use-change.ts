@@ -26,15 +26,17 @@ export function useChangeView(options: {
     schedule,
   })
   const [query, setQuery] = useState("")
-  const runId = run?.id
-  const [tracked, setTracked] = useState(runId)
+  // A run id is unique only within an experiment, so both belong in the key,
+  // as they do for the open-file state beside this.
+  const identity = `${experiment.id}\0${run?.id ?? ""}`
+  const [tracked, setTracked] = useState(identity)
   // Reset in this render. An effect would filter the new run with the old
   // query for the frame before it ran.
-  if (tracked !== runId) {
-    setTracked(runId)
+  if (tracked !== identity) {
+    setTracked(identity)
     setQuery("")
   }
-  const activeQuery = tracked !== runId ? "" : query
+  const activeQuery = tracked !== identity ? "" : query
 
   const files = useMemo(() => {
     if (read === undefined) return []

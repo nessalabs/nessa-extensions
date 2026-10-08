@@ -9,6 +9,7 @@ import { memoryChannel } from "@nessalabs/app-shell/fake-host"
 import { createFakeHost } from "@nessalabs/app-shell/fake-host"
 import { BridgeProvider, HostThemeScope, useConnection } from "@nessalabs/app-shell/react"
 
+import { fixture } from "../model/fixture.ts"
 import {
   validateExperiment,
   type Experiment,
@@ -225,5 +226,39 @@ describe("the components in the fake host", () => {
     })
     expect(rows().length).toBe(1)
     expect(paths()).toEqual([later.path])
+  })
+
+  it("clears the file query when another experiment reuses the run id", () => {
+    const firstInput = fixture()
+    const first = validateExperiment(firstInput)
+    if (first.kind !== "valid") throw new Error("the fixture did not validate")
+    const secondInput = fixture()
+    secondInput.id = "exp-2"
+    const changed = secondInput.runs[0]
+    if (changed === undefined) throw new Error("the fixture has its run")
+    changed.change = {
+      summary: "Changes one other file.",
+      files: [{ path: "other.ts", status: "modified", added: 1, removed: 0 }],
+    }
+    const second = validateExperiment(secondInput)
+    if (second.kind !== "valid") throw new Error("the second experiment did not validate")
+    const runA = first.experiment.runs.find((run) => run.id === "r1")
+    const runB = second.experiment.runs.find((run) => run.id === "r1")
+    if (runA === undefined || runB === undefined) throw new Error("both runs are r1")
+
+    const { rerender } = render(<ScaleChange experiment={first.experiment} run={runA} />)
+    const query = screen.getByRole("textbox", { name: "Find a file" })
+    fireEvent.change(query, { target: { value: "a.ts" } })
+    expect(
+      [...document.querySelectorAll(".change-path")].map((node) => node.textContent),
+    ).toEqual(["a.ts"])
+
+    rerender(<ScaleChange experiment={second.experiment} run={runB} />)
+    const cleared = screen.getByRole("textbox", { name: "Find a file" })
+    if (!(cleared instanceof HTMLInputElement)) throw new Error("the query is a field")
+    expect(cleared.value).toBe("")
+    expect(
+      [...document.querySelectorAll(".change-path")].map((node) => node.textContent),
+    ).toEqual(["other.ts"])
   })
 })
