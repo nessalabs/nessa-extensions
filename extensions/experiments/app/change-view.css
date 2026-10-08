@@ -59,8 +59,6 @@
 }
 
 .change-scroll {
-  max-height: 320px;
-  overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }

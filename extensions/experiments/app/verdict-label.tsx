@@ -2,7 +2,7 @@
  * A verdict as the definition wrote it: the label and the tone, on a status
  * mark. The view does not know what the verdict means.
  */
-import { StatusLabel } from "./stand-in.tsx"
+import { StatusLabel } from "./kit-stand-in/index.ts"
 import type { Tone } from "../model/index.ts"
 import "./verdict-label.css"
 

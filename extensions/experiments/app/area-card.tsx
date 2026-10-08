@@ -3,7 +3,8 @@
  * latest settled score, the runs, and the agents on it. `AreaCards` draws
  * one per area and nothing when there are none.
  */
-import { Delta, seriesInk, Stat, StatusLabel } from "./stand-in.tsx"
+import { Delta, Stat, StatusLabel } from "./kit-stand-in/index.ts"
+import { seriesInk } from "./series.ts"
 import type { AreaCardRead } from "./reading.ts"
 import "./area-card.css"
 

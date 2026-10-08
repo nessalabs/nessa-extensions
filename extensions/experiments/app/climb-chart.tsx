@@ -1,12 +1,10 @@
 /**
  * The climb. It draws the layout it is given: the best-so-far step line, the
- * noise band, the reference, and one point per settled run. Hover and the
- * card's place arrive as props; `useClimbChart` owns them.
+ * noise band, the reference, and one point per settled run. Hover arrives as
+ * props; `useClimbChart` owns it. The card places itself.
  */
-import type { Ref } from "react"
-
 import { margins } from "./geometry.ts"
-import { ChartCard, Delta } from "./stand-in.tsx"
+import { ChartTooltip, Delta } from "./kit-stand-in/index.ts"
 import type { Formatted, Tone } from "../model/index.ts"
 import type { ScoreRead } from "./reading.ts"
 import "./climb-chart.css"
@@ -49,8 +47,7 @@ export interface ClimbChartProps {
     readonly value: Formatted
   }
   readonly hover?: ClimbHover
-  readonly card?: { readonly left: number; readonly top: number }
-  readonly cardRef: Ref<HTMLDivElement>
+  readonly anchor?: { readonly x: number; readonly y: number }
   readonly onHover: (runId: string | undefined) => void
 }
 
@@ -66,8 +63,7 @@ export function ClimbChart({
   band,
   reference,
   hover,
-  card,
-  cardRef,
+  anchor,
   onHover,
 }: ClimbChartProps) {
   return (
@@ -147,8 +143,8 @@ export function ClimbChart({
             onBlur={() => onHover(undefined)}
           />
         ))}
-        {hover === undefined || card === undefined ? null : (
-          <ChartCard left={card.left} top={card.top} cardRef={cardRef}>
+        {hover === undefined || anchor === undefined ? null : (
+          <ChartTooltip anchor={anchor}>
             <p className="climb-card-title">
               <span>#{hover.number}</span>
               <span data-tone={hover.tone}>{hover.verdict}</span>
@@ -177,7 +173,7 @@ export function ClimbChart({
                 </li>
               ))}
             </ul>
-          </ChartCard>
+          </ChartTooltip>
         )}
       </div>
     </figure>

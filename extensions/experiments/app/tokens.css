@@ -35,6 +35,9 @@
   --nessa-chart-series-4-strong: oklch(0.78 0.1 85);
   --nessa-chart-series-5: oklch(0.8446 0.075 15);
   --nessa-chart-series-5-strong: oklch(0.63 0.1 15);
+  --nessa-chart-series-6-strong: oklch(0.52 0.1 145);
+  --nessa-chart-series-7-strong: oklch(0.5 0.1 305);
+  --nessa-chart-series-8-strong: oklch(0.72 0.1 230);
   --nessa-market-gain: oklch(0.5 0.135 148);
   --nessa-market-loss: oklch(0.55 0.19 27);
 }
@@ -60,6 +63,9 @@
   --nessa-chart-series-4-strong: oklch(0.8376 0.1 85);
   --nessa-chart-series-5: oklch(0.7046 0.075 15);
   --nessa-chart-series-5-strong: oklch(0.7746 0.1 15);
+  --nessa-chart-series-6-strong: oklch(0.7284 0.1 145);
+  --nessa-chart-series-7-strong: oklch(0.72 0.1 305);
+  --nessa-chart-series-8-strong: oklch(0.8524 0.1 230);
   --nessa-market-gain: oklch(0.8 0.19 150);
   --nessa-market-loss: oklch(0.7 0.19 25);
 }

@@ -7,8 +7,7 @@ import { useMemo, useState } from "react"
 import { mapLayout } from "./geometry.ts"
 import type { ExplorationMapProps } from "./exploration-map.tsx"
 import { mapRead } from "./reading.ts"
-import { seriesInk } from "./stand-in.tsx"
-import { useAnchoredCard } from "./use-measure.ts"
+import { seriesInk } from "./series.ts"
 import type { Experiment } from "../model/index.ts"
 
 export function useExplorationMap(
@@ -35,10 +34,6 @@ export function useExplorationMap(
   const [hovered, setHovered] = useState<string | undefined>()
   const readDot = read.runs.find((run) => run.runId === hovered)
   const placed = layout.dots.find((dot) => dot.runId === hovered)
-  const { ref, place } = useAnchoredCard(
-    placed === undefined ? undefined : { x: placed.x, y: placed.y },
-    { left: 0, top: 0, width: layout.width, height: layout.height },
-  )
   const at = new Map(layout.dots.map((dot) => [dot.runId, dot]))
   const columnX = new Map(layout.columns.map((column) => [column.id, column.x]))
   return {
@@ -82,8 +77,6 @@ export function useExplorationMap(
             area: readDot.area,
           },
         }),
-    ...(place === undefined ? {} : { card: place }),
-    cardRef: ref,
     onHover: setHovered,
   }
 }

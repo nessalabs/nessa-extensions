@@ -2,15 +2,8 @@ import { describe, expect, it } from "vitest"
 
 import { climb, validateExperiment, type ExperimentInput } from "../model/index.ts"
 import { checkoutSample, latencySample } from "../samples/index.ts"
-import {
-  axisTicks,
-  climbLayout,
-  formatElapsed,
-  mapLayout,
-  placeCard,
-  stepAfter,
-  visibleRange,
-} from "./geometry.ts"
+import { climbLayout, formatElapsed, mapLayout } from "./geometry.ts"
+import { niceTicks, placeChartTooltip, stepPath } from "./kit-stand-in/index.ts"
 
 const begun = Date.UTC(2026, 9, 1, 9)
 
@@ -23,19 +16,19 @@ function experiment(sample: (startedAt: number) => ExperimentInput) {
 const identity = { x: (value: number) => value, y: (value: number) => value }
 const px = (value: number) => Math.round(value * 100) / 100
 
-describe("axisTicks", () => {
+describe("niceTicks", () => {
   it("bounds the data on a 1-2-5 step and widens a flat series", () => {
-    const ticks = axisTicks(0, 100, 4)
+    const ticks = niceTicks(0, 100, 4)
     expect(ticks.length).toBeGreaterThan(1)
     expect(ticks[0]).toBeLessThanOrEqual(0)
     expect(ticks.at(-1)).toBeGreaterThanOrEqual(100)
-    const flat = axisTicks(5, 5, 4)
+    const flat = niceTicks(5, 5, 4)
     expect(flat[0]).toBeLessThan(5)
     expect(flat.at(-1)).toBeGreaterThan(5)
   })
 
   it("gives no ticks for a non-finite bound", () => {
-    expect(axisTicks(Number.NaN, 1, 4)).toEqual([])
+    expect(niceTicks(Number.NaN, 1, 4)).toEqual([])
   })
 })
 
@@ -48,10 +41,10 @@ describe("formatElapsed", () => {
   })
 })
 
-describe("stepAfter", () => {
+describe("stepPath", () => {
   it("keeps the order it is given and carries the last value out", () => {
     expect(
-      stepAfter(
+      stepPath(
         [
           { x: 0, y: 1 },
           { x: 2, y: 3 },
@@ -60,8 +53,8 @@ describe("stepAfter", () => {
         identity,
       ),
     ).toBe("M0,1H2V3H1V0")
-    expect(stepAfter([{ x: 0, y: 1 }], identity, 4)).toBe("M0,1H4")
-    expect(stepAfter([], identity)).toBe("")
+    expect(stepPath([{ x: 0, y: 1 }], identity, { until: 4 })).toBe("M0,1H4")
+    expect(stepPath([], identity)).toBe("")
   })
 })
 
@@ -139,34 +132,37 @@ describe("mapLayout", () => {
   })
 })
 
-describe("placeCard", () => {
-  const bounds = { left: 0, top: 0, width: 200, height: 100 }
+describe("placeChartTooltip", () => {
+  const boundary = { left: 0, top: 0, width: 200, height: 100 }
+  const gap = { side: "right" as const, offset: 12, padding: 8 }
 
   it("sits to the right of the anchor, or to the left when the right does not fit", () => {
     expect(
-      placeCard({ anchor: { x: 20, y: 40 }, card: { width: 30, height: 10 }, bounds }),
-    ).toEqual({ left: 32, top: 35 })
+      placeChartTooltip({
+        anchor: { x: 20, y: 40 },
+        size: { width: 30, height: 10 },
+        boundary,
+        ...gap,
+      }),
+    ).toEqual({ x: 32, y: 35, side: "right" })
     expect(
-      placeCard({ anchor: { x: 180, y: 40 }, card: { width: 40, height: 20 }, bounds })
-        .left,
+      placeChartTooltip({
+        anchor: { x: 180, y: 40 },
+        size: { width: 40, height: 20 },
+        boundary,
+        ...gap,
+      }).x,
     ).toBe(128)
   })
 
   it("pins a card larger than the bounds to the padding", () => {
     expect(
-      placeCard({
+      placeChartTooltip({
         anchor: { x: 50, y: 50 },
-        card: { width: 300, height: 200 },
-        bounds: { left: 0, top: 0, width: 100, height: 80 },
+        size: { width: 300, height: 200 },
+        boundary: { left: 0, top: 0, width: 100, height: 80 },
+        ...gap,
       }),
-    ).toEqual({ left: 8, top: 8 })
-  })
-})
-
-describe("visibleRange", () => {
-  it("windows ten thousand rows and overscans", () => {
-    expect(visibleRange(0, 320, 36, 10_000, 6)).toEqual({ start: 0, end: 15 })
-    expect(visibleRange(36 * 200, 320, 36, 10_000, 6)).toEqual({ start: 194, end: 215 })
-    expect(visibleRange(0, 320, 36, 0, 6)).toEqual({ start: 0, end: 0 })
+    ).toEqual({ x: 8, y: 8, side: "right" })
   })
 })

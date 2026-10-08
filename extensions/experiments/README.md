@@ -42,14 +42,15 @@ server/           the MCP server, on @nessalabs/server-kit; runs in Node
   main.ts         the bin: the extension over stdio, on the samples
 app/              the components, in the browser; the pages are #7
   count.ts        how a count is written; a metric's numbers stay in metric.ts
-  geometry.ts     the climb's and the map's pixels, and which file rows are in view
+  geometry.ts     the climb's and the map's pixels
+  kit-stand-in/   a temporary copy of nessa_ui at e02b577, deleted when
+                  @nessalabs/ui is installable (nessa_ui#115)
   open-file.ts    opening a file or the whole change: the latest request per target
   reading.ts      what a view shows; labels from the definition, numbers from metric.ts
-  stand-in.tsx    Delta, StatusLabel, Stat, Meter, ProportionBar, the hover card,
-                  until @nessalabs/ui is on npm (nessa_ui#115)
+  series.ts       an area's hue as the chart series ink
   tokens.css      nessa_ui's token defaults, generated from the pin in nessa-ui-tokens.ts
   use-climb.ts, use-map.ts, use-change.ts, use-open-file.ts, use-measure.ts
-                  hover, the file window, opening a file, measurement
+                  hover, the file query, opening a file, measurement
   climb-chart.tsx, exploration-map.tsx, area-card.tsx, verdict-label.tsx,
   case-results.tsx, change-view.tsx
                   the views: props in, no state of their own
@@ -59,7 +60,7 @@ vite.config.ts    the build: server/main.ts bundled into dist/main.js, the bin
 ```
 
 `server/` and `app/` both import `model/`; it imports neither. The views take
-props. The hooks own hover, measurement, the file window and opening a file.
+props. The hooks own hover, measurement, the file query and opening a file.
 Tests sit beside what they test.
 
 ## The model

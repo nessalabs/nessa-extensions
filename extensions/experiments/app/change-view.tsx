@@ -1,11 +1,10 @@
 /**
- * A run's change: the summary, how many lines moved, and the files. The list
- * shows the window it is given, so a change of ten thousand files does not
- * mount them. Opening a file, or the whole change, is the state `useOpenFile`
- * already decided; this view only shows it.
+ * A run's change: the summary, how many lines moved, and the files. `VirtualList`
+ * windows the rows, so a change of ten thousand files does not mount them.
+ * Opening a file, or the whole change, is the state `useOpenFile` already
+ * decided; this view only shows it.
  */
-import type { Ref } from "react"
-
+import { VirtualList } from "./kit-stand-in/index.ts"
 import type { ChangeFileRead } from "./reading.ts"
 import type { Shown } from "./open-file.ts"
 import "./change-view.css"
@@ -24,14 +23,9 @@ export interface ChangeViewProps {
   readonly added: string
   readonly removed: string
   readonly files: readonly ChangeFileRead[]
-  readonly total: number
-  readonly start: number
-  readonly rowHeight: number
-  readonly scrollRef: Ref<HTMLDivElement>
   readonly query: string
   readonly listKey: string
   readonly onQuery: (query: string) => void
-  readonly onScroll: (scrollTop: number) => void
   readonly changeShown: Shown
   readonly shownFor: (path: string) => Shown
   readonly onOpenFile: (path: string) => void
@@ -51,14 +45,9 @@ export function ChangeView({
   added,
   removed,
   files,
-  total,
-  start,
-  rowHeight,
-  scrollRef,
   query,
   listKey,
   onQuery,
-  onScroll,
   changeShown,
   shownFor,
   onOpenFile,
@@ -84,46 +73,42 @@ export function ChangeView({
         <span className="change-find-label">Find a file</span>
         <input value={query} onChange={(event) => onQuery(event.target.value)} />
       </label>
-      <div
+      <VirtualList
         key={listKey}
-        ref={scrollRef}
         className="change-scroll"
-        onScroll={(event) => onScroll(event.currentTarget.scrollTop)}
+        items={files}
+        getKey={(file) => file.key}
+        rowHeight={36}
+        height={320}
+        overscan={6}
       >
-        <div style={{ height: total * rowHeight }}>
-          <ul
-            className="change-files"
-            style={{ transform: `translateY(${start * rowHeight}px)` }}
-          >
-            {files.map((file) => {
-              const state = shownFor(file.path)
-              return (
-                <li key={file.key} className="change-file" style={{ height: rowHeight }}>
-                  <span className="change-status">{statusWord[file.status]}</span>
-                  <span className="change-path">{file.path}</span>
-                  <span className="change-lines">
-                    <span className="change-added">+{file.added}</span>
-                    <span className="change-removed">
-                      {minus}
-                      {file.removed}
-                    </span>
-                  </span>
-                  <span className="change-action">
-                    <button
-                      type="button"
-                      className="change-open"
-                      onClick={() => onOpenFile(file.path)}
-                    >
-                      Open
-                    </button>
-                    {refusal(state)}
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      </div>
+        {(file) => {
+          const state = shownFor(file.path)
+          return (
+            <div className="change-file" style={{ height: 36 }}>
+              <span className="change-status">{statusWord[file.status]}</span>
+              <span className="change-path">{file.path}</span>
+              <span className="change-lines">
+                <span className="change-added">+{file.added}</span>
+                <span className="change-removed">
+                  {minus}
+                  {file.removed}
+                </span>
+              </span>
+              <span className="change-action">
+                <button
+                  type="button"
+                  className="change-open"
+                  onClick={() => onOpenFile(file.path)}
+                >
+                  Open
+                </button>
+                {refusal(state)}
+              </span>
+            </div>
+          )
+        }}
+      </VirtualList>
     </section>
   )
 }

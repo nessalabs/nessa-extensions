@@ -3,7 +3,7 @@
  * and the page of cases that moved. The noun and the counts arrive already
  * written. No cases, nothing to mount — the parent omits it.
  */
-import { Meter, ProportionBar, shares } from "./stand-in.tsx"
+import { Meter, ProportionBar } from "./kit-stand-in/index.ts"
 import type { CaseResultsRead } from "./reading.ts"
 import "./case-results.css"
 
@@ -21,15 +21,16 @@ export function CaseResults({
   slices,
   moved,
 }: CaseResultsRead) {
-  const widths = shares(segments.map((segment) => segment.value))
   return (
     <section className="cases">
       <ProportionBar
-        label={barLabel}
-        segments={segments.map((segment, index) => ({
+        aria-label={barLabel}
+        formatValue={(value) => String(value)}
+        segments={segments.map((segment) => ({
           id: segment.id,
-          width: widths[index] ?? 0,
-          ink: segmentInk[segment.id],
+          label: segment.label,
+          value: segment.value,
+          color: segmentInk[segment.id],
         }))}
       />
       <p className="cases-summary">
@@ -40,7 +41,7 @@ export function CaseResults({
         {slices.map((slice) => (
           <li key={slice.name}>
             <span className="cases-slice-name">{slice.name}</span>
-            <Meter value={slice.filled} valueText={slice.text} />
+            <Meter label={slice.name} value={slice.filled} valueText={slice.text} />
             <span className="cases-slice-text">{slice.text}</span>
           </li>
         ))}

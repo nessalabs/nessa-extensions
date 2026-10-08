@@ -8,8 +8,7 @@ import { formatElapsed } from "./geometry.ts"
 import { climbLayout } from "./geometry.ts"
 import type { ClimbChartProps } from "./climb-chart.tsx"
 import { climbRead } from "./reading.ts"
-import { seriesInk } from "./stand-in.tsx"
-import { useAnchoredCard } from "./use-measure.ts"
+import { seriesInk } from "./series.ts"
 import { formatValue, type Experiment } from "../model/index.ts"
 
 export function useClimbChart(
@@ -37,10 +36,6 @@ export function useClimbChart(
   const [hovered, setHovered] = useState<string | undefined>()
   const readPoint = read.points.find((point) => point.runId === hovered)
   const placed = layout.points.find((point) => point.runId === hovered)
-  const { ref, place } = useAnchoredCard(
-    placed === undefined ? undefined : { x: placed.x, y: placed.y },
-    { left: 0, top: 0, width: layout.width, height: layout.height },
-  )
   const at = new Map(layout.points.map((point) => [point.runId, point]))
   return {
     title: read.title,
@@ -96,8 +91,7 @@ export function useClimbChart(
             scores: readPoint.scores,
           },
         }),
-    ...(place === undefined ? {} : { card: place }),
-    cardRef: ref,
+    ...(placed === undefined ? {} : { anchor: { x: placed.x, y: placed.y } }),
     onHover: setHovered,
   }
 }

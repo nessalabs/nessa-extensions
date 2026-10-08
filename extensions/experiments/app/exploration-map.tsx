@@ -2,9 +2,7 @@
  * The exploration map: one column per area, every run in its area, and the
  * thread through the best-so-far runs in order. No areas, nothing drawn.
  */
-import type { Ref } from "react"
-
-import { ChartCard } from "./stand-in.tsx"
+import { ChartTooltip } from "./kit-stand-in/index.ts"
 import type { Outcome, Tone } from "../model/index.ts"
 import "./exploration-map.css"
 
@@ -34,8 +32,6 @@ export interface ExplorationMapProps {
   readonly dots: readonly MapDotProps[]
   readonly thread: string
   readonly hover?: MapDotProps
-  readonly card?: { readonly left: number; readonly top: number }
-  readonly cardRef: Ref<HTMLDivElement>
   readonly onHover: (runId: string | undefined) => void
 }
 
@@ -46,8 +42,6 @@ export function ExplorationMap({
   dots,
   thread,
   hover,
-  card,
-  cardRef,
   onHover,
 }: ExplorationMapProps) {
   if (columns.length === 0) return null
@@ -89,13 +83,13 @@ export function ExplorationMap({
           onBlur={() => onHover(undefined)}
         />
       ))}
-      {hover === undefined || card === undefined ? null : (
-        <ChartCard left={card.left} top={card.top} cardRef={cardRef}>
+      {hover === undefined ? null : (
+        <ChartTooltip anchor={{ x: hover.x, y: hover.y }}>
           <p className="map-card-title">
             #{hover.number} {hover.verdict}
           </p>
           <p className="map-card-area">{hover.area}</p>
-        </ChartCard>
+        </ChartTooltip>
       )}
     </div>
   )
