@@ -1,0 +1,118 @@
+.climb {
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--nessa-font-sans);
+  font-size: var(--nessa-font-size-3);
+  line-height: var(--nessa-line-height-3);
+}
+
+.climb-caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 8px;
+}
+
+.climb-reference-label {
+  flex-basis: 100%;
+  color: var(--muted-foreground);
+  text-align: right;
+}
+
+.climb-title {
+  font-size: var(--nessa-font-size-4);
+  line-height: var(--nessa-line-height-4);
+}
+
+.climb-split {
+  color: var(--muted-foreground);
+}
+
+.climb-plot {
+  position: relative;
+}
+
+.climb-svg {
+  display: block;
+  overflow: visible;
+}
+
+.climb-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.climb-tick {
+  fill: var(--muted-foreground);
+  font-size: var(--nessa-font-size-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.climb-band {
+  fill: color-mix(in oklab, var(--foreground) 8%, transparent);
+  stroke: none;
+}
+
+.climb-best {
+  fill: none;
+  stroke: var(--foreground);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.climb-reference {
+  stroke: var(--muted-foreground);
+  stroke-dasharray: 4 4;
+  stroke-width: 1;
+}
+
+.climb-point {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: 0;
+  padding: 0;
+  border: 1.5px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  transform: translate(-50%, -50%);
+}
+
+.climb-point[data-outcome="kept"] {
+  background: currentColor;
+}
+
+.climb-card-title,
+.climb-scores li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.climb-card-title {
+  margin: 0 0 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.climb-card-reason,
+.climb-card-who,
+.climb p {
+  margin: 0 0 4px;
+}
+
+.climb-card-who,
+.climb-card-reason {
+  color: var(--muted-foreground);
+}
+
+.climb-scores {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.climb-score {
+  font-variant-numeric: tabular-nums;
+}

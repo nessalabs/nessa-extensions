@@ -1,0 +1,72 @@
+/*
+ * Defaults for the nessa_ui tokens these views read, until `@nessalabs/ui`
+ * publishes its stylesheet (nessalabs/nessa_ui#115). The names and the values
+ * are that package's `theme.css` (main, read 2026-10-08): the semantic
+ * surfaces, the market pair Delta and StatusLabel write in, and the chart
+ * series an area's hue selects. A host's theme, applied on the scope, overrides
+ * a token it supplies. This is the only file here that writes a colour.
+ */
+:root {
+  color-scheme: light;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.52 0 0);
+  --border: oklch(0.922 0 0);
+  --destructive: oklch(0.577 0.235 27.325);
+  --radius: 0.625rem;
+  --nessa-font-sans: ui-sans-serif, system-ui, sans-serif;
+  --nessa-font-mono: ui-monospace, monospace;
+  --nessa-font-size-2: 0.75rem;
+  --nessa-font-size-3: 0.8125rem;
+  --nessa-font-size-4: 0.875rem;
+  --nessa-font-size-5: 1rem;
+  --nessa-font-size-7: 1.25rem;
+  --nessa-line-height-2: 1.333333;
+  --nessa-line-height-3: 1.538462;
+  --nessa-line-height-4: 1.428571;
+  --nessa-line-height-5: 1.5;
+  --nessa-line-height-7: 1.4;
+  --nessa-market-gain: oklch(0.5 0.135 148);
+  --nessa-market-loss: oklch(0.55 0.19 27);
+  --nessa-chart-series-1: oklch(0.7732 0.075 265);
+  --nessa-chart-series-1-strong: oklch(0.46 0.1 265);
+  --nessa-chart-series-2: oklch(0.8656 0.075 45);
+  --nessa-chart-series-2-strong: oklch(0.68 0.1 45);
+  --nessa-chart-series-3: oklch(0.8236 0.075 190);
+  --nessa-chart-series-3-strong: oklch(0.58 0.1 190);
+  --nessa-chart-series-4: oklch(0.9076 0.075 85);
+  --nessa-chart-series-4-strong: oklch(0.78 0.1 85);
+  --nessa-chart-series-5: oklch(0.8446 0.075 15);
+  --nessa-chart-series-5-strong: oklch(0.63 0.1 15);
+}
+
+:where([data-nessa-mode="dark"]) {
+  color-scheme: dark;
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --border: oklch(1 0 0 / 35%);
+  --destructive: oklch(0.704 0.187 22.216);
+  --nessa-market-gain: oklch(0.8 0.19 150);
+  --nessa-market-loss: oklch(0.7 0.19 25);
+  --nessa-chart-series-1: oklch(0.6332 0.075 265);
+  --nessa-chart-series-1-strong: oklch(0.7032 0.1 265);
+  --nessa-chart-series-2: oklch(0.7256 0.075 45);
+  --nessa-chart-series-2-strong: oklch(0.7956 0.1 45);
+  --nessa-chart-series-3: oklch(0.6836 0.075 190);
+  --nessa-chart-series-3-strong: oklch(0.7536 0.1 190);
+  --nessa-chart-series-4: oklch(0.7676 0.075 85);
+  --nessa-chart-series-4-strong: oklch(0.8376 0.1 85);
+  --nessa-chart-series-5: oklch(0.7046 0.075 15);
+  --nessa-chart-series-5-strong: oklch(0.7746 0.1 15);
+}

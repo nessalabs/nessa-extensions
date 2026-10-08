@@ -1,0 +1,150 @@
+.delta {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.delta[data-tone="good"] {
+  color: var(--nessa-market-gain);
+}
+
+.delta[data-tone="bad"] {
+  color: var(--nessa-market-loss);
+}
+
+.delta[data-tone="neutral"] {
+  color: var(--muted-foreground);
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  color: var(--foreground);
+  font-size: var(--nessa-font-size-3);
+  line-height: var(--nessa-line-height-3);
+  white-space: nowrap;
+}
+
+.status[data-tone="neutral"] {
+  color: var(--muted-foreground);
+}
+
+.status-mark {
+  display: flex;
+  flex: none;
+  color: var(--foreground);
+}
+
+.status[data-tone="good"] .status-mark {
+  color: var(--nessa-market-gain);
+}
+
+.status[data-tone="bad"] .status-mark {
+  color: var(--nessa-market-loss);
+}
+
+.status[data-tone="neutral"] .status-mark {
+  color: var(--muted-foreground);
+}
+
+.status-mark svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.status[data-tone="active"] .status-mark svg {
+  fill: currentColor;
+  stroke: none;
+}
+
+.status-word {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stat {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.stat-caption {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: var(--nessa-font-size-2);
+  line-height: var(--nessa-line-height-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stat-figure {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.stat-value {
+  color: var(--foreground);
+  font-size: var(--nessa-font-size-5);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--nessa-line-height-5);
+}
+
+.meter {
+  display: block;
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--foreground) 12%, transparent);
+}
+
+.meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--foreground);
+}
+
+.meter[data-tone="good"] .meter-fill {
+  background: var(--nessa-market-gain);
+}
+
+.meter[data-tone="bad"] .meter-fill {
+  background: var(--nessa-market-loss);
+}
+
+.bar {
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--foreground) 8%, transparent);
+}
+
+.bar-segment {
+  display: block;
+  height: 100%;
+}
+
+.chart-card {
+  position: absolute;
+  z-index: 1;
+  width: max-content;
+  max-width: 240px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  font-size: var(--nessa-font-size-3);
+  line-height: var(--nessa-line-height-3);
+  box-shadow: 0 8px 24px color-mix(in oklab, var(--foreground) 12%, transparent);
+}

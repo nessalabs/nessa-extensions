@@ -8,13 +8,14 @@ view reads the experiment through its definition
 ([nessa-agent ADR 333](https://github.com/nessalabs/nessa-agent/blob/main/docs/adr/todo/333-experiments.md),
 amended by [ADR 344](https://github.com/nessalabs/nessa-agent/blob/main/docs/adr/todo/344-mcp-ui.md)).
 
-It is built in slices. What is here is the first two:
+It is built in slices. What is here is the model, the server, and the components:
 
 | Slice | What | Status |
 | --- | --- | --- |
 | [#4](https://github.com/nessalabs/nessa-extensions/issues/4) | `model/`: the definition, validation into a branded `Experiment`, the one formatter, what the views read; `samples/` | Done |
-| [#5](https://github.com/nessalabs/nessa-extensions/issues/5) | `server/`: the tools, on `@nessalabs/server-kit` | This |
-| [#6](https://github.com/nessalabs/nessa-extensions/issues/6), [#7](https://github.com/nessalabs/nessa-extensions/issues/7) | `app/`: the components and the app | Planned |
+| [#5](https://github.com/nessalabs/nessa-extensions/issues/5) | `server/`: the tools, on `@nessalabs/server-kit` | Done |
+| [#6](https://github.com/nessalabs/nessa-extensions/issues/6) | `app/`: the climb, the map, area cards, verdicts, cases and changes | This |
+| [#7](https://github.com/nessalabs/nessa-extensions/issues/7) | `app/`: the pages — overview, areas, runs, run detail, the inline card | Planned |
 
 ## Module map
 
@@ -39,11 +40,27 @@ server/           the MCP server, on @nessalabs/server-kit; runs in Node
   view.ts         the experiment view's URI, and its placeholder HTML until the app (#7)
   extension.ts    experimentsExtension: the view and the five tools, over a source
   main.ts         the bin: the extension over stdio, on the samples
+app/              the components, in the browser; the pages are #7
+  count.ts        how a count is written; a metric's numbers stay in metric.ts
+  geometry.ts     the climb's and the map's pixels, and which file rows are in view
+  open-file.ts    opening a file or the whole change: the latest request per target
+  reading.ts      what a view shows; labels from the definition, numbers from metric.ts
+  stand-in.tsx    Delta, StatusLabel, Stat, Meter, ProportionBar, the hover card,
+                  until @nessalabs/ui is on npm (nessa_ui#115)
+  tokens.css      nessa_ui's token defaults; the only colours the components write
+  use-climb.ts, use-map.ts, use-change.ts, use-open-file.ts, use-measure.ts
+                  hover, the file window, opening a file, measurement
+  climb-chart.tsx, exploration-map.tsx, area-card.tsx, verdict-label.tsx,
+  case-results.tsx, change-view.tsx
+                  the views: props in, no state of their own
+  index.ts        what #7's pages import
+  preview.tsx     mounts every component, for the tests and the screenshots
 vite.config.ts    the build: server/main.ts bundled into dist/main.js, the bin
 ```
 
-`server/` and `app/` both import `model/`; it imports neither. Tests sit
-beside what they test.
+`server/` and `app/` both import `model/`; it imports neither. The views take
+props. The hooks own hover, measurement, the file window and opening a file.
+Tests sit beside what they test.
 
 ## The model
 
