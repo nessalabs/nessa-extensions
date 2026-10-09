@@ -2,8 +2,7 @@
 
 Each directory here is one extension: an MCP server with an MCP App, published
 as one npm package, `@nessalabs/<name>`. The first is
-[experiments](experiments) (#4–#7), built in slices: its model, its
-`server/`, and its `app/` components. The pages are #7.
+[experiments](experiments) (#4–#7): its model, its `server/`, and its `app/`.
 
 ```
 extensions/<name>/

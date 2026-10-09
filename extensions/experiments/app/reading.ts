@@ -153,6 +153,7 @@ export function climbRead(experiment: Experiment): ClimbRead {
 
 export interface AreaRunRead {
   readonly id: string
+  readonly number: number
   readonly label: string
   readonly tone: Tone
   readonly outcome: Outcome
@@ -217,7 +218,11 @@ export function areaCards(experiment: Experiment): readonly AreaCardRead[] {
       ...(score === undefined ? {} : { score: formatValue(metric, score.mean) }),
       ...(change === undefined ? {} : { change }),
       caption: metric.name,
-      runs: runs.map((run) => ({ id: run.id, ...verdictRead(experiment, run) })),
+      runs: runs.map((run) => ({
+        id: run.id,
+        number: run.number,
+        ...verdictRead(experiment, run),
+      })),
       agents: experiment.agents
         .filter((agent) => agent.areaId === area.id)
         .map((agent) => {

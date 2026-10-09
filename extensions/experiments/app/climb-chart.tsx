@@ -49,6 +49,8 @@ export interface ClimbChartProps {
   readonly hover?: ClimbHover
   readonly anchor?: { readonly x: number; readonly y: number }
   readonly onHover: (runId: string | undefined) => void
+  /** Opens the run of a point. Absent, a point is only hovered. */
+  readonly onOpen?: (runId: string) => void
 }
 
 export function ClimbChart({
@@ -65,6 +67,7 @@ export function ClimbChart({
   hover,
   anchor,
   onHover,
+  onOpen,
 }: ClimbChartProps) {
   return (
     <figure className="climb" style={{ width }}>
@@ -141,6 +144,7 @@ export function ClimbChart({
             onFocus={() => onHover(point.runId)}
             onPointerLeave={() => onHover(undefined)}
             onBlur={() => onHover(undefined)}
+            onClick={onOpen === undefined ? undefined : () => onOpen(point.runId)}
           />
         ))}
         {hover === undefined || anchor === undefined ? null : (

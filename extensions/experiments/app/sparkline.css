@@ -1,0 +1,13 @@
+.sparkline {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.sparkline-line {
+  fill: none;
+  stroke: var(--nessa-chart-series-1-strong);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}

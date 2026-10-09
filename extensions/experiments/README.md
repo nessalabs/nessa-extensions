@@ -8,14 +8,14 @@ view reads the experiment through its definition
 ([nessa-agent ADR 333](https://github.com/nessalabs/nessa-agent/blob/main/docs/adr/todo/333-experiments.md),
 amended by [ADR 344](https://github.com/nessalabs/nessa-agent/blob/main/docs/adr/todo/344-mcp-ui.md)).
 
-It is built in slices. What is here is the model, the server, and the components:
+It is built in slices. What is here is the model, the server, and the app:
 
 | Slice | What | Status |
 | --- | --- | --- |
 | [#4](https://github.com/nessalabs/nessa-extensions/issues/4) | `model/`: the definition, validation into a branded `Experiment`, the one formatter, what the views read; `samples/` | Done |
 | [#5](https://github.com/nessalabs/nessa-extensions/issues/5) | `server/`: the tools, on `@nessalabs/server-kit` | Done |
-| [#6](https://github.com/nessalabs/nessa-extensions/issues/6) | `app/`: the climb, the map, area cards, verdicts, cases and changes | This |
-| [#7](https://github.com/nessalabs/nessa-extensions/issues/7) | `app/`: the pages — overview, areas, runs, run detail, the inline card | Planned |
+| [#6](https://github.com/nessalabs/nessa-extensions/issues/6) | `app/`: the climb, the map, area cards, verdicts, cases and changes | Done |
+| [#7](https://github.com/nessalabs/nessa-extensions/issues/7) | `app/`: the pages — overview, areas, runs, run detail, the inline card | Done |
 
 ## Module map
 
@@ -37,10 +37,10 @@ server/           the MCP server, on @nessalabs/server-kit; runs in Node
   reading.ts      the one place a source's answers are checked, each parsed into a copy
   samples-source.ts  the samples as a source, dated from when the server starts
   text.ts         what each tool says in text, standing on its own
-  view.ts         the experiment view's URI, and its placeholder HTML until the app (#7)
+  view.ts         the experiment view's URI, and a placeholder document the server tests inject
   extension.ts    experimentsExtension: the view and the five tools, over a source
-  main.ts         the bin: the extension over stdio, on the samples
-app/              the components, in the browser; the pages are #7
+  main.ts         the bin: the extension over stdio, on the samples, serving dist/app/index.html
+app/              the MCP App, in the browser
   count.ts        how a count is written; a metric's numbers stay in metric.ts
   geometry.ts     the climb's and the map's pixels
   kit-stand-in/   a temporary copy of nessa_ui at e02b577, deleted when
@@ -53,15 +53,27 @@ app/              the components, in the browser; the pages are #7
                   hover, the file query, opening a file, measurement
   climb-chart.tsx, exploration-map.tsx, area-card.tsx, verdict-label.tsx,
   case-results.tsx, change-view.tsx
-                  the views: props in, no state of their own
-  index.ts        what #7's pages import
+                  the components: props in, no state of their own
+  index.ts        the components' barrel
   preview.tsx     mounts every component, for the tests
-vite.config.ts    the build: server/main.ts bundled into dist/main.js, the bin
+  host-data.ts    the tool result and `tools/call` answers, checked before a page draws them
+  navigation.ts   which view, and the runs opened over it
+  page-reading.ts what the pages show, read from the definition and the harness
+  download.ts     a download the server sent as text; MCP Apps has no download request
+  sparkline.ts    the card's best-so-far line, drawn as given
+  experiment-card.tsx, overview.tsx, areas-page.tsx, runs-view.tsx, run-detail.tsx
+                  the pages: props in
+  surface.tsx     the fullscreen view: header, view selector, pages, a run over them
+  experiment-app.tsx  the view: the card inline, the surface fullscreen
+  main.tsx        the document's entry: `mountApp`, declaring inline and fullscreen
+  index.html      the document the build inlines into one file
+vite.config.ts    the build: dist/main.js the bin, and dist/app/index.html the app
 ```
 
-`server/` and `app/` both import `model/`; it imports neither. The views take
-props. The hooks own hover, measurement, the file query and opening a file.
-Tests sit beside what they test.
+`server/` and `app/` both import `model/`; it imports neither. The component
+views take props. The pages' hooks own navigation, the run list, and the open
+run; the component hooks own hover, measurement, the file query and opening a
+file. Tests sit beside what they test.
 
 ## The model
 
@@ -137,8 +149,14 @@ built into `dist/main.js`). Its tools, all read-only:
   and for the model, plus the model's data for the view. A client without MCP
   Apps is offered only `show_experiment` and `open_file`; the server kit holds
   that, and everything else about negotiation and what a tool answers.
-- **The view's HTML is a placeholder** until the app is built (#7); then
-  `main.ts` hands `experimentsExtension` the built file.
+- **The view's HTML is the built app.** `main.ts` reads `dist/app/index.html`
+  (under `app/` beside the bundle once it is built) and hands it to `experimentsExtension`.
+  The app validates that document's tool result with `validateExperiment`
+  before it draws, then calls `list_runs`, `get_run`, and `open_file` through
+  the bridge. Inline is the card; it asks for fullscreen with
+  `ui/request-display-mode` only when the host offers it, and draws the mode
+  the host actually has. Navigation and Escape stay in the app: Escape closes
+  the run on screen, and with none open it does nothing.
 - **The data comes through a port**, `ExperimentSource` (`server/source.ts`):
   the experiments' ids, an experiment by id, and how to open a run's file.
   Nothing a source answers is trusted. `reading.ts` parses each answer into a
@@ -156,3 +174,11 @@ built into `dist/main.js`). Its tools, all read-only:
   `ExperimentSource`, handed to `experimentsExtension` in `main.ts`
   ([#5](https://github.com/nessalabs/nessa-extensions/issues/5) records the
   decision).
+
+## In a host
+
+`verification/` records the inline card and the fullscreen view: in Nessa's
+desktop, behind its sandbox proxy; in the MCP Apps reference host
+(`@modelcontextprotocol/ext-apps`'s `AppBridge`); and in the fake host. The
+reference host and the fake host draw the same pixels. Nessa shows the card
+in the conversation and the fullscreen view in a pane beside it.

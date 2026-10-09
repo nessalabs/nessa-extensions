@@ -1,13 +1,15 @@
 /**
- * The experiment view: the `ui://` resource `show_experiment` names. Its HTML
- * is the built app's (#7); until the app is built, it is this placeholder,
- * which says so and nothing more. `experimentsExtension` takes the HTML as a
- * function, so when the app lands, `main.ts` hands it the built file instead.
+ * The experiment view: the `ui://` resource `show_experiment` names. The bin
+ * (`main.ts`) serves the built app. This placeholder is what the server tests
+ * hand the extension when they are not serving that file.
  */
 
 export const experimentView = "ui://experiments/experiment"
 
-/** The view's document until the app is built (#7). */
+/**
+ * A document the server tests hand the extension. The bin serves the built
+ * app (`main.ts`); it does not serve this.
+ */
 export const placeholderHtml = `<!doctype html>
 <html lang="en">
   <head>

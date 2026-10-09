@@ -1,0 +1,25 @@
+.experiment {
+  box-sizing: border-box;
+  min-height: 100%;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.experiment *,
+.experiment *::before,
+.experiment *::after {
+  box-sizing: border-box;
+}
+
+.app-status {
+  margin: 0;
+  padding: 16px;
+  color: var(--muted-foreground);
+  font-family: var(--nessa-font-sans);
+  font-size: var(--nessa-font-size-4);
+  line-height: var(--nessa-line-height-4);
+}
+
+body {
+  margin: 0;
+}

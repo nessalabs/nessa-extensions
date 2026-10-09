@@ -64,10 +64,18 @@
 }
 
 .area-run {
+  display: block;
   width: 8px;
   height: 8px;
+  padding: 0;
   border: 1.5px solid currentColor;
   border-radius: 999px;
+  background: transparent;
+  color: inherit;
+}
+
+button.area-run {
+  cursor: pointer;
 }
 
 .area-run[data-outcome="kept"] {

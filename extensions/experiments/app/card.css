@@ -1,0 +1,84 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--nessa-font-sans);
+  font-size: var(--nessa-font-size-4);
+  line-height: var(--nessa-line-height-4);
+}
+
+.card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card-kicker {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--nessa-font-size-3);
+  line-height: var(--nessa-line-height-3);
+}
+
+.card-title {
+  margin: 0;
+  font-size: var(--nessa-font-size-5);
+  font-weight: 500;
+  line-height: var(--nessa-line-height-5);
+}
+
+.card-goal,
+.card-swarm,
+.headline-caption {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+}
+
+.card-gains {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card-gains li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.card-open {
+  align-self: flex-start;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--foreground);
+  color: var(--background);
+  font: inherit;
+  cursor: pointer;
+}
+
+.card-open:disabled {
+  color: var(--muted-foreground);
+  background: var(--card);
+  cursor: default;
+}
+
+.card-notice {
+  margin: 0;
+  color: var(--muted-foreground);
+}
