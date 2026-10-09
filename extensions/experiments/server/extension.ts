@@ -77,6 +77,9 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
         title: "Experiment",
         description: "An experiment's climb, areas, runs, and run detail.",
         html,
+        // The spec recommends an explicit border. The card sits in a
+        // conversation, and a host's default border is not the same everywhere.
+        ui: { prefersBorder: true },
       },
     ],
     tools: [

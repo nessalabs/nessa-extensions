@@ -59,12 +59,12 @@ app/              the MCP App, in the browser
   host-data.ts    the tool result and `tools/call` answers, checked before a page draws them
   navigation.ts   which view, and the runs opened over it
   page-reading.ts what the pages show, read from the definition and the harness
-  download.ts     a download the server sent as text; MCP Apps has no download request
   sparkline.ts    the card's best-so-far line, drawn as given
   experiment-card.tsx, overview.tsx, areas-page.tsx, runs-view.tsx, run-detail.tsx
                   the pages: props in
   surface.tsx     the fullscreen view: header, view selector, pages, a run over them
   experiment-app.tsx  the view: the card inline, the surface fullscreen
+  csp.ts          zod jitless, set before any schema is built: a CSP reports `new Function`
   main.tsx        the document's entry: `mountApp`, declaring inline and fullscreen
   index.html      the document the build inlines into one file
 vite.config.ts    the build: dist/main.js the bin, and dist/app/index.html the app
@@ -143,7 +143,7 @@ built into `dist/main.js`). Its tools, all read-only:
 | `get_experiment` | the app | the same, for the view to read again |
 | `list_runs` | the app | `{ experimentId }`: the runs newest first, as `data.runs` |
 | `get_run` | the app | `{ experimentId, runId }`: one run in full, as `data.run` |
-| `open_file` | the model and the app | `{ experimentId, runId, path? }`: how to open a file the run changed, or its whole change, as `data.opening`: a `link` the app hands to `ui/open-link`, contents to `download`, or why it is `unavailable` |
+| `open_file` | the model and the app | `{ experimentId, runId, path? }`: how to open a file the run changed, or its whole change, as `data.opening`: a `link` the app hands to `ui/open-link` when the host offers `openLinks`, contents to `download` which the app refuses (the spec has no download request), or why it is `unavailable` |
 
 - **Every answer is text that stands on its own**, for a host without MCP Apps
   and for the model, plus the model's data for the view. A client without MCP
@@ -152,11 +152,15 @@ built into `dist/main.js`). Its tools, all read-only:
 - **The view's HTML is the built app.** `main.ts` reads `dist/app/index.html`
   (under `app/` beside the bundle once it is built) and hands it to `experimentsExtension`.
   The app validates that document's tool result with `validateExperiment`
-  before it draws, then calls `list_runs`, `get_run`, and `open_file` through
-  the bridge. Inline is the card; it asks for fullscreen with
+  before it draws. `list_runs` and `get_run` are read again through the
+  bridge, and the view draws those validated bodies: the list's order and
+  each run's verdict, reason, and score, and the open run's outcome, cases,
+  and change. The opening snapshot says which experiment it is, and whether
+  a later run belongs to it. Inline is the card; it asks for fullscreen with
   `ui/request-display-mode` only when the host offers it, and draws the mode
-  the host actually has. Navigation and Escape stay in the app: Escape closes
-  the run on screen, and with none open it does nothing.
+  the host applied to this view. Navigation and Escape stay in the app:
+  Escape closes the run on screen, one at a time, and with none open it does
+  nothing. It does not close a run while a text field has the key.
 - **The data comes through a port**, `ExperimentSource` (`server/source.ts`):
   the experiments' ids, an experiment by id, and how to open a run's file.
   Nothing a source answers is trusted. `reading.ts` parses each answer into a
@@ -177,8 +181,17 @@ built into `dist/main.js`). Its tools, all read-only:
 
 ## In a host
 
-`verification/` records the inline card and the fullscreen view: in Nessa's
-desktop, behind its sandbox proxy; in the MCP Apps reference host
-(`@modelcontextprotocol/ext-apps`'s `AppBridge`); and in the fake host. The
-reference host and the fake host draw the same pixels. Nessa shows the card
-in the conversation and the fullscreen view in a pane beside it.
+`verification/capture.mjs` records the inline card and the fullscreen view
+and exits 0. The reference host (`@modelcontextprotocol/ext-apps`'s
+`AppBridge`) is given the checkout sample. Nessa is the desktop behind its
+sandbox proxy, through a real gateway and this extension's server. Nessa's
+conversation view keeps at most 16KB of a tool's structured result and drops
+a larger object whole, so the checkout result (about 232KB) arrives with no
+experiment and the app says so. The capture asks for the latency sample,
+which fits. The scenario runner's completion does not name the MCP tool, and
+Nessa attaches the forwarded structured result only when it does;
+`forward-structured.mjs` adds that name. The capture fails if the page shows
+"Blocked a connection this app didn't declare". Zod's fast path probes
+`new Function`, and a strict CSP reports that even when the throw is caught;
+the app sets `jitless` before any schema is built, so the probe does not run.
+An earlier shot of that banner was the fixture slot, which is not this server.

@@ -71,7 +71,15 @@ export function ChangeView({
       </header>
       <label className="change-find">
         <span className="change-find-label">Find a file</span>
-        <input value={query} onChange={(event) => onQuery(event.target.value)} />
+        <input
+          value={query}
+          onChange={(event) => onQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return
+            event.preventDefault()
+            onQuery("")
+          }}
+        />
       </label>
       <VirtualList
         key={listKey}

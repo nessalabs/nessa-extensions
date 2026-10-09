@@ -2,6 +2,7 @@
  * The experiment app's entry. The host renders this document in a sandbox;
  * `mountApp` opens the bridge. The view follows.
  */
+import "./csp.ts"
 import { nessaUiTokens } from "@nessalabs/app-shell"
 import { HostThemeScope, mountApp } from "@nessalabs/app-shell/react"
 

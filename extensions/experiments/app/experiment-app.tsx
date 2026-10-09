@@ -2,18 +2,18 @@
  * The experiment view. Inline, it is the card. Fullscreen, it is the
  * surface. The card asks for fullscreen with `ui/request-display-mode`, and
  * only after the host's context says that mode is offered. What is drawn
- * follows the mode the host actually has, including when that is not the
- * mode that was asked for.
+ * follows the mode the host applied to this view. A host that answers with
+ * another mode — Nessa keeps this card inline and opens the full view as
+ * its own view — is drawn as that mode, not told it failed.
  *
- * The experiment is the opening tool result, validated. Later reads go
- * through `tools/call`.
+ * The experiment is the opening tool result, validated once per result.
+ * Later reads go through `tools/call`, and only while this view is showing.
  */
-import { useState } from "react"
+import { useMemo, useState } from "react"
 
 import { BridgeError, describeFailure } from "@nessalabs/app-shell"
 import { useConnection, useDisplayMode, useToolCall } from "@nessalabs/app-shell/react"
 
-import { saveDownload, type DownloadFile } from "./download.ts"
 import { ExperimentCard } from "./experiment-card.tsx"
 import { loadExperiment } from "./host-data.ts"
 import { ExperimentSurface } from "./surface.tsx"
@@ -29,38 +29,36 @@ const browserSchedule: Schedule = {
 }
 
 export function ExperimentApp({
-  save = saveDownload,
   schedule = browserSchedule,
-}: {
-  readonly save?: (file: DownloadFile) => void
-  readonly schedule?: Schedule
-} = {}) {
+}: { readonly schedule?: Schedule } = {}) {
   const connection = useConnection()
   const call = useToolCall()
   const { mode, available, request } = useDisplayMode()
-  const open = useHostOpen(save)
+  const open = useHostOpen()
   const [notice, setNotice] = useState<string | undefined>()
   const [pending, setPending] = useState<"fullscreen" | "inline" | undefined>()
-  const loaded = loadExperiment(call)
+  // `loadExperiment` returns a new copy. Memoizing on the result keeps that
+  // copy across a display-mode render, so a run read does not start again.
+  const phase = call.phase
+  const result = call.phase === "complete" ? call.result : undefined
+  const reason = call.phase === "cancelled" ? call.reason : undefined
+  const loaded = useMemo(() => loadExperiment(call), [call, phase, reason, result])
   const fullscreen = mode === "fullscreen"
 
   const ask = async (next: "fullscreen" | "inline") => {
     if (pending !== undefined) return
-    const offered = available ?? []
-    if (!offered.includes(next)) {
+    if (available !== undefined && !available.includes(next)) {
       setNotice(
-        describeFailure({
-          kind: "display-mode-unavailable",
-          mode: next,
-          available: offered,
-        }),
+        next === "fullscreen"
+          ? "This host doesn't offer a full view."
+          : "This host doesn't offer an inline view.",
       )
       return
     }
     setPending(next)
     try {
-      const chosen = await request(next)
-      setNotice(chosen === next ? undefined : `The host kept the experiment ${chosen}.`)
+      await request(next)
+      setNotice(undefined)
     } catch (error) {
       setNotice(
         error instanceof BridgeError

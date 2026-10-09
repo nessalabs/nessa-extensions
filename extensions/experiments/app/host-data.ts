@@ -2,19 +2,29 @@
  * What the app reads from its host, checked before a view draws it.
  *
  * The opening tool result is the experiment: `validateExperiment` parses it
- * into a copy, and that copy is the only experiment the views read. `list_runs`
- * and `get_run` then say which of its runs to show, and in which order. A run
- * they name that the experiment does not have is refused. Their bodies are
- * not drawn: a run is part of the experiment `validateExperiment` made, and
- * splicing a later body in would be a second one.
+ * into a copy, and that copy is the experiment the views read. `list_runs`
+ * and `get_run` re-read the source, so their bodies are what the runs list
+ * and the run detail draw — a reason or a score that changed after the
+ * opening snapshot would otherwise never show. Each body is `parseRun`'s
+ * copy, then checked against this experiment: a verdict, split, guardrail,
+ * area, agent, or parent it does not have is refused, and the snapshot is
+ * not drawn in its place.
  *
  * `open_file` is the one answer the experiment does not carry. A link is
  * `http` or `https` only, as the server already requires: a `javascript:` or
  * `data:` URL is refused here too, and is never handed to `ui/open-link`.
+ * A download is refused as well. The spec has no download request, and
+ * reporting one as opened would claim a file the sandbox never saved.
  */
 import type { CallToolResult, ToolCall } from "@nessalabs/app-shell"
 
-import { runOf, validateExperiment, type Experiment, type Run } from "../model/index.ts"
+import {
+  parseRun,
+  runOf,
+  validateExperiment,
+  type Experiment,
+  type Run,
+} from "../model/index.ts"
 
 export type LoadedExperiment =
   | { readonly status: "waiting" }
@@ -30,16 +40,13 @@ export type FetchedRun =
   | { readonly ok: true; readonly run: Run }
   | { readonly ok: false; readonly message: string }
 
-/** A file the app can offer: a link for the host, or contents to download. */
+/** A file the app can offer the host: an http(s) link, or a refusal. */
 export type OpenAnswer =
   | { readonly kind: "link"; readonly url: string }
-  | {
-      readonly kind: "download"
-      readonly name: string
-      readonly mimeType: string
-      readonly text: string
-    }
   | { readonly kind: "refused"; readonly reason: string }
+
+/** What the app says when the server offers a download. The spec has no request for one. */
+const noDownload = "This view can't download a file."
 
 const cancelled = "The experiment was not loaded."
 
@@ -99,8 +106,50 @@ export function loadExperiment(call: ToolCall): LoadedExperiment {
 }
 
 /**
- * The experiment's runs in the order `list_runs` answered, or why that
- * answer cannot be shown.
+ * Whether `run` can be drawn on `experiment`. A reference the definition
+ * does not have would throw when a view labelled it, so it is a refusal
+ * instead.
+ */
+function unfit(experiment: Experiment, run: Run): string | undefined {
+  const { definition, areas, agents, baseline } = experiment
+  if (!definition.verdicts.some((verdict) => verdict.id === run.verdict)) {
+    return `Run ${run.id} names a verdict this experiment does not have.`
+  }
+  for (const split of Object.keys(run.scores)) {
+    if (!definition.splits.some((each) => each.id === split)) {
+      return `Run ${run.id} names a split this experiment does not have.`
+    }
+  }
+  for (const guardrail of Object.keys(run.measures)) {
+    if (!definition.guardrails.some((each) => each.id === guardrail)) {
+      return `Run ${run.id} names a guardrail this experiment does not have.`
+    }
+  }
+  if (run.areaId !== undefined && !areas.some((area) => area.id === run.areaId)) {
+    return `Run ${run.id} names an area this experiment does not have.`
+  }
+  if (run.agentId !== undefined && !agents.some((agent) => agent.id === run.agentId)) {
+    return `Run ${run.id} names an agent this experiment does not have.`
+  }
+  if (run.parentId !== baseline.id && runOf(experiment, run.parentId) === undefined) {
+    return `Run ${run.id} was not built on this experiment.`
+  }
+  return undefined
+}
+
+/** `input` as a run of `experiment`, or why it cannot be drawn. */
+function runHere(experiment: Experiment, input: unknown): FetchedRun {
+  const parsed = parseRun(input)
+  if (!parsed.ok) return { ok: false, message: parsed.message }
+  const message = unfit(experiment, parsed.run)
+  if (message !== undefined) return { ok: false, message }
+  return { ok: true, run: parsed.run }
+}
+
+/**
+ * The runs `list_runs` answered, in that order, or why that answer cannot
+ * be shown. Each body is drawn; the opening snapshot only says whether it
+ * belongs here.
  */
 export function listedRuns(experiment: Experiment, result: CallToolResult): ListedRuns {
   if (result.isError === true) {
@@ -117,23 +166,18 @@ export function listedRuns(experiment: Experiment, result: CallToolResult): List
   const runs: Run[] = []
   const seen = new Set<string>()
   for (const item of data.runs) {
-    const row = record(item)
-    const id = row === undefined ? undefined : row.id
-    if (typeof id !== "string" || id === "") {
-      return { ok: false, message: "A run in the list has no id." }
+    const accepted = runHere(experiment, item)
+    if (!accepted.ok) return accepted
+    if (seen.has(accepted.run.id)) {
+      return { ok: false, message: `Run ${accepted.run.id} is listed twice.` }
     }
-    const run = runOf(experiment, id)
-    if (run === undefined) {
-      return { ok: false, message: `Run ${id} is not in this experiment.` }
-    }
-    if (seen.has(id)) return { ok: false, message: `Run ${id} is listed twice.` }
-    seen.add(id)
-    runs.push(run)
+    seen.add(accepted.run.id)
+    runs.push(accepted.run)
   }
   return { ok: true, runs }
 }
 
-/** The experiment's run `runId`, when `get_run` names it, or why it does not. */
+/** The run `get_run` answered, when it is `runId`, or why it cannot be drawn. */
 export function fetchedRun(
   experiment: Experiment,
   runId: string,
@@ -143,20 +187,15 @@ export function fetchedRun(
     return { ok: false, message: failed(result, "The run could not be read.") }
   }
   const data = record(result.structuredContent)
-  const runRecord = data === undefined ? undefined : record(data.run)
-  if (
-    data === undefined ||
-    data.experimentId !== experiment.id ||
-    runRecord === undefined ||
-    runRecord.id !== runId
-  ) {
+  if (data === undefined || data.experimentId !== experiment.id) {
     return { ok: false, message: "The run is not the one that was asked for." }
   }
-  const run = runOf(experiment, runId)
-  if (run === undefined) {
-    return { ok: false, message: `Run ${runId} is not in this experiment.` }
+  const accepted = runHere(experiment, data.run)
+  if (!accepted.ok) return accepted
+  if (accepted.run.id !== runId) {
+    return { ok: false, message: "The run is not the one that was asked for." }
   }
-  return { ok: true, run }
+  return accepted
 }
 
 /** `http` or `https` only. Anything else is refused, including `javascript:` and `data:`. */
@@ -216,7 +255,7 @@ export function openAnswer(result: CallToolResult): OpenAnswer {
     ) {
       return { kind: "refused", reason: "Couldn't open this." }
     }
-    return { kind: "download", name, mimeType, text }
+    return { kind: "refused", reason: noDownload }
   }
   return { kind: "refused", reason: "Couldn't open this." }
 }

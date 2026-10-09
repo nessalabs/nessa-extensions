@@ -74,6 +74,13 @@ export default tseslint.config(
     },
   },
   {
+    // A verification script runs in Node and evaluates callbacks in the page.
+    files: ["extensions/**/verification/**/*.mjs"],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
+    },
+  },
+  {
     files: ["**/*.test.ts", "**/*.test.tsx"],
     rules: {
       "@typescript-eslint/no-non-null-assertion": "off",

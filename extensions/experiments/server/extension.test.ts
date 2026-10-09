@@ -148,10 +148,16 @@ describe("the experiment view", () => {
         title: "Experiment",
         description: "An experiment's climb, areas, runs, and run detail.",
         mimeType: RESOURCE_MIME_TYPE,
+        _meta: { ui: { prefersBorder: true } },
       },
     ])
     expect((await client.readResource({ uri: experimentView })).contents).toEqual([
-      { uri: experimentView, mimeType: RESOURCE_MIME_TYPE, text: placeholderHtml },
+      {
+        uri: experimentView,
+        mimeType: RESOURCE_MIME_TYPE,
+        text: placeholderHtml,
+        _meta: { ui: { prefersBorder: true } },
+      },
     ])
   })
 

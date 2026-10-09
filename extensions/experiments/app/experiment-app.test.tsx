@@ -2,7 +2,12 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { createBridge, nessaUiTokens, type CallToolResult } from "@nessalabs/app-shell"
+import {
+  createBridge,
+  nessaUiTokens,
+  type CallToolResult,
+  type HostCapabilities,
+} from "@nessalabs/app-shell"
 import {
   createFakeHost,
   memoryChannel,
@@ -11,14 +16,15 @@ import {
 import { BridgeProvider, HostThemeScope } from "@nessalabs/app-shell/react"
 
 import {
+  lineage,
   pathToBest,
   runsNewestFirst,
   validateExperiment,
   type Experiment,
   type ExperimentInput,
+  type Run,
 } from "../model/index.ts"
 import { checkoutSample, latencySample } from "../samples/index.ts"
-import type { DownloadFile } from "./download.ts"
 import { ExperimentApp } from "./experiment-app.tsx"
 import type { Schedule } from "./use-open-file.ts"
 
@@ -63,14 +69,24 @@ function displayModeRequests(host: FakeHost): number {
   }).length
 }
 
+function jsonRun(run: Run, reason?: string): Record<string, unknown> {
+  const copy = JSON.parse(JSON.stringify(run)) as Record<string, unknown>
+  if (reason !== undefined) copy.reason = reason
+  return copy
+}
+
 async function renderApp(
   sample: Experiment,
   options?: {
     readonly modes?: ("inline" | "fullscreen")[]
-    readonly save?: (file: DownloadFile) => void
     readonly opening?: CallToolResult
     readonly result?: CallToolResult
     readonly holdFullscreen?: boolean
+    /** Replaces every `get_run` body's reason, so a test can see the body was drawn. */
+    readonly runReason?: string
+    readonly capabilities?: HostCapabilities
+    /** `get_run` answers `{ id }` only, which is not a run. */
+    readonly bareRun?: boolean
   },
 ) {
   const modes = options?.modes ?? ["inline", "fullscreen"]
@@ -78,6 +94,9 @@ async function renderApp(
   const channel = memoryChannel()
   const host = createFakeHost({
     transport: channel.host,
+    ...(options?.capabilities === undefined
+      ? {}
+      : { capabilities: options.capabilities }),
     context: {
       theme: "light",
       displayMode: "inline",
@@ -97,12 +116,18 @@ async function renderApp(
         if (name === "list_runs") {
           return answered("runs", {
             experimentId: sample.id,
-            runs: runsNewestFirst(sample).map((run) => ({ id: run.id })),
+            runs: runsNewestFirst(sample).map((run) => jsonRun(run)),
           })
         }
         if (name === "get_run") {
-          const runId = args?.runId
-          return answered("run", { experimentId: sample.id, run: { id: runId } })
+          const run = sample.runs.find((each) => each.id === args?.runId)
+          if (run === undefined || options?.bareRun === true) {
+            return answered("run", { experimentId: sample.id, run: { id: args?.runId } })
+          }
+          return answered("run", {
+            experimentId: sample.id,
+            run: jsonRun(run, options?.runReason),
+          })
         }
         if (name === "open_file") {
           return (
@@ -127,7 +152,7 @@ async function renderApp(
   const view = render(
     <BridgeProvider bridge={bridge}>
       <HostThemeScope tokens={nessaUiTokens} data-testid="theme">
-        <ExperimentApp save={options?.save} schedule={quiet} />
+        <ExperimentApp schedule={quiet} />
       </HostThemeScope>
     </BridgeProvider>,
   )
@@ -247,15 +272,18 @@ describe("the experiment app in the fake host", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open experiment" }))
     await settle()
     expect(displayModeRequests(refused.host)).toBe(0)
-    expect(screen.getByRole("status").textContent).toMatch(/fullscreen/)
+    expect(screen.getByRole("status").textContent).toBe(
+      "This host doesn't offer a full view.",
+    )
     expect(screen.queryByRole("tab", { name: "Overview" })).toBeNull()
 
     cleanup()
     const held = await renderApp(checkout, { holdFullscreen: true })
     await openFullscreen()
     expect(held.host.context.displayMode).toBe("inline")
-    expect(screen.getByRole("status").textContent).toMatch(/inline/)
+    expect(screen.queryByText(/kept the experiment/)).toBeNull()
     expect(screen.queryByRole("tab", { name: "Overview" })).toBeNull()
+    expect(screen.getByRole("button", { name: "Open experiment" })).toBeTruthy()
   })
 
   it("shows a tool error and a cancellation instead of an experiment", async () => {
@@ -293,15 +321,10 @@ describe("the experiment app in the fake host", () => {
 
   it("opens a link through the host and refuses one that is not http", async () => {
     const checkout = experiment(checkoutSample)
-    const save = (file: DownloadFile) => {
-      saved = file
-    }
-    let saved: DownloadFile | undefined
     const linked = await renderApp(checkout, {
       opening: answered("link", {
         opening: { kind: "link", url: "https://example.com/change" },
       }),
-      save,
     })
     await openFullscreen()
     fireEvent.click(screen.getAllByRole("button", { name: /^Run \d+/ })[0]!)
@@ -311,12 +334,10 @@ describe("the experiment app in the fake host", () => {
     expect(linked.host.links).toEqual(["https://example.com/change"])
 
     cleanup()
-    saved = undefined
     const blocked = await renderApp(checkout, {
       opening: answered("link", {
         opening: { kind: "link", url: "javascript:alert(1)" },
       }),
-      save,
     })
     await openFullscreen()
     fireEvent.click(screen.getAllByRole("button", { name: /^Run \d+/ })[0]!)
@@ -325,7 +346,6 @@ describe("the experiment app in the fake host", () => {
     await settle()
     expect(blocked.host.links).toEqual([])
     expect(screen.getByText("Couldn't open this.")).toBeTruthy()
-    expect(saved).toBeUndefined()
 
     cleanup()
     const downloaded = await renderApp(checkout, {
@@ -337,14 +357,161 @@ describe("the experiment app in the fake host", () => {
           text: "diff",
         },
       }),
-      save,
     })
     await openFullscreen()
     fireEvent.click(screen.getAllByRole("button", { name: /^Run \d+/ })[0]!)
     await settle()
     fireEvent.click(screen.getByRole("button", { name: "Open change" }))
     await settle()
-    expect(saved).toEqual({ name: "change.diff", mimeType: "text/plain", text: "diff" })
+    expect(screen.getByText("This view can't download a file.")).toBeTruthy()
     expect(downloaded.host.links).toEqual([])
+
+    cleanup()
+    const noLinks = await renderApp(checkout, {
+      capabilities: { serverTools: {} },
+      opening: answered("link", {
+        opening: { kind: "link", url: "https://example.com/change" },
+      }),
+    })
+    await openFullscreen()
+    fireEvent.click(screen.getAllByRole("button", { name: /^Run \d+/ })[0]!)
+    await settle()
+    fireEvent.click(screen.getByRole("button", { name: "Open change" }))
+    await settle()
+    expect(noLinks.host.links).toEqual([])
+    expect(screen.getByText("This host doesn't open links.")).toBeTruthy()
+  })
+
+  it("reads a run once across open, back, and open, and not while the card is showing", async () => {
+    const checkout = experiment(checkoutSample)
+    const { calls } = await renderApp(checkout)
+    expect(calls).toEqual([])
+
+    await openFullscreen()
+    expect(calls).toEqual([])
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }))
+    await settle()
+    expect(calls).toEqual(["list_runs"])
+    fireEvent.click(screen.getByRole("button", { name: "Show the experiment inline" }))
+    await settle()
+    expect(calls).toEqual(["list_runs"])
+    await openFullscreen()
+    expect(calls).toEqual(["list_runs"])
+
+    fireEvent.click(screen.getByRole("tab", { name: "Overview" }))
+    const pathList = screen.getByRole("list", { name: "Path to the best" })
+    fireEvent.click(within(pathList).getAllByRole("button")[0]!)
+    await settle()
+    expect(calls).toEqual(["list_runs", "get_run"])
+    expect(screen.queryByText("Loading this run…")).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Show the experiment inline" }))
+    await settle()
+    expect(calls).toEqual(["list_runs", "get_run"])
+    expect(screen.queryByRole("tab", { name: "Overview" })).toBeNull()
+
+    await openFullscreen()
+    expect(calls).toEqual(["list_runs", "get_run"])
+    expect(screen.queryByText("Loading this run…")).toBeNull()
+    expect(screen.getByRole("navigation", { name: "Opened run" })).toBeTruthy()
+  })
+
+  it("draws the reason get_run returned, not the opening snapshot's", async () => {
+    const checkout = experiment(checkoutSample)
+    const run = pathToBest(checkout)[0]?.run
+    if (run === undefined) throw new Error("the path has a run")
+    await renderApp(checkout, { runReason: "Fresh from the server." })
+    await openFullscreen()
+    const pathList = screen.getByRole("list", { name: "Path to the best" })
+    fireEvent.click(within(pathList).getAllByRole("button")[0]!)
+    await settle()
+    expect(screen.getByText("Fresh from the server.")).toBeTruthy()
+    expect(screen.queryByText(run.reason)).toBeNull()
+
+    cleanup()
+    await renderApp(checkout, { bareRun: true })
+    await openFullscreen()
+    const again = screen.getByRole("list", { name: "Path to the best" })
+    fireEvent.click(within(again).getAllByRole("button")[0]!)
+    await settle()
+    expect(screen.getByRole("alert").textContent).toMatch(/not valid|invalid|expected/i)
+    expect(screen.queryByText(run.reason)).toBeNull()
+  })
+
+  it("Escape walks back one run at a time", async () => {
+    const checkout = experiment(checkoutSample)
+    const opened = checkout.runs.find((run) => {
+      const line = lineage(checkout, run.id)
+      return line !== undefined && line.runs.length >= 3
+    })
+    if (opened === undefined) throw new Error("no run has two ancestors")
+    const line = lineage(checkout, opened.id)
+    if (line === undefined) throw new Error("the run has a lineage")
+    const earliest = line.runs[0]
+    const middle = line.runs[1]
+    if (earliest === undefined || middle === undefined) throw new Error("two ancestors")
+
+    await renderApp(checkout)
+    await openFullscreen()
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }))
+    await settle()
+    fireEvent.click(
+      screen.getByRole("button", { name: new RegExp(`^Run ${opened.number}(?!\\d)`) }),
+    )
+    await settle()
+
+    const follow = (number: number) => {
+      const region = screen.getByRole("region", { name: "Lineage" })
+      fireEvent.click(
+        within(region).getByRole("button", { name: new RegExp(`^Run ${number}$`) }),
+      )
+    }
+    follow(middle.number)
+    await settle()
+    follow(earliest.number)
+    await settle()
+    expect(document.querySelector("[aria-current='page']")?.textContent).toBe(
+      `Run ${earliest.number}`,
+    )
+
+    fireEvent.keyDown(document, { key: "Escape" })
+    await settle()
+    expect(screen.getByRole("navigation", { name: "Opened run" })).toBeTruthy()
+    expect(document.querySelector("[aria-current='page']")?.textContent).toBe(
+      `Run ${middle.number}`,
+    )
+
+    fireEvent.keyDown(document, { key: "Escape" })
+    await settle()
+    expect(document.querySelector("[aria-current='page']")?.textContent).toBe(
+      `Run ${opened.number}`,
+    )
+
+    fireEvent.keyDown(document, { key: "Escape" })
+    await settle()
+    expect(screen.queryByRole("navigation", { name: "Opened run" })).toBeNull()
+  })
+
+  it("Escape in Find a file clears the query and leaves the run open", async () => {
+    const checkout = experiment(checkoutSample)
+    const opened = checkout.runs.find((run) => (run.change?.files.length ?? 0) > 0)
+    if (opened === undefined) throw new Error("no run has a file")
+    await renderApp(checkout)
+    await openFullscreen()
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }))
+    await settle()
+    fireEvent.click(
+      screen.getByRole("button", { name: new RegExp(`^Run ${opened.number}(?!\\d)`) }),
+    )
+    await settle()
+    const field = screen.getByRole("textbox", { name: "Find a file" })
+    fireEvent.change(field, { target: { value: "policy" } })
+    expect((field as HTMLInputElement).value).toBe("policy")
+    fireEvent.keyDown(field, { key: "Escape" })
+    await settle()
+    expect(screen.getByRole("navigation", { name: "Opened run" })).toBeTruthy()
+    expect(
+      (screen.getByRole("textbox", { name: "Find a file" }) as HTMLInputElement).value,
+    ).toBe("")
   })
 })

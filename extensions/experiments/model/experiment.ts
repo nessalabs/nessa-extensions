@@ -160,6 +160,22 @@ export const run = z
 export type Run = z.output<typeof run>
 
 /**
+ * A run from a tool result, parsed into a copy, or why it is not one.
+ * The schema stays here; a view checks the copy against its experiment
+ * before drawing it.
+ */
+export function parseRun(
+  input: unknown,
+): { ok: true; run: Run } | { ok: false; message: string } {
+  const parsed = run.safeParse(input)
+  if (!parsed.success) {
+    const message = parsed.error.issues.map((issue) => issue.message).join(" ")
+    return { ok: false, message: message === "" ? "The run is not valid." : message }
+  }
+  return { ok: true, run: parsed.data }
+}
+
+/**
  * What runs are judged against. Not a run: it has no parent, verdict or time
  * to get wrong. It is scored once it has a score on the primary split.
  */

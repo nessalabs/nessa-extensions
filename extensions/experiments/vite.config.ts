@@ -7,35 +7,46 @@
  *
  * The app plugin applies only to the client build: it requires exactly one
  * HTML file, which the server build does not have. It is a post plugin so it
- * runs after Vite has emitted that HTML. Its `config` hook does not run on a
- * per-environment plugin, so the client environment states the same build
- * options that hook would: one script, styles and assets inline.
+ * runs after Vite has emitted that HTML.
+ *
+ * Vite ignores `config` and `configResolved` on a plugin returned from
+ * `applyToEnvironment`. Those two run here, on the same `mcpApp()` instance
+ * whose `buildStart` then sees the public directory and refuses a file in
+ * it. `config` is what inlines the script, the styles, and every asset.
  */
 import { defineConfig, type Plugin } from "vite"
 
 import { mcpApp } from "@nessalabs/app-shell/build"
 
+function handler<Args extends readonly unknown[], Result>(
+  hook: ((...args: Args) => Result) | { handler: (...args: Args) => Result } | undefined,
+): ((...args: Args) => Result) | undefined {
+  if (hook === undefined) return undefined
+  return typeof hook === "function" ? hook : hook.handler
+}
+
 function experimentsApp(): Plugin {
+  const inner = mcpApp()
   return {
     name: "experiments-app",
     enforce: "post",
+    config(config, env) {
+      return handler(inner.config)?.call(this, config, env)
+    },
+    configResolved(config) {
+      return handler(inner.configResolved)?.call(this, config)
+    },
     applyToEnvironment(environment) {
       if (environment.name !== "client") return false
-      const inner = mcpApp()
       return {
         name: inner.name,
         apply: "build",
+        enforce: "post",
         buildStart(options) {
-          const start = inner.buildStart
-          if (start === undefined) return
-          const handler = typeof start === "function" ? start : start.handler
-          return handler.call(this, options)
+          return handler(inner.buildStart)?.call(this, options)
         },
         generateBundle(options, bundle, isWrite) {
-          const emit = inner.generateBundle
-          if (emit === undefined) return
-          const handler = typeof emit === "function" ? emit : emit.handler
-          return handler.call(this, options, bundle, isWrite)
+          return handler(inner.generateBundle)?.call(this, options, bundle, isWrite)
         },
       }
     },
@@ -51,12 +62,8 @@ export default defineConfig({
       build: {
         outDir: "dist",
         emptyOutDir: false,
-        assetsInlineLimit: () => true,
-        cssCodeSplit: false,
-        modulePreload: false,
         rolldownOptions: {
           input: { index: "app/index.html" },
-          output: { codeSplitting: false },
         },
       },
     },

@@ -75,8 +75,8 @@ export function ExperimentSurface({
     experiment.areas.length === 0 ? ["overview", "runs"] : ["overview", "areas", "runs"]
   const view = available.includes(nav.navigation.view) ? nav.navigation.view : "overview"
   const openId = nav.navigation.trail.at(-1)
-  const listed = useListedRuns(experiment, view === "runs")
-  const fetched = useFetchedRun(experiment, openId)
+  const listed = useListedRuns(experiment, active && view === "runs")
+  const fetched = useFetchedRun(experiment, openId, active)
   const detailRun = fetched.status === "ready" ? fetched.run : undefined
   const change = useChangeView({ experiment, run: detailRun, open, schedule })
   const head = useMemo(() => headline(experiment), [experiment])
@@ -100,6 +100,7 @@ export function ExperimentSurface({
   }))
 
   const onTabsKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (openId !== undefined) return
     const index = available.indexOf(view)
     const next = (() => {
       if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
@@ -161,8 +162,12 @@ export function ExperimentSurface({
             data-view={id}
             aria-selected={view === id}
             aria-controls={`panel-${id}`}
-            tabIndex={view === id ? 0 : -1}
-            onClick={() => nav.select(id)}
+            aria-disabled={openId !== undefined}
+            tabIndex={view === id && openId === undefined ? 0 : -1}
+            onClick={() => {
+              if (openId !== undefined) return
+              nav.select(id)
+            }}
           >
             {labels[id]}
           </button>
@@ -221,7 +226,11 @@ export function ExperimentSurface({
             <RunDetail
               trailLabel={labels[view]}
               crumbs={crumbs}
-              current={runLabel(experiment, openId)}
+              current={
+                detailRun === undefined
+                  ? runLabel(experiment, openId)
+                  : `Run ${detailRun.number}`
+              }
               onClose={nav.close}
               outcome={outcome}
               cases={cases}

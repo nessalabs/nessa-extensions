@@ -32,10 +32,13 @@ function readAppHtml(): string {
   return readFileSync(found, "utf8")
 }
 
+// Read at startup. A missing app fails here, not on the first resources/read.
+const appHtml = readAppHtml()
+
 serveOverStdio(
   experimentsExtension({
     source: samplesSource(Date.now()),
-    html: readAppHtml,
+    html: () => appHtml,
   }),
   // stdout is the protocol's; what goes wrong is said on stderr.
   { onerror: (error) => console.error(error) },

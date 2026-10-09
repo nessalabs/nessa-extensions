@@ -3,13 +3,16 @@
  * `get_run`, and `open_file`. Each answer is read in `host-data.ts` before
  * it is shown. A call the host refuses is shown; nothing here assumes it
  * succeeded. A call that returns after the view has moved on is ignored.
+ *
+ * A read runs only while its view is on screen. The same experiment and run
+ * are not read again when the view is hidden and shown, so a display-mode
+ * change does not flash the detail back to loading.
  */
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
-import { BridgeError, type CallToolResult } from "@nessalabs/app-shell"
+import { BridgeError, type Bridge } from "@nessalabs/app-shell"
 import { useBridge } from "@nessalabs/app-shell/react"
 
-import type { DownloadFile } from "./download.ts"
 import { fetchedRun, listedRuns, openAnswer, type OpenAnswer } from "./host-data.ts"
 import type { Opening } from "./open-file.ts"
 import type { OpenRequest } from "./use-open-file.ts"
@@ -27,30 +30,39 @@ export type RunRead =
   | { readonly status: "ready"; readonly run: Run }
   | { readonly status: "failed"; readonly message: string }
 
+const idleList: RunList = { status: "idle" }
+const idleRead: RunRead = { status: "idle" }
+
 function failureText(error: unknown, fallback: string): string {
   return error instanceof BridgeError ? error.message : fallback
 }
 
-async function call(
-  bridge: ReturnType<typeof useBridge>,
-  name: string,
-  args: Record<string, unknown>,
-): Promise<CallToolResult> {
-  return bridge.callTool(name, args)
+/** Whether this host declared `openLinks` in `ui/initialize`. */
+function hostOpensLinks(bridge: Bridge): boolean {
+  const connection = bridge.getState().connection
+  const capabilities =
+    connection.status === "connected"
+      ? connection.capabilities
+      : connection.status === "tearing-down"
+        ? connection.opened?.capabilities
+        : undefined
+  return capabilities?.openLinks !== undefined
 }
 
-/** `list_runs` while `active`. Idle until then. */
+/** `list_runs` while `active`. Idle until then, and not read again for the same experiment. */
 export function useListedRuns(experiment: Experiment, active: boolean): RunList {
   const bridge = useBridge()
-  const [list, setList] = useState<RunList>({ status: "idle" })
+  const [list, setList] = useState<RunList>(idleList)
+  const held = useRef<Experiment | undefined>(undefined)
   useEffect(() => {
-    if (!active) return
+    if (!active || held.current === experiment) return
     let current = true
     setList({ status: "loading" })
-    call(bridge, "list_runs", { experimentId: experiment.id }).then(
+    bridge.callTool("list_runs", { experimentId: experiment.id }).then(
       (result) => {
         if (!current) return
         const listed = listedRuns(experiment, result)
+        if (listed.ok) held.current = experiment
         setList(
           listed.ok
             ? { status: "ready", runs: listed.runs }
@@ -69,31 +81,45 @@ export function useListedRuns(experiment: Experiment, active: boolean): RunList 
       current = false
     }
   }, [active, bridge, experiment])
-  return active ? list : { status: "idle" }
+  return active ? list : idleList
 }
 
-/** `get_run` for `runId`. Idle when no run is open. */
+/**
+ * `get_run` for `runId` while `active`. Idle when no run is open. A run
+ * already read for this experiment is kept: hiding the view does not read
+ * it again or return it to loading.
+ */
 export function useFetchedRun(
   experiment: Experiment,
   runId: string | undefined,
+  active: boolean,
 ): RunRead {
   const bridge = useBridge()
-  const [read, setRead] = useState<RunRead>({ status: "idle" })
+  const [read, setRead] = useState<RunRead>(idleRead)
   const [tracked, setTracked] = useState(runId)
+  const held = useRef<{ experiment: Experiment; runId: string } | undefined>(undefined)
   // The run on screen changes in this render. Waiting for the effect would
   // show the previous run for a frame.
   if (tracked !== runId) {
     setTracked(runId)
-    setRead(runId === undefined ? { status: "idle" } : { status: "loading" })
+    setRead(runId === undefined ? idleRead : { status: "loading" })
+    if (
+      held.current !== undefined &&
+      (runId === undefined || held.current.runId !== runId)
+    ) {
+      held.current = undefined
+    }
   }
   useEffect(() => {
-    if (runId === undefined) return
+    if (!active || runId === undefined) return
+    if (held.current?.experiment === experiment && held.current.runId === runId) return
     let current = true
     setRead({ status: "loading" })
-    call(bridge, "get_run", { experimentId: experiment.id, runId }).then(
+    bridge.callTool("get_run", { experimentId: experiment.id, runId }).then(
       (result) => {
         if (!current) return
         const fetched = fetchedRun(experiment, runId, result)
+        if (fetched.ok) held.current = { experiment, runId }
         setRead(
           fetched.ok
             ? { status: "ready", run: fetched.run }
@@ -111,14 +137,12 @@ export function useFetchedRun(
     return () => {
       current = false
     }
-  }, [bridge, experiment, runId])
-  return runId === undefined ? { status: "idle" } : read
+  }, [active, bridge, experiment, runId])
+  return runId === undefined ? idleRead : read
 }
 
-/** `open_file`, then the host's `ui/open-link` or `save` for a download. */
-export function useHostOpen(
-  save: (file: DownloadFile) => void,
-): (request: OpenRequest) => Promise<Opening> {
+/** `open_file`, then `ui/open-link` when the host offers it. */
+export function useHostOpen(): (request: OpenRequest) => Promise<Opening> {
   const bridge = useBridge()
   return useCallback(
     async (request: OpenRequest): Promise<Opening> => {
@@ -130,16 +154,15 @@ export function useHostOpen(
         })
         const opening: OpenAnswer = openAnswer(result)
         if (opening.kind === "refused") return opening
-        if (opening.kind === "link") {
-          await bridge.openLink(opening.url)
-          return { kind: "opened" }
+        if (!hostOpensLinks(bridge)) {
+          return { kind: "refused", reason: "This host doesn't open links." }
         }
-        save({ name: opening.name, mimeType: opening.mimeType, text: opening.text })
+        await bridge.openLink(opening.url)
         return { kind: "opened" }
       } catch (error) {
         return { kind: "refused", reason: failureText(error, "Couldn't open this.") }
       }
     },
-    [bridge, save],
+    [bridge],
   )
 }

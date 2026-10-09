@@ -56,19 +56,25 @@ describe("the tool result", () => {
   })
 })
 
+function copy(value: unknown): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>
+}
+
 describe("runs named by a later call", () => {
-  it("lists the experiment's runs in the answered order and refuses a stranger", () => {
+  it("draws the listed bodies, in the answered order, and refuses one that is not a run", () => {
     const checkout = experiment()
     const [first, second] = checkout.runs
     if (first === undefined || second === undefined) throw new Error("two runs")
+    const fresh = { ...copy(second), reason: "Fresh from the server." }
     const listed = listedRuns(
       checkout,
-      result({ experimentId: checkout.id, runs: [{ id: second.id }, { id: first.id }] }),
+      result({ experimentId: checkout.id, runs: [fresh, copy(first)] }),
     )
     expect(listed.ok).toBe(true)
     if (!listed.ok) return
     expect(listed.runs.map((run) => run.id)).toEqual([second.id, first.id])
-    expect(listed.runs[0]).toBe(second)
+    expect(listed.runs[0]?.reason).toBe("Fresh from the server.")
+    expect(listed.runs[0]).not.toBe(second)
 
     expect(
       listedRuns(
@@ -79,36 +85,52 @@ describe("runs named by a later call", () => {
     expect(
       listedRuns(
         checkout,
-        result({
-          experimentId: checkout.id,
-          runs: [{ id: first.id }, { id: first.id }],
-        }),
+        result({ experimentId: checkout.id, runs: [copy(first), copy(first)] }),
       ).ok,
     ).toBe(false)
   })
 
-  it("reads one run only when the answer names the one that was asked for", () => {
+  it("draws the run get_run returned, and refuses a body that is not that run", () => {
     const checkout = experiment()
     const run = checkout.runs[0]
     if (run === undefined) throw new Error("a run")
     const fetched = fetchedRun(
       checkout,
       run.id,
-      result({ experimentId: checkout.id, run: { id: run.id, number: 99 } }),
+      result({
+        experimentId: checkout.id,
+        run: { ...copy(run), reason: "Fresh from the server." },
+      }),
     )
-    expect(fetched).toEqual({ ok: true, run })
+    expect(fetched.ok).toBe(true)
+    if (!fetched.ok) return
+    expect(fetched.run.reason).toBe("Fresh from the server.")
+    expect(fetched.run).not.toBe(run)
     expect(
       fetchedRun(
         checkout,
         run.id,
-        result({ experimentId: checkout.id, run: { id: "other" } }),
+        result({ experimentId: checkout.id, run: { id: run.id } }),
+      ).ok,
+    ).toBe(false)
+    expect(
+      fetchedRun(checkout, run.id, result({ experimentId: checkout.id, run: copy(run) }))
+        .ok,
+    ).toBe(true)
+    const other = checkout.runs[1]
+    if (other === undefined) throw new Error("another run")
+    expect(
+      fetchedRun(
+        checkout,
+        run.id,
+        result({ experimentId: checkout.id, run: copy(other) }),
       ).ok,
     ).toBe(false)
   })
 })
 
 describe("open_file", () => {
-  it("accepts an http link and a download, and refuses a javascript URL", () => {
+  it("accepts an http link, refuses a download, and refuses a javascript URL", () => {
     expect(
       openAnswer(result({ opening: { kind: "link", url: "https://example.com/a" } })),
     ).toEqual({ kind: "link", url: "https://example.com/a" })
@@ -123,7 +145,7 @@ describe("open_file", () => {
           },
         }),
       ),
-    ).toEqual({ kind: "download", name: "a.diff", mimeType: "text/plain", text: "diff" })
+    ).toEqual({ kind: "refused", reason: "This view can't download a file." })
     expect(
       openAnswer(result({ opening: { kind: "link", url: "javascript:alert(1)" } })).kind,
     ).toBe("refused")

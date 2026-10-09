@@ -33,6 +33,7 @@ export {
   type Slice,
   measureOf,
   movedCount,
+  parseRun,
   scoreOf,
 } from "./experiment.ts"
 export {

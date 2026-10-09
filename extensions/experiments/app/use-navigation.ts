@@ -44,8 +44,16 @@ export function useExperimentNavigation(active: boolean): {
     if (!active) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || current.trail.length === 0) return
+      // A field handles Escape itself. "Find a file" clears its query; closing
+      // the run from there would throw away what was typed.
+      const target = event.target
+      if (
+        target instanceof Element &&
+        target.closest("input, textarea, select, [contenteditable='true']") !== null
+      ) {
+        return
+      }
       event.preventDefault()
-      event.stopPropagation()
       setCurrent((now) => popRun(now))
     }
     document.addEventListener("keydown", onKey)
