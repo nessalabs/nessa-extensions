@@ -9,6 +9,9 @@
  * The experiment is the opening tool result, validated once per result.
  * When that result has no experiment, the app loads it with `get_experiment`.
  * Later reads go through `tools/call`, and only while this view is showing.
+ * A later call keeps the experiment on screen until its result arrives. The
+ * full view is keyed by that experiment, so a different one starts at its
+ * overview instead of the run that was open.
  */
 import { useMemo, useState } from "react"
 
@@ -59,6 +62,12 @@ export function ExperimentApp({
         ? { status: "failed" as const, message: "The result has no experiment." }
         : recovered
       : opening
+  const ready = loaded.status === "ready" ? loaded.experiment : undefined
+  // The next call's running phase would otherwise unmount the view. Keeping
+  // the experiment that is already on screen leaves its tab and run in place
+  // until the result arrives, and the key below is what starts the new one over.
+  const [shown, setShown] = useState(ready)
+  if (ready !== undefined && shown !== ready) setShown(ready)
   const fullscreen = mode === "fullscreen"
 
   const ask = async (next: "fullscreen" | "inline") => {
@@ -103,13 +112,6 @@ export function ExperimentApp({
   if (connection.status === "torn-down") {
     return <p className="app-status">{connection.reason ?? "This view was closed."}</p>
   }
-  if (loaded.status === "waiting") {
-    return (
-      <p className="app-status" role="status">
-        Loading the experiment…
-      </p>
-    )
-  }
   if (loaded.status === "cancelled") {
     return <p className="app-status">{loaded.reason}</p>
   }
@@ -120,12 +122,19 @@ export function ExperimentApp({
       </p>
     )
   }
+  if (shown === undefined) {
+    return (
+      <p className="app-status" role="status">
+        Loading the experiment…
+      </p>
+    )
+  }
 
   return (
     <div className="experiment">
       <div hidden={fullscreen ? true : undefined}>
         <ExperimentCard
-          experiment={loaded.experiment}
+          experiment={shown}
           onOpen={() => void ask("fullscreen")}
           pending={pending === "fullscreen"}
           notice={fullscreen ? undefined : notice}
@@ -133,7 +142,8 @@ export function ExperimentApp({
       </div>
       <div hidden={fullscreen ? undefined : true}>
         <ExperimentSurface
-          experiment={loaded.experiment}
+          key={shown.id}
+          experiment={shown}
           active={fullscreen}
           open={open}
           schedule={schedule}

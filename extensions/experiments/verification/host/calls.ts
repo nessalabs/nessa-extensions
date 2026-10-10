@@ -1,5 +1,5 @@
 /**
- * What the reference host answers for the checkout sample. The bodies are
+ * What the browser hosts answer for the checkout sample. The bodies are
  * full runs: the app draws `list_runs` and `get_run`, and a body that is
  * only an id is refused.
  */

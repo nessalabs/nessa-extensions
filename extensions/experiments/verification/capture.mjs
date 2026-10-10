@@ -1,19 +1,30 @@
 /**
- * Screenshots of the experiment app: the MCP Apps reference host
- * (`AppBridge`), and Nessa's desktop through a real gateway and this
- * extension's built server. Exits 0 when both sets are written. A page that
- * shows "Blocked a connection this app didn't declare" fails the run: that
- * notice is a sandbox CSP violation. This app declares no network. Zod's
- * fast path probes `new Function`, which a strict CSP reports even when the
- * throw is caught; the app sets `jitless` before any schema is built so the
- * probe does not run. The reference host is driven in Chromium and in
- * WebKit; the Chromium pass writes the reference-host shots. Nessa's
- * conversation view keeps at most 16KB of the opening structured result.
- * The checkout sample is larger, so the app loads it with get_experiment.
- * Both hosts are shown that experiment. The
- * scenario runner's completion does not name the MCP tool, and Nessa
- * attaches the forwarded result only when it does;
- * `forward-structured.mjs` adds that name.
+ * Browser verification of the experiment app, then screenshots.
+ *
+ * The required pass drives the app inside `@nessalabs/app-shell`'s fake
+ * host, in Chromium and in WebKit: open the experiment, the overview, the
+ * runs list with a verdict filter, a run's detail, and its lineage. The
+ * MCP Apps reference host (`AppBridge`) is extra evidence; its Chromium
+ * pass writes the reference-host shots. Nessa's desktop, through a real
+ * gateway and this extension's built server, writes the Nessa shots.
+ * Exits 0 when the fake-host pass holds and the shots are written.
+ *
+ * Needs Google Chrome and Playwright's WebKit installed. Chromium launches
+ * with `channel: "chrome"`, so Chrome itself has to be on the machine.
+ * WebKit is `webkit.launch()` from the Playwright package this repo
+ * installs; its browser binary has to be installed too (`playwright
+ * install webkit` when that launch cannot find it).
+ *
+ * A page that shows "Blocked a connection this app didn't declare" fails
+ * the run: that notice is a sandbox CSP violation. This app declares no
+ * network. Zod's fast path probes `new Function`, which a strict CSP
+ * reports even when the throw is caught; the app sets `jitless` before
+ * any schema is built so the probe does not run. Nessa's conversation
+ * view keeps at most 16KB of the opening structured result. The checkout
+ * sample is larger, so the app loads it with get_experiment. The scenario
+ * runner's completion does not name the MCP tool, and Nessa attaches the
+ * forwarded result only when it does; `forward-structured.mjs` adds that
+ * name.
  *
  *   node extensions/experiments/verification/capture.mjs
  *
@@ -107,7 +118,7 @@ function serve(root) {
   })
 }
 
-async function buildReferenceHost() {
+async function buildHostPages() {
   await build({
     root: hostDir,
     configFile: false,
@@ -118,9 +129,67 @@ async function buildReferenceHost() {
     build: {
       outDir: join(hostDir, "dist"),
       emptyOutDir: true,
-      rolldownOptions: { input: { reference: join(hostDir, "reference.html") } },
+      rolldownOptions: {
+        input: {
+          reference: join(hostDir, "reference.html"),
+          fake: join(hostDir, "fake.html"),
+        },
+      },
     },
   })
+}
+
+/**
+ * The required pass: the app-shell fake host. Open, the overview, the runs
+ * list with a filter, a run's detail, and its lineage.
+ */
+async function driveFake(browser, origin) {
+  const page = await browser.newPage({
+    viewport: { width: 1100, height: 900 },
+    deviceScaleFactor: 1,
+  })
+  const errors = []
+  page.on("pageerror", (error) => errors.push(error.message))
+  page.on("console", (message) => {
+    if (message.type() !== "error") return
+    if (message.text().includes("favicon")) return
+    errors.push(message.text())
+  })
+  await page.goto(`${origin}/fake.html`)
+  await page.waitForFunction(() =>
+    document.querySelector("iframe")?.hasAttribute("data-ready"),
+  )
+  const hostError = await page.evaluate(() => document.body.dataset.hostError ?? "")
+  if (hostError !== "") throw new Error(hostError)
+  const app = page.frameLocator("iframe")
+  await app.getByRole("heading", { name: "Hill-climb checkout support" }).waitFor()
+  await app.getByRole("button", { name: "Open experiment" }).click()
+  await app.getByRole("tab", { name: "Overview" }).waitFor()
+  await app.getByText("Resolution rate · Test", { exact: true }).waitFor()
+  await app.getByRole("tab", { name: "Runs" }).click()
+  await app.getByRole("button", { name: "Queued", exact: true }).click()
+  const runsSubtitle = app.locator("#panel-runs .page-subtitle")
+  await runsSubtitle.waitFor()
+  const runsCount = await runsSubtitle.innerText()
+  if (!/^[1-9]\d* queued of [1-9]\d* runs$/.test(runsCount)) {
+    throw new Error(`the runs subtitle was ${JSON.stringify(runsCount)}`)
+  }
+  await app.getByRole("button", { name: "All", exact: true }).click()
+  await app
+    .getByRole("button", { name: /^Run \d+/ })
+    .first()
+    .click()
+  await app.getByRole("navigation", { name: "Opened run" }).waitFor()
+  const lineage = app.getByRole("region", { name: "Lineage" })
+  await lineage.waitFor()
+  const steps = await lineage.getByRole("listitem").allInnerTexts()
+  if (!steps.some((step) => step.trim() === "Baseline") || steps.length < 2) {
+    throw new Error(`the lineage was ${JSON.stringify(steps)}`)
+  }
+  await page.keyboard.press("Escape")
+  await app.getByRole("navigation", { name: "Opened run" }).waitFor({ state: "detached" })
+  await page.close()
+  if (errors.length > 0) throw new Error(errors.join("\n"))
 }
 
 /** Drive the reference host. Chromium writes the shots; WebKit asserts the same path. */
@@ -529,9 +598,13 @@ let site
 try {
   browser = await chromium.launch({ channel: "chrome", headless: true })
   safari = await webkit.launch({ headless: true })
-  log("reference host")
-  await buildReferenceHost()
+  log("fake host")
+  await buildHostPages()
   site = await serve(join(hostDir, "dist"))
+  await driveFake(browser, site.origin)
+  log("fake host (webkit)")
+  await driveFake(safari, site.origin)
+  log("reference host")
   await driveReference(browser, site.origin, true)
   log("reference host (webkit)")
   await driveReference(safari, site.origin, false)

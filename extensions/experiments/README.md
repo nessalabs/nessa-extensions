@@ -185,8 +185,12 @@ built into `dist/main.js`). Its tools, all read-only:
 ## In a host
 
 `verification/capture.mjs` records the inline card and the fullscreen view
-and exits 0. The reference host (`@modelcontextprotocol/ext-apps`'s
-`AppBridge`) is given the checkout sample and driven in Chromium and WebKit.
+and exits 0. It needs Google Chrome and Playwright's WebKit installed.
+The required browser pass is `@nessalabs/app-shell`'s fake host, driven in
+Chromium and WebKit: open, the overview, the runs list with a filter, a
+run's detail, and its lineage. The reference host
+(`@modelcontextprotocol/ext-apps`'s `AppBridge`) is extra evidence; its
+Chromium pass writes the reference-host shots.
 Nessa is the desktop behind its sandbox proxy, through a real gateway and
 this extension's server, in Chromium. Nessa's conversation view keeps at
 most 16,384 bytes of the opening tool's structured result and drops a larger

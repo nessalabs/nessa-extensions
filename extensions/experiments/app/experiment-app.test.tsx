@@ -124,6 +124,7 @@ async function renderApp(
 ) {
   const modes = options?.modes ?? ["inline", "fullscreen"]
   const calls: string[] = []
+  const invocations: { name: string; arguments?: Record<string, unknown> }[] = []
   const channel = memoryChannel()
   const host = createFakeHost({
     transport: channel.host,
@@ -146,6 +147,7 @@ async function renderApp(
     handlers: {
       callTool: ({ name, arguments: args }) => {
         calls.push(name)
+        invocations.push({ name, ...(args === undefined ? {} : { arguments: args }) })
         if (name === "get_experiment") {
           const id =
             typeof args?.experimentId === "string" ? args.experimentId : sample.id
@@ -214,7 +216,7 @@ async function renderApp(
   await act(() => bridge.connect())
   await host.initialized
   await settle()
-  return { host, calls, ...view }
+  return { host, calls, invocations, ...view }
 }
 
 async function openFullscreen() {
@@ -546,6 +548,41 @@ describe("the experiment app in the fake host", () => {
     fireEvent.keyDown(document, { key: "Escape" })
     await settle()
     expect(screen.queryByRole("navigation", { name: "Opened run" })).toBeNull()
+  })
+
+  it("starts the next experiment at its overview when a run is open", async () => {
+    const checkout = experiment(checkoutSample)
+    const latency = experiment(latencySample)
+    const { host, invocations } = await renderApp(checkout)
+    await openFullscreen()
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }))
+    await settle()
+    const run = checkout.runs.find((each) => each.settledAt !== undefined)
+    if (run === undefined) throw new Error("the sample has a settled run")
+    fireEvent.click(
+      screen.getByRole("button", { name: new RegExp(`^Run ${run.number}(?!\\d)`) }),
+    )
+    await settle()
+    expect(screen.getByRole("navigation", { name: "Opened run" })).toBeTruthy()
+
+    const at = invocations.length
+    host.sendToolInput({ experimentId: latency.id })
+    await settle()
+    host.sendToolResult(
+      answered(latency.title, {
+        experiment: JSON.parse(JSON.stringify(latency)),
+      }),
+    )
+    await settle()
+
+    expect(screen.getByRole("heading", { name: latency.title })).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: checkout.title })).toBeNull()
+    expect(screen.queryByRole("navigation", { name: "Opened run" })).toBeNull()
+    expect(
+      screen.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected"),
+    ).toBe("true")
+    expect(screen.queryByRole("alert")).toBeNull()
+    expect(invocations.slice(at).filter((call) => call.name === "get_run")).toEqual([])
   })
 
   it("loads the experiment with get_experiment when the opening result has none", async () => {
