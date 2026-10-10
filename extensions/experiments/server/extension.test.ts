@@ -2,14 +2,21 @@ import { overHttp, overStdio, apps, type Era } from "@nessalabs/server-kit/testi
 import type { Extension } from "@nessalabs/server-kit"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { runsNewestFirst, validateExperiment, type Experiment } from "../model/index.ts"
+import {
+  runsNewestFirst,
+  validateExperiment,
+  type Experiment,
+  type ExperimentInput,
+} from "../model/index.ts"
 import {
   checkoutExperimentId,
   checkoutSample,
   latencyExperimentId,
-  scaleExperimentId,
+  latencySample,
+  scaleSample,
 } from "../samples/index.ts"
 import { experimentsExtension } from "./extension.ts"
+import { structuredResultBytes } from "./result-bound.ts"
 import { samplesSource } from "./samples-source.ts"
 import type { ExperimentSource, FileOpening } from "./source.ts"
 import { experimentText, runText } from "./text.ts"
@@ -69,6 +76,35 @@ function validated(make: (startedAt: number) => unknown): Experiment {
 }
 
 const checkout = validated(checkoutSample)
+const latency = validated(latencySample)
+
+function validatedOf(input: ExperimentInput): Experiment {
+  const validation = validateExperiment(input)
+  if (validation.kind !== "valid") throw new Error("a fitted sample is not valid")
+  return validation.experiment
+}
+
+function extensionOver(input: ExperimentInput): Extension {
+  return experimentsExtension({
+    source: {
+      ids: async () => [input.id],
+      experiment: async () => input,
+      openFile: async () => ({ kind: "unavailable", reason: "none" }),
+    },
+    html: () => placeholderHtml,
+  })
+}
+
+/** `latencySample` with its goal padded so `{ experiment }` is `bytes` of JSON. */
+function fittedSample(bytes: number): ExperimentInput {
+  const base = latencySample(startedAt)
+  const bare = Buffer.byteLength(JSON.stringify({ experiment: validatedOf(base) }))
+  if (bare > bytes) throw new Error("the latency sample is already past the bound")
+  const fitted = { ...base, goal: `${base.goal}${"a".repeat(bytes - bare)}` }
+  const size = Buffer.byteLength(JSON.stringify({ experiment: validatedOf(fitted) }))
+  if (size !== bytes) throw new Error(`fitted ${size}, wanted ${bytes}`)
+  return fitted
+}
 
 /** The text of a tool's answer. */
 function textOf(result: { content?: unknown }): string {
@@ -148,10 +184,16 @@ describe("the experiment view", () => {
         title: "Experiment",
         description: "An experiment's climb, areas, runs, and run detail.",
         mimeType: RESOURCE_MIME_TYPE,
+        _meta: { ui: { prefersBorder: true } },
       },
     ])
     expect((await client.readResource({ uri: experimentView })).contents).toEqual([
-      { uri: experimentView, mimeType: RESOURCE_MIME_TYPE, text: placeholderHtml },
+      {
+        uri: experimentView,
+        mimeType: RESOURCE_MIME_TYPE,
+        text: placeholderHtml,
+        _meta: { ui: { prefersBorder: true } },
+      },
     ])
   })
 
@@ -174,33 +216,158 @@ describe("the experiment view", () => {
 
 describe("show_experiment", () => {
   it.each(clients)(
-    "answers $name with text that stands on its own, and the experiment as data",
+    "answers $name with text that stands on its own, and the experiment as data when it fits",
     async (reach) => {
       const client = await connect(reach)
       const result = await client.callTool({
         name: "show_experiment",
-        arguments: { experimentId: checkoutExperimentId },
+        arguments: { experimentId: latencyExperimentId },
       })
       expect(result.isError).toBeFalsy()
-      expect(textOf(result)).toBe(experimentText(checkout))
+      expect(textOf(result)).toBe(experimentText(latency))
       expect(result.structuredContent).toEqual({
-        experiment: JSON.parse(JSON.stringify(checkout)),
+        experiment: JSON.parse(JSON.stringify(latency)),
       })
     },
   )
 
-  it.each([checkoutExperimentId, latencyExperimentId, scaleExperimentId])(
-    "shows the sample %s",
-    async (id) => {
-      const client = await connect(clients[0])
-      const result = await client.callTool({
-        name: "show_experiment",
+  it("shows the latency sample, which fits in a chat view", async () => {
+    const client = await connect(clients[0])
+    const result = await client.callTool({
+      name: "show_experiment",
+      arguments: { experimentId: latencyExperimentId },
+    })
+    expect(result.isError).toBeFalsy()
+    expect(
+      Buffer.byteLength(JSON.stringify(result.structuredContent)),
+    ).toBeLessThanOrEqual(structuredResultBytes)
+    expect(result.structuredContent).toMatchObject({
+      experiment: { id: latencyExperimentId },
+    })
+  })
+
+  it("shows the checkout sample as text when the chat view would drop its data", async () => {
+    const client = await connect(clients[0]!)
+    const result = await client.callTool({
+      name: "show_experiment",
+      arguments: { experimentId: checkoutExperimentId },
+    })
+    expect(result.isError).toBeFalsy()
+    expect(textOf(result)).toBe(experimentText(checkout))
+    expect(result.structuredContent).toBeUndefined()
+  })
+
+  /** Nessa keeps an app call's whole result, re-encoded as one JSON string, up to this. */
+  const appResultBytes = 56 * 1024
+
+  /** UTF-8 bytes Nessa charges for an app call: the result JSON, then that string encoded again. */
+  function carried(result: { content: unknown; structuredContent?: unknown }): number {
+    const wire: { content: unknown; structuredContent?: unknown } = {
+      content: result.content,
+    }
+    if (result.structuredContent !== undefined)
+      wire.structuredContent = result.structuredContent
+    return Buffer.byteLength(JSON.stringify(JSON.stringify(wire)))
+  }
+
+  it("counts an app call's size in bytes", () => {
+    const text = "é"
+    const encoded = JSON.stringify(JSON.stringify({ content: [{ type: "text", text }] }))
+    expect(Buffer.byteLength(encoded)).toBeGreaterThan(encoded.length)
+    expect(carried({ content: [{ type: "text", text }] })).toBe(
+      Buffer.byteLength(encoded),
+    )
+  })
+
+  it("keeps every app call of a served sample within what an app call may be", async () => {
+    const client = await connect(clients[0]!)
+    for (const id of [checkoutExperimentId, latencyExperimentId]) {
+      const read = await client.callTool({
+        name: "get_experiment",
         arguments: { experimentId: id },
       })
-      expect(result.isError).toBeFalsy()
-      expect(result.structuredContent).toMatchObject({ experiment: { id } })
-    },
-  )
+      const listed = await client.callTool({
+        name: "list_runs",
+        arguments: { experimentId: id },
+      })
+      expect(read.isError).toBeFalsy()
+      expect(listed.isError).toBeFalsy()
+      expect(read.structuredContent).toMatchObject({ experiment: { id } })
+      expect(carried(read)).toBeLessThanOrEqual(appResultBytes)
+      expect(carried(listed)).toBeLessThanOrEqual(appResultBytes)
+      const runs = (listed.structuredContent as { runs: { id: string }[] }).runs
+      for (const run of runs) {
+        const one = await client.callTool({
+          name: "get_run",
+          arguments: { experimentId: id, runId: run.id },
+        })
+        expect(one.structuredContent).toMatchObject({ run: { id: run.id } })
+        expect(carried(one)).toBeLessThanOrEqual(appResultBytes)
+      }
+    }
+  })
+
+  it("leaves out a structured result one byte over the chat bound, and get_experiment returns it", async () => {
+    const fitted = fittedSample(structuredResultBytes + 1)
+    const client = await connect(clients[0]!, extensionOver(fitted))
+    const shown = await client.callTool({
+      name: "show_experiment",
+      arguments: { experimentId: fitted.id },
+    })
+    expect(shown.isError).toBeFalsy()
+    expect(shown.structuredContent).toBeUndefined()
+    expect(textOf(shown)).toBe(experimentText(validatedOf(fitted)))
+    const read = await client.callTool({
+      name: "get_experiment",
+      arguments: { experimentId: fitted.id },
+    })
+    expect(read.isError).toBeFalsy()
+    expect(Buffer.byteLength(JSON.stringify(read.structuredContent))).toBe(
+      structuredResultBytes + 1,
+    )
+  })
+
+  it("keeps a structured result of exactly the chat bound", async () => {
+    const fitted = fittedSample(structuredResultBytes)
+    const client = await connect(clients[0]!, extensionOver(fitted))
+    const shown = await client.callTool({
+      name: "show_experiment",
+      arguments: { experimentId: fitted.id },
+    })
+    expect(shown.isError).toBeFalsy()
+    expect(Buffer.byteLength(JSON.stringify(shown.structuredContent))).toBe(
+      structuredResultBytes,
+    )
+    expect(textOf(shown)).toBe(experimentText(validatedOf(fitted)))
+  })
+
+  it("answers an experiment past the chat bound with its text and no structured result", async () => {
+    const client = await connect(
+      clients[0]!,
+      experimentsExtension({
+        source: {
+          ids: async () => ["search-latency-at-scale"],
+          experiment: async () => scaleSample(startedAt),
+          openFile: async () => ({ kind: "unavailable", reason: "none" }),
+        },
+        html: () => placeholderHtml,
+      }),
+    )
+    const result = await client.callTool({
+      name: "show_experiment",
+      arguments: { experimentId: "search-latency-at-scale" },
+    })
+    expect(result.isError).toBeFalsy()
+    expect(textOf(result).length).toBeGreaterThan(0)
+    expect(result.structuredContent).toBeUndefined()
+    const read = await client.callTool({
+      name: "get_experiment",
+      arguments: { experimentId: "search-latency-at-scale" },
+    })
+    expect(read.structuredContent).toMatchObject({
+      experiment: { id: "search-latency-at-scale" },
+    })
+  })
 
   it("says which experiments there are when asked for one there is not", async () => {
     const client = await connect(clients[1])
@@ -210,7 +377,7 @@ describe("show_experiment", () => {
     })
     expect(result.isError).toBe(true)
     expect(textOf(result)).toBe(
-      `show_experiment failed: There is no experiment "nope". The experiments are: ${checkoutExperimentId}, ${latencyExperimentId}, ${scaleExperimentId}.`,
+      `show_experiment failed: There is no experiment "nope". The experiments are: ${checkoutExperimentId}, ${latencyExperimentId}.`,
     )
     expect(result.structuredContent).toBeUndefined()
   })
@@ -270,17 +437,17 @@ describe("show_experiment", () => {
 
   it("reads what the source handed over once, and serves only its copy", async () => {
     let reads = 0
-    const held = Object.defineProperty(checkoutSample(startedAt), "title", {
+    const held = Object.defineProperty(latencySample(startedAt), "title", {
       enumerable: true,
       get: () => (++reads === 1 ? "First read" : "A later read"),
     })
     const client = await connect(clients[0], sourceWith({ experiment: async () => held }))
     const result = await client.callTool({
       name: "show_experiment",
-      arguments: { experimentId: checkoutExperimentId },
+      arguments: { experimentId: latencyExperimentId },
     })
     expect(reads).toBe(1)
-    expect(textOf(result)).toMatch(/^First read \(experiment checkout-hillclimb\)\n/)
+    expect(textOf(result)).toMatch(/^First read \(experiment search-latency\)\n/)
     expect(result.structuredContent).toMatchObject({
       experiment: { title: "First read" },
     })
@@ -294,7 +461,7 @@ describe("show_experiment", () => {
     })
     expect(result.isError).toBe(true)
     expect(textOf(result)).toBe(
-      `show_experiment failed: There is no experiment "nope". The experiments are: ${checkoutExperimentId}, ${latencyExperimentId}, ${scaleExperimentId}.`,
+      `show_experiment failed: There is no experiment "nope". The experiments are: ${checkoutExperimentId}, ${latencyExperimentId}.`,
     )
   })
 

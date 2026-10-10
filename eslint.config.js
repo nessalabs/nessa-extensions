@@ -4,7 +4,12 @@ import tseslint from "typescript-eslint"
 
 export default tseslint.config(
   {
-    ignores: ["**/node_modules", "**/dist"],
+    ignores: [
+      "**/node_modules",
+      "**/dist",
+      // Byte-for-byte nessa_ui at e02b577a. stand-in.test.ts is the check.
+      "extensions/experiments/app/kit-stand-in/src/**",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -71,6 +76,13 @@ export default tseslint.config(
     files: ["scripts/**/*.mjs", "*.mjs"],
     languageOptions: {
       globals: { ...globals.node },
+    },
+  },
+  {
+    // A verification script runs in Node and evaluates callbacks in the page.
+    files: ["extensions/**/verification/**/*.mjs"],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
     },
   },
   {

@@ -330,15 +330,21 @@ const reasons: Record<Settled, string> = {
   costly: "Test rose, but cost per task went past the limit. Reverted.",
 }
 
-const testCases = 2400
+/**
+ * Eighty cases, two files a run, one case of churn. The census this sample
+ * was written with is 2,400 cases, churn of 12 and up, and one run of 214
+ * files: about 232KB of JSON, and more than a thousand named cases. An app
+ * call's whole result has to fit in 56KB, so that census cannot be what
+ * `get_experiment` returns. The 29 runs and the late keep stay.
+ */
+const testCases = 80
 const round = (value: number, decimals: number) => Number(value.toFixed(decimals))
 
 /** The checkout-support hill-climb, begun at `startedAt`. */
 export function checkoutSample(startedAt: number): ExperimentInput {
   const at = (after: number) => startedAt + minutes(after)
   const areaOf = (areaId: AreaId) => areasById[areaId]
-  const fileCount = (number: number, areaId: AreaId) =>
-    number === 16 ? 214 : areaId === "harness" ? 3 + (number % 12) : 1 + (number % 3)
+  const fileCount = 2
 
   const baseline = {
     id: "baseline",
@@ -398,7 +404,7 @@ export function checkoutSample(startedAt: number): ExperimentInput {
       // runs made after it, and before the next keep.
       const settledAt = at(startedAfter + 4 + (number % 5) + (number === 20 ? 24 : 0))
       const net = Math.round((test / 100) * testCases)
-      const churn = 12 + (number % 7) * 3
+      const churn = 1
       // Its slices start where its parent's ended, and its cases agree with
       // what its siblings say of their parent.
       const { cases, states } = casesFor(
@@ -428,13 +434,7 @@ export function checkoutSample(startedAt: number): ExperimentInput {
         areaId,
         agentId,
         cases,
-        change: changeFor(
-          id,
-          summary,
-          area.folders,
-          area.extension,
-          fileCount(number, areaId),
-        ),
+        change: changeFor(id, summary, area.folders, area.extension, fileCount),
       })
       if (verdict === "kept") {
         versions.push({
@@ -504,7 +504,7 @@ export function checkoutSample(startedAt: number): ExperimentInput {
       },
       {
         tone: "warning",
-        text: "Three prompt changes in a row overfit; the prompt area is trying examples instead of rules.",
+        text: "Three prompt changes overfit; the prompt area is trying examples instead of rules.",
         at: at(180),
       },
       {

@@ -4,10 +4,10 @@
  * experiment is read in `reading.ts`, from the definition and from what the
  * harness decided.
  *
- * #7's pages import this. They supply the experiment (validated from the
- * tool result), the width, and `open` — the server's `open_file`, mapped to
- * `{ kind: "opened" }` or `{ kind: "refused", reason }`. Navigation and
- * display mode are theirs.
+ * The pages import these modules directly. They supply the experiment
+ * (validated from the tool result), the width, and `open` — the server's
+ * `open_file`, mapped to `{ kind: "opened" }` or `{ kind: "refused", reason }`.
+ * Navigation and display mode live in the pages.
  */
 export { AreaCard, AreaCards } from "./area-card.tsx"
 export { CaseResults } from "./case-results.tsx"

@@ -8,14 +8,14 @@ view reads the experiment through its definition
 ([nessa-agent ADR 333](https://github.com/nessalabs/nessa-agent/blob/main/docs/adr/todo/333-experiments.md),
 amended by [ADR 344](https://github.com/nessalabs/nessa-agent/blob/main/docs/adr/todo/344-mcp-ui.md)).
 
-It is built in slices. What is here is the model, the server, and the components:
+It is built in slices. What is here is the model, the server, and the app:
 
 | Slice | What | Status |
 | --- | --- | --- |
 | [#4](https://github.com/nessalabs/nessa-extensions/issues/4) | `model/`: the definition, validation into a branded `Experiment`, the one formatter, what the views read; `samples/` | Done |
 | [#5](https://github.com/nessalabs/nessa-extensions/issues/5) | `server/`: the tools, on `@nessalabs/server-kit` | Done |
-| [#6](https://github.com/nessalabs/nessa-extensions/issues/6) | `app/`: the climb, the map, area cards, verdicts, cases and changes | This |
-| [#7](https://github.com/nessalabs/nessa-extensions/issues/7) | `app/`: the pages — overview, areas, runs, run detail, the inline card | Planned |
+| [#6](https://github.com/nessalabs/nessa-extensions/issues/6) | `app/`: the climb, the map, area cards, verdicts, cases and changes | Done |
+| [#7](https://github.com/nessalabs/nessa-extensions/issues/7) | `app/`: the pages — overview, areas, runs, run detail, the inline card | Done |
 
 ## Module map
 
@@ -37,13 +37,15 @@ server/           the MCP server, on @nessalabs/server-kit; runs in Node
   reading.ts      the one place a source's answers are checked, each parsed into a copy
   samples-source.ts  the samples as a source, dated from when the server starts
   text.ts         what each tool says in text, standing on its own
-  view.ts         the experiment view's URI, and its placeholder HTML until the app (#7)
+  view.ts         the experiment view's URI, and a placeholder document the server tests inject
+  result-bound.ts the chat view's 16,384-byte bound on the opening structured result
   extension.ts    experimentsExtension: the view and the five tools, over a source
-  main.ts         the bin: the extension over stdio, on the samples
-app/              the components, in the browser; the pages are #7
+  main.ts         the bin: the extension over stdio, on the samples, serving dist/app/index.html
+app/              the MCP App, in the browser
   count.ts        how a count is written; a metric's numbers stay in metric.ts
   geometry.ts     the climb's and the map's pixels
-  kit-stand-in/   a temporary copy of nessa_ui at e02b577, deleted when
+  kit-stand-in/   a temporary copy of nessa_ui at e02b577, byte for byte
+                  under src/ (stand-in.test.ts), deleted when
                   @nessalabs/ui is installable (nessa_ui#115)
   open-file.ts    opening a file or the whole change: the latest request per target
   reading.ts      what a view shows; labels from the definition, numbers from metric.ts
@@ -53,15 +55,28 @@ app/              the components, in the browser; the pages are #7
                   hover, the file query, opening a file, measurement
   climb-chart.tsx, exploration-map.tsx, area-card.tsx, verdict-label.tsx,
   case-results.tsx, change-view.tsx
-                  the views: props in, no state of their own
-  index.ts        what #7's pages import
+                  the components: props in, no state of their own
+  index.ts        the components' barrel
   preview.tsx     mounts every component, for the tests
-vite.config.ts    the build: server/main.ts bundled into dist/main.js, the bin
+  use-host.ts     the app's tool calls: get_experiment, list_runs, get_run, open_file
+  host-data.ts    those answers, checked before a page draws them
+  navigation.ts   which view, and the runs opened over it
+  page-reading.ts what the pages show, read from the definition and the harness
+  sparkline.ts    the card's best-so-far line, drawn as given
+  experiment-card.tsx, overview.tsx, areas-page.tsx, runs-view.tsx, run-detail.tsx
+                  the pages: props in
+  surface.tsx     the fullscreen view: header, view selector, pages, a run over them
+  experiment-app.tsx  the view: the card inline, the surface fullscreen
+  csp.ts          zod jitless, set before any schema is built: a CSP reports `new Function`
+  main.tsx        the document's entry: `mountApp`, declaring inline and fullscreen
+  index.html      the document the build inlines into one file
+vite.config.ts    the build: dist/main.js the bin, and dist/app/index.html the app
 ```
 
-`server/` and `app/` both import `model/`; it imports neither. The views take
-props. The hooks own hover, measurement, the file query and opening a file.
-Tests sit beside what they test.
+`server/` and `app/` both import `model/`; it imports neither. The component
+views take props. The pages' hooks own navigation, the run list, and the open
+run; the component hooks own hover, measurement, the file query and opening a
+file. Tests sit beside what they test.
 
 ## The model
 
@@ -131,14 +146,24 @@ built into `dist/main.js`). Its tools, all read-only:
 | `get_experiment` | the app | the same, for the view to read again |
 | `list_runs` | the app | `{ experimentId }`: the runs newest first, as `data.runs` |
 | `get_run` | the app | `{ experimentId, runId }`: one run in full, as `data.run` |
-| `open_file` | the model and the app | `{ experimentId, runId, path? }`: how to open a file the run changed, or its whole change, as `data.opening`: a `link` the app hands to `ui/open-link`, contents to `download`, or why it is `unavailable` |
+| `open_file` | the model and the app | `{ experimentId, runId, path? }`: how to open a file the run changed, or its whole change, as `data.opening`: a `link` the app hands to `ui/open-link` when the host offers `openLinks`, contents to `download` which the app refuses (the spec has no download request), or why it is `unavailable` |
 
 - **Every answer is text that stands on its own**, for a host without MCP Apps
   and for the model, plus the model's data for the view. A client without MCP
   Apps is offered only `show_experiment` and `open_file`; the server kit holds
   that, and everything else about negotiation and what a tool answers.
-- **The view's HTML is a placeholder** until the app is built (#7); then
-  `main.ts` hands `experimentsExtension` the built file.
+- **The view's HTML is the built app.** `main.ts` reads `dist/app/index.html`
+  (under `app/` beside the bundle once it is built) and hands it to `experimentsExtension`.
+  The app validates that document's tool result with `validateExperiment`
+  before it draws. `list_runs` and `get_run` are read again through the
+  bridge, and the view draws those validated bodies: the list's order and
+  each run's verdict, reason, and score, and the open run's outcome, cases,
+  and change. The opening snapshot says which experiment it is, and whether
+  a later run belongs to it. Inline is the card; it asks for fullscreen with
+  `ui/request-display-mode` only when the host offers it, and draws the mode
+  the host applied to this view. Navigation and Escape stay in the app:
+  Escape closes the run on screen, one at a time, and with none open it does
+  nothing. It does not close a run while a text field has the key.
 - **The data comes through a port**, `ExperimentSource` (`server/source.ts`):
   the experiments' ids, an experiment by id, and how to open a run's file.
   Nothing a source answers is trusted. `reading.ts` parses each answer into a
@@ -156,3 +181,27 @@ built into `dist/main.js`). Its tools, all read-only:
   `ExperimentSource`, handed to `experimentsExtension` in `main.ts`
   ([#5](https://github.com/nessalabs/nessa-extensions/issues/5) records the
   decision).
+
+## In a host
+
+`verification/capture.mjs` records the inline card and the fullscreen view
+and exits 0. It needs Google Chrome and Playwright's WebKit installed.
+The required browser pass is `@nessalabs/app-shell`'s fake host, driven in
+Chromium and WebKit: open, the overview, the runs list with a filter, a
+run's detail, and its lineage. The reference host
+(`@modelcontextprotocol/ext-apps`'s `AppBridge`) is extra evidence; its
+Chromium pass writes the reference-host shots.
+Nessa is the desktop behind its sandbox proxy, through a real gateway and
+this extension's server, in Chromium. Nessa's conversation view keeps at
+most 16,384 bytes of the opening tool's structured result and drops a larger
+one whole, keeping the text. `show_experiment` leaves that structured result
+out and still returns the text. The app then loads the experiment with
+`get_experiment`. A call the app makes is a different bound: 56KB of the
+whole result. The checkout sample's `get_experiment` fits in that. The
+scenario runner's completion does not name the MCP tool, and Nessa attaches
+the forwarded structured result only when it does; `forward-structured.mjs`
+adds that name. The capture fails if the page shows "Blocked a connection
+this app didn't declare". Zod's fast path probes `new Function`, and a
+strict CSP reports that even when the throw is caught; the app sets
+`jitless` before any schema is built, so the probe does not run. An earlier
+shot of that banner was the fixture slot, which is not this server.

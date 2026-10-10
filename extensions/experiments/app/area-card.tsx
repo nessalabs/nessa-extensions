@@ -18,7 +18,8 @@ export function AreaCard({
   caption,
   runs,
   agents,
-}: AreaCardRead) {
+  onOpenRun,
+}: AreaCardRead & { readonly onOpenRun?: (runId: string) => void }) {
   const ink = seriesInk(hue)
   return (
     <article className="area">
@@ -51,13 +52,26 @@ export function AreaCard({
       )}
       <ul className="area-runs" aria-label={name} style={{ color: ink }}>
         {runs.map((run) => (
-          <li
-            key={run.id}
-            className="area-run"
-            data-outcome={run.outcome}
-            data-tone={run.tone}
-            title={run.label}
-          />
+          <li key={run.id}>
+            {onOpenRun === undefined ? (
+              <span
+                className="area-run"
+                data-outcome={run.outcome}
+                data-tone={run.tone}
+                title={run.label}
+              />
+            ) : (
+              <button
+                type="button"
+                className="area-run"
+                data-outcome={run.outcome}
+                data-tone={run.tone}
+                title={run.label}
+                aria-label={`${name} #${run.number} ${run.label}`}
+                onClick={() => onOpenRun(run.id)}
+              />
+            )}
+          </li>
         ))}
       </ul>
       {agents.length === 0 ? null : (
@@ -79,12 +93,18 @@ export function AreaCard({
   )
 }
 
-export function AreaCards({ cards }: { readonly cards: readonly AreaCardRead[] }) {
+export function AreaCards({
+  cards,
+  onOpenRun,
+}: {
+  readonly cards: readonly AreaCardRead[]
+  readonly onOpenRun?: (runId: string) => void
+}) {
   if (cards.length === 0) return null
   return (
     <div className="areas">
       {cards.map((card) => (
-        <AreaCard key={card.id} {...card} />
+        <AreaCard key={card.id} {...card} onOpenRun={onOpenRun} />
       ))}
     </div>
   )

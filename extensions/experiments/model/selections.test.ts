@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest"
 
 import { checkoutSample, latencySample } from "../samples/index.ts"
-import { measureOf, movedCount, scoreOf, type Experiment } from "./experiment.ts"
+import {
+  measureOf,
+  movedCount,
+  parseRun,
+  scoreOf,
+  type Experiment,
+  type Run,
+} from "./experiment.ts"
 import { fixture, start, type Fixture } from "./fixture.ts"
 import {
   bestVersion,
@@ -10,6 +17,7 @@ import {
   guardrailChange,
   limitOf,
   lineage,
+  lineageFrom,
   lineTotals,
   metricChange,
   pathToBest,
@@ -47,6 +55,17 @@ describe("verdictOf", () => {
       expect(checkout.definition.verdicts).toContain(verdict)
     }
   })
+
+  it("reads a verdict the definition does not have as unknown", () => {
+    const run = checkout.runs[0]
+    if (run === undefined) throw new Error("the sample has a run")
+    expect(verdictOf(checkout, { ...run, verdict: "retired" })).toEqual({
+      id: "retired",
+      label: "Unknown",
+      tone: "neutral",
+      outcome: "pending",
+    })
+  })
 })
 
 describe("primarySplitOf", () => {
@@ -54,12 +73,29 @@ describe("primarySplitOf", () => {
     expect(primarySplitOf(checkout)).toEqual({ id: "test", label: "Test" })
     expect(primarySplitOf(latency)).toEqual({ id: "replay", label: "Replayed traffic" })
   })
+
+  it("reads a primary split the definition does not have as unknown", () => {
+    const dropped = {
+      ...checkout,
+      definition: { ...checkout.definition, primarySplit: "missing-split" },
+    } as Experiment
+    expect(primarySplitOf(dropped)).toEqual({ id: "missing-split", label: "Unknown" })
+  })
 })
 
 describe("bestVersion", () => {
   it("is the last of bestSoFar", () => {
-    expect(bestVersion(checkout)).toEqual({ kind: "run", run: runOf(checkout, "r23") })
-    expect(bestVersion(latency)).toEqual({ kind: "run", run: runOf(latency, "l6") })
+    const last = checkout.bestSoFar.at(-1)
+    const latencyLast = latency.bestSoFar.at(-1)
+    if (last === undefined || latencyLast === undefined) {
+      throw new Error("each sample kept a run")
+    }
+    expect(last).toBe("r23")
+    expect(bestVersion(checkout)).toEqual({ kind: "run", run: runOf(checkout, last) })
+    expect(bestVersion(latency)).toEqual({
+      kind: "run",
+      run: runOf(latency, latencyLast),
+    })
   })
 
   it("is the last of bestSoFar, not the last kept run nor the best score", () => {
@@ -214,6 +250,29 @@ describe("lineage", () => {
   it("is undefined for a run that is not one, the baseline included", () => {
     expect(lineage(checkout, "r999")).toBeUndefined()
     expect(lineage(checkout, checkout.baseline.id)).toBeUndefined()
+  })
+
+  it("ends when a run is reached again", () => {
+    const source = checkout.runs[0]
+    const other = checkout.runs[1]
+    if (source === undefined || other === undefined) throw new Error("two runs")
+    const copy = (run: Run, id: string, parentId: string): Run => {
+      const parsed = parseRun({ ...JSON.parse(JSON.stringify(run)), id, parentId })
+      if (!parsed.ok) throw new Error(parsed.message)
+      return parsed.run
+    }
+    const left = copy(source, "left", "right")
+    const right = copy(other, "right", "left")
+    const line = lineageFrom(
+      checkout.baseline,
+      new Map([
+        ["left", left],
+        ["right", right],
+      ]),
+      "right",
+    )
+    expect(line?.baseline).toBe(checkout.baseline)
+    expect(ids(line?.runs ?? [])).toEqual(["left", "right"])
   })
 })
 

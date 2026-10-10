@@ -1,16 +1,17 @@
 /**
- * The samples as a source: the checkout hill-climb, the latency experiment
- * and the one at scale, each dated from the `startedAt` it is given. It is
- * the server's source until a harness serves experiments; the harness plugs
- * into the same port (`source.ts`), in `main.ts`.
+ * The samples as a source: the checkout hill-climb and the latency
+ * experiment, each dated from the `startedAt` it is given. The scale fixture
+ * stays off this source: one run of ten thousand files does not fit in an
+ * app call. It is the server's source until a harness serves experiments;
+ * the harness plugs into the same port (`source.ts`), in `main.ts`.
  */
-import { checkoutSample, latencySample, scaleSample } from "../samples/index.ts"
+import { checkoutSample, latencySample } from "../samples/index.ts"
 import type { ExperimentSource } from "./source.ts"
 
 /** A source of the samples, begun at `startedAt`. */
 export function samplesSource(startedAt: number): ExperimentSource {
   const samples = new Map(
-    [checkoutSample, latencySample, scaleSample].map((sample) => {
+    [checkoutSample, latencySample].map((sample) => {
       const input = sample(startedAt)
       return [input.id, input] as const
     }),

@@ -105,13 +105,7 @@ export function niceTicks(min: number, max: number, count: number): number[] {
   // The thresholds are the geometric midpoints between neighbouring round
   // steps, so the chosen step is the one nearest the raw one on a log scale.
   const factor =
-    error >= Math.sqrt(50)
-      ? 10
-      : error >= Math.sqrt(10)
-        ? 5
-        : error >= Math.sqrt(2)
-          ? 2
-          : 1
+    error >= Math.sqrt(50) ? 10 : error >= Math.sqrt(10) ? 5 : error >= Math.sqrt(2) ? 2 : 1
   // Ticks are built as integer multiples and only then scaled, dividing by an
   // integer inverse for fractional steps: 3 / 10 is exactly 0.3, while 3 * 0.1
   // is not.
@@ -137,8 +131,7 @@ export function niceTicks(min: number, max: number, count: number): number[] {
   }
   const distinct = ticks.every(
     (tick, index) =>
-      Number.isFinite(tick) &&
-      (index === 0 || tick > (ticks[index - 1] ?? Number.NEGATIVE_INFINITY)),
+      Number.isFinite(tick) && (index === 0 || tick > ticks[index - 1]!),
   )
   return distinct ? ticks : bounds
 }
@@ -249,24 +242,21 @@ export function stepPath(
   options: StepPathOptions = {},
 ): string {
   const ordered = plottable(points)
-  const steps = options.better ? bestSoFar(ordered, options.better) : stepChanges(points)
+  const steps = options.better
+    ? bestSoFar(ordered, options.better)
+    : stepChanges(points)
   if (steps.length === 0) return ""
-  const first = steps[0]
-  if (first === undefined) return ""
-  const rest = steps.slice(1)
-  let path = `M${round(scale.x(first.x))},${round(scale.y(first.y))}`
+  const [first, ...rest] = steps
+  let path = `M${round(scale.x(first!.x))},${round(scale.y(first!.y))}`
   for (const step of rest) {
     path += `H${round(scale.x(step.x))}V${round(scale.y(step.y))}`
   }
   const given = options.better
     ? ordered
     : points.filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
-  const carried = given[given.length - 1]
-  const end = options.until ?? carried?.x
-  const last = steps[steps.length - 1]
-  if (last !== undefined && end !== undefined && Number.isFinite(end) && end > last.x) {
-    path += `H${round(scale.x(end))}`
-  }
+  const end = options.until ?? given[given.length - 1]!.x
+  const last = steps[steps.length - 1]!
+  if (Number.isFinite(end) && end > last.x) path += `H${round(scale.x(end))}`
   return path
 }
 
@@ -279,7 +269,10 @@ export function stepPath(
  * @returns Path data in pixels, or an empty string when no point is
  *   plottable.
  */
-export function linePath(points: readonly ChartPoint[], scale: ChartScale): string {
+export function linePath(
+  points: readonly ChartPoint[],
+  scale: ChartScale,
+): string {
   return plottable(points)
     .map(
       (point, index) =>

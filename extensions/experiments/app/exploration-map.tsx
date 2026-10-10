@@ -33,6 +33,8 @@ export interface ExplorationMapProps {
   readonly thread: string
   readonly hover?: MapDotProps
   readonly onHover: (runId: string | undefined) => void
+  /** Opens the run of a dot. Absent, a dot is only hovered. */
+  readonly onOpen?: (runId: string) => void
 }
 
 export function ExplorationMap({
@@ -43,6 +45,7 @@ export function ExplorationMap({
   thread,
   hover,
   onHover,
+  onOpen,
 }: ExplorationMapProps) {
   if (columns.length === 0) return null
   return (
@@ -81,6 +84,7 @@ export function ExplorationMap({
           onFocus={() => onHover(dot.runId)}
           onPointerLeave={() => onHover(undefined)}
           onBlur={() => onHover(undefined)}
+          onClick={onOpen === undefined ? undefined : () => onOpen(dot.runId)}
         />
       ))}
       {hover === undefined ? null : (

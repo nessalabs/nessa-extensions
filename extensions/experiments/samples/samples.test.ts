@@ -122,7 +122,9 @@ describe("the samples", () => {
         named.set(moved.id, said)
       }
     }
-    expect(named.size).toBeGreaterThan(1000)
+    // The 2,400-case census named more than a thousand. That JSON does not
+    // fit in an app call, so the served sample names the cases it still moves.
+    expect(named.size).toBeGreaterThan(10)
     // Down each lineage, a case fixed is not fixed again until it breaks.
     const byId = new Map(experiment.runs.map((run) => [run.id, run]))
     for (const run of experiment.runs) {

@@ -27,6 +27,7 @@ import {
   runsText,
   unchangedPathText,
 } from "./text.ts"
+import { structuredResultTooLarge } from "./result-bound.ts"
 import { experimentView } from "./view.ts"
 
 export interface ExperimentsOptions {
@@ -64,6 +65,20 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
     { signal }: { signal: AbortSignal },
   ): Promise<ToolOutcome> => {
     const experiment = await experimentOf(experimentId, signal)
+    const text = experimentText(experiment)
+    const data = { experiment }
+    // The opening result is what a chat view keeps. Over its bound the text
+    // stands alone and the structured result is left out, so the view can
+    // read the experiment again with get_experiment.
+    if (structuredResultTooLarge(data)) return { text }
+    return { text, data }
+  }
+
+  const getExperiment = async (
+    { experimentId }: { experimentId: string },
+    { signal }: { signal: AbortSignal },
+  ): Promise<ToolOutcome> => {
+    const experiment = await experimentOf(experimentId, signal)
     return { text: experimentText(experiment), data: { experiment } }
   }
 
@@ -77,6 +92,9 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
         title: "Experiment",
         description: "An experiment's climb, areas, runs, and run detail.",
         html,
+        // The spec recommends an explicit border. The card sits in a
+        // conversation, and a host's default border is not the same everywhere.
+        ui: { prefersBorder: true },
       },
     ],
     tools: [
@@ -98,7 +116,7 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
         effects: "read-only",
         view: experimentView,
         callers: ["app"],
-        run: showExperiment,
+        run: getExperiment,
       }),
       defineTool({
         name: "list_runs",

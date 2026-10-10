@@ -1,14 +1,96 @@
 /**
- * The extension's build: its server, `server/main.ts`, bundled with
- * everything it imports — the workspace packages and npm's — into one file,
- * `dist/main.js`, which the package's `bin` runs under Node. It is built as
- * a server environment, so modules resolve as Node resolves them. The app's
- * HTML joins it with #7.
+ * The extension's build: the server, `server/main.ts`, bundled into
+ * `dist/main.js`, and the app, `app/index.html`, inlined into `dist/app/index.html`
+ * by `@nessalabs/app-shell/build`. The server is built first and empties
+ * `dist`; the app is built second and leaves the server bundle in place.
+ * Vite names the page `dist/app/index.html`, after its source path.
+ *
+ * The app plugin applies only to the client build: it requires exactly one
+ * HTML file, which the server build does not have. It is a post plugin so it
+ * runs after Vite has emitted that HTML.
+ *
+ * Vite ignores `config` and `configResolved` on a plugin returned from
+ * `applyToEnvironment`. Those two run here, on the same `mcpApp()` instance
+ * whose `buildStart` then sees the public directory and refuses a file in
+ * it. `config` is what inlines the script, the styles, and every asset.
  */
-import { defineConfig } from "vite"
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
+
+import { defineConfig, type Plugin } from "vite"
+
+import { mcpApp } from "@nessalabs/app-shell/build"
+
+/**
+ * The byte-copied kit imports `@/…`. The path is this package's tsconfig
+ * `paths`, the one declaration of that alias.
+ */
+function kitSrcFromTsconfig(): string {
+  const tsconfig = JSON.parse(
+    readFileSync(new URL("./tsconfig.json", import.meta.url), "utf8"),
+  ) as { compilerOptions?: { paths?: Record<string, string[]> } }
+  const star = tsconfig.compilerOptions?.paths?.["@/*"]?.[0]
+  if (star === undefined || !star.endsWith("/*")) {
+    throw new Error("tsconfig paths must map @/* into this package")
+  }
+  const directory = fileURLToPath(new URL(star.slice(0, -1), import.meta.url))
+  return directory.endsWith("/") ? directory : `${directory}/`
+}
+
+const kitSrc = kitSrcFromTsconfig()
+
+function handler<Args extends readonly unknown[], Result>(
+  hook: ((...args: Args) => Result) | { handler: (...args: Args) => Result } | undefined,
+): ((...args: Args) => Result) | undefined {
+  if (hook === undefined) return undefined
+  return typeof hook === "function" ? hook : hook.handler
+}
+
+function experimentsApp(): Plugin {
+  const inner = mcpApp()
+  return {
+    name: "experiments-app",
+    enforce: "post",
+    config(config, env) {
+      return handler(inner.config)?.call(this, config, env)
+    },
+    configResolved(config) {
+      return handler(inner.configResolved)?.call(this, config)
+    },
+    applyToEnvironment(environment) {
+      if (environment.name !== "client") return false
+      return {
+        name: inner.name,
+        apply: "build",
+        enforce: "post",
+        buildStart(options) {
+          return handler(inner.buildStart)?.call(this, options)
+        },
+        generateBundle(options, bundle, isWrite) {
+          return handler(inner.generateBundle)?.call(this, options, bundle, isWrite)
+        },
+      }
+    },
+  }
+}
 
 export default defineConfig({
+  base: "./",
+  resolve: {
+    alias: [{ find: /^@\//, replacement: `${kitSrc}/` }],
+  },
+  plugins: [experimentsApp()],
   environments: {
+    client: {
+      consumer: "client",
+      build: {
+        outDir: "dist",
+        emptyOutDir: false,
+        rolldownOptions: {
+          input: { index: "app/index.html" },
+        },
+      },
+    },
     server: {
       consumer: "server",
       resolve: { noExternal: true },
@@ -16,7 +98,7 @@ export default defineConfig({
         target: "node24",
         outDir: "dist",
         emptyOutDir: true,
-        rollupOptions: {
+        rolldownOptions: {
           input: "server/main.ts",
           output: { entryFileNames: "main.js" },
         },
@@ -25,7 +107,13 @@ export default defineConfig({
   },
   builder: {
     buildApp: async (builder) => {
-      await builder.build(builder.environments.server)
+      const server = builder.environments.server
+      const client = builder.environments.client
+      if (server === undefined || client === undefined) {
+        throw new Error("the experiments build needs its server and client environments")
+      }
+      await builder.build(server)
+      await builder.build(client)
     },
   },
 })

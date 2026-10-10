@@ -29,28 +29,41 @@ export function runOf(experiment: Experiment, id: string): Run | undefined {
 }
 
 /**
- * The verdict `run` was given. Validation holds that it is one of the
- * definition's (`verdict-defined`); this is the one place that is relied on.
+ * A verdict or split the definition does not name. A view can be asked to
+ * draw a run from an earlier result against a later definition that dropped
+ * it; rendering shows this rather than throwing.
+ */
+const unknown = "Unknown"
+
+/**
+ * The verdict `run` was given. Validation holds that a run of this experiment
+ * names one of the definition's (`verdict-defined`). A verdict the definition
+ * does not have is unknown.
  */
 export function verdictOf(experiment: Experiment, run: Run): Verdict {
-  const verdict = experiment.definition.verdicts.find((each) => each.id === run.verdict)
-  if (verdict === undefined) {
-    throw new Error(`run ${run.id}'s verdict ${run.verdict} is not defined`)
-  }
-  return verdict
+  return (
+    experiment.definition.verdicts.find((each) => each.id === run.verdict) ?? {
+      id: run.verdict,
+      label: unknown,
+      tone: "neutral",
+      outcome: "pending",
+    }
+  )
 }
 
 /**
  * The split the climb follows. Validation holds that it is one of the
- * definition's (`primary-split-defined`); this is the one place that is
- * relied on.
+ * definition's (`primary-split-defined`). A primary split the definition
+ * does not have is unknown.
  */
 export function primarySplitOf(experiment: Experiment): Split {
   const { splits, primarySplit } = experiment.definition
-  const split = splits.find((each) => each.id === primarySplit)
-  if (split === undefined)
-    throw new Error(`the primary split ${primarySplit} is not defined`)
-  return split
+  return (
+    splits.find((each) => each.id === primarySplit) ?? {
+      id: primarySplit,
+      label: unknown,
+    }
+  )
 }
 
 /** The runs by id; validation holds them unique (`run-ids-unique`). */
@@ -187,20 +200,35 @@ export interface Lineage {
 }
 
 /**
+ * The lineage of `runId` through `runs`, or `undefined` when `runs` has no
+ * such run. A parent that is not in `runs` ends the chain: the baseline is
+ * not a run. A run reached again ends it too, so a parent retargeted at its
+ * own descendant stays a finite chain.
+ */
+export function lineageFrom(
+  baseline: Baseline,
+  runs: ReadonlyMap<string, Run>,
+  runId: string,
+): Lineage | undefined {
+  const chain: Run[] = []
+  const seen = new Set<string>()
+  let at = runs.get(runId)
+  if (at === undefined) return undefined
+  while (at !== undefined && !seen.has(at.id)) {
+    seen.add(at.id)
+    chain.unshift(at)
+    at = runs.get(at.parentId)
+  }
+  return { baseline, runs: chain }
+}
+
+/**
  * The lineage of the run with `runId`, or `undefined` when there is no such
  * run. It ends: validation holds that each parent is the baseline or a
  * lower-numbered run.
  */
 export function lineage(experiment: Experiment, runId: string): Lineage | undefined {
-  const byId = runsById(experiment)
-  const chain: Run[] = []
-  let at = byId.get(runId)
-  if (at === undefined) return undefined
-  while (at !== undefined) {
-    chain.unshift(at)
-    at = byId.get(at.parentId)
-  }
-  return { baseline: experiment.baseline, runs: chain }
+  return lineageFrom(experiment.baseline, runsById(experiment), runId)
 }
 
 /** Newest first: by `startedAt`, then by `number`. */

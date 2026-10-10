@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
 import { Client } from "@modelcontextprotocol/client"
@@ -7,7 +7,10 @@ import { apps, capabilitiesFor } from "@nessalabs/server-kit/testing"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { checkoutExperimentId } from "../samples/index.ts"
-import { experimentView, placeholderHtml } from "./view.ts"
+import { experimentView } from "./view.ts"
+
+const appHtmlPath = fileURLToPath(new URL("../dist/app/index.html", import.meta.url))
+const appHtml = existsSync(appHtmlPath) ? readFileSync(appHtmlPath, "utf8") : undefined
 
 const opened: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -24,14 +27,17 @@ const entries = [
 ]
 
 describe("the bin", () => {
-  it("is built before the tests run in CI, so the bundle is tested there", () => {
+  it("is built before the tests run in CI, so the bundle and the app are tested there", () => {
     // Locally the bundle is tested once `pnpm build` has made it.
-    if (process.env.CI !== undefined) expect(existsSync(entries[1]!.path)).toBe(true)
+    if (process.env.CI !== undefined) {
+      expect(existsSync(entries[1]!.path)).toBe(true)
+      expect(appHtml).toBeTypeOf("string")
+    }
   })
 
   it.each(
     entries
-      .filter((entry) => existsSync(entry.path))
+      .filter((entry) => existsSync(entry.path) && appHtml !== undefined)
       .flatMap((entry) =>
         (["legacy", "modern"] as const).map((era) => ({ ...entry, era })),
       ),
@@ -66,11 +72,18 @@ describe("the bin", () => {
         arguments: { experimentId: checkoutExperimentId },
       })
       expect(result.isError).toBeFalsy()
-      expect(result.structuredContent).toMatchObject({
+      expect(result.structuredContent).toBeUndefined()
+      const read = await client.callTool({
+        name: "get_experiment",
+        arguments: { experimentId: checkoutExperimentId },
+      })
+      expect(read.isError).toBeFalsy()
+      expect(read.structuredContent).toMatchObject({
         experiment: { id: checkoutExperimentId },
       })
+      if (appHtml === undefined) throw new Error("the app is built")
       expect((await client.readResource({ uri: experimentView })).contents).toMatchObject(
-        [{ text: placeholderHtml }],
+        [{ text: appHtml }],
       )
     },
   )

@@ -1,0 +1,284 @@
+/**
+ * The experiment fullscreen: the header, the view selector, the views, and
+ * a run opened over them. The view underneath stays mounted, so closing the
+ * run finds its scroll and its filter. Navigation and Escape are
+ * `useExperimentNavigation`. Runs and the open run are read with `tools/call`.
+ */
+import { useMemo, useState, type KeyboardEvent } from "react"
+
+import { areaCards, caseResults, verdicts } from "./reading.ts"
+import { AreasPage } from "./areas-page.tsx"
+import { Overview } from "./overview.tsx"
+import {
+  acceptedRuns,
+  headline,
+  lineageSteps,
+  noteReads,
+  outcomeRead,
+  pathSteps,
+  runLabel,
+  runRow,
+  runsSubtitle,
+  swarmNow,
+} from "./page-reading.ts"
+import { RunDetail } from "./run-detail.tsx"
+import { RunsView } from "./runs-view.tsx"
+import { useChangeView } from "./use-change.ts"
+import { useClimbChart } from "./use-climb.ts"
+import { useFetchedRun, useListedRuns } from "./use-host.ts"
+import { useExplorationMap } from "./use-map.ts"
+import { useElementWidth } from "./use-measure.ts"
+import { useExperimentNavigation } from "./use-navigation.ts"
+import type { ViewId } from "./navigation.ts"
+import type { Opening } from "./open-file.ts"
+import type { OpenRequest, Schedule } from "./use-open-file.ts"
+import type { Experiment, Run } from "../model/index.ts"
+import "./pages.css"
+
+const noListedRuns: readonly Run[] = []
+
+const labels = {
+  overview: "Overview",
+  areas: "Areas",
+  runs: "Runs",
+} as const satisfies Record<ViewId, string>
+
+export function ExperimentSurface({
+  experiment,
+  snapshotToken,
+  runsOpenable,
+  active,
+  open,
+  schedule,
+  onInline,
+  inlinePending,
+  notice,
+}: {
+  readonly experiment: Experiment
+  /** The experiment on screen. A new snapshot is a new view, keyed by the caller. */
+  readonly snapshotToken: number
+  /** A run may be opened. False while the next snapshot is still loading. */
+  readonly runsOpenable: boolean
+  readonly active: boolean
+  readonly open: (request: OpenRequest) => Promise<Opening>
+  readonly schedule: Schedule
+  readonly onInline: () => void
+  readonly inlinePending: boolean
+  readonly notice?: string
+}) {
+  const nav = useExperimentNavigation(active)
+  const onOpenRun = runsOpenable ? nav.open : () => {}
+  const onFollowRun = runsOpenable ? nav.follow : () => {}
+  const [frame, width] = useElementWidth<HTMLDivElement>(720)
+  const climb = useClimbChart(experiment, width)
+  const map = useExplorationMap(experiment, width)
+  const [verdict, setVerdict] = useState<string | undefined>(undefined)
+  const [filtered, setFiltered] = useState(experiment.id)
+  if (filtered !== experiment.id) {
+    setFiltered(experiment.id)
+    setVerdict(undefined)
+  }
+  const available: readonly ViewId[] =
+    experiment.areas.length === 0 ? ["overview", "runs"] : ["overview", "areas", "runs"]
+  const view = available.includes(nav.navigation.view) ? nav.navigation.view : "overview"
+  const openId = nav.navigation.trail.at(-1)
+  const listed = useListedRuns(experiment, active && view === "runs")
+  const alongside = listed.status === "ready" ? listed.runs : noListedRuns
+  const fetched = useFetchedRun(experiment, openId, active, snapshotToken, alongside)
+  const detailRun = fetched.status === "ready" ? fetched.run : undefined
+  // One set for the row, the outcome, the cases, the lineage, and the
+  // labels. A later copy of a run replaces the earlier one.
+  const accepted = useMemo(
+    () =>
+      acceptedRuns(
+        experiment.runs,
+        alongside,
+        detailRun === undefined ? noListedRuns : [detailRun],
+      ),
+    [alongside, detailRun, experiment],
+  )
+  const openRun = openId === undefined ? undefined : accepted.get(openId)
+  const shown = fetched.status === "ready" ? openRun : undefined
+  const change = useChangeView({ experiment, run: shown, open, schedule })
+  const head = useMemo(() => headline(experiment), [experiment])
+  const path = useMemo(() => pathSteps(experiment), [experiment])
+  const swarm = useMemo(() => swarmNow(experiment), [experiment])
+  const notes = useMemo(() => noteReads(experiment), [experiment])
+  const cards = useMemo(() => areaCards(experiment), [experiment])
+  const labelsOfVerdicts = useMemo(() => verdicts(experiment), [experiment])
+  const rows = useMemo(
+    () =>
+      listed.status === "ready"
+        ? listed.runs.flatMap((run) => {
+            const current = accepted.get(run.id)
+            return current === undefined ? [] : [runRow(experiment, current, accepted)]
+          })
+        : [],
+    [accepted, experiment, listed],
+  )
+  const outcome =
+    shown === undefined ? undefined : outcomeRead(experiment, shown, accepted)
+  const cases = shown === undefined ? undefined : caseResults(experiment, shown)
+  const line =
+    openId === undefined ? undefined : lineageSteps(experiment, openId, accepted)
+  const crumbs = nav.navigation.trail.slice(0, -1).map((id, index) => ({
+    key: `${index}:${id}`,
+    label: runLabel(accepted, id),
+    onSelect: () => nav.through(index),
+  }))
+
+  const onTabsKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (openId !== undefined) return
+    const index = available.indexOf(view)
+    const next = (() => {
+      if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+        const step = event.key === "ArrowRight" ? 1 : -1
+        return available[(index + step + available.length) % available.length]
+      }
+      if (event.key === "Home") return available[0]
+      if (event.key === "End") return available.at(-1)
+      return undefined
+    })()
+    if (next === undefined || next === view) return
+    event.preventDefault()
+    nav.select(next)
+    const tab = event.currentTarget.querySelector<HTMLButtonElement>(
+      `[data-view="${next}"]`,
+    )
+    tab?.focus()
+  }
+
+  return (
+    <section
+      ref={nav.surfaceRef}
+      className="surface"
+      tabIndex={-1}
+      aria-label={experiment.title}
+    >
+      <header className="surface-header">
+        <div className="surface-titles">
+          <h1 className="surface-title">{experiment.title}</h1>
+          <p className="surface-goal">{experiment.goal}</p>
+        </div>
+        <button
+          type="button"
+          className="surface-back"
+          onClick={onInline}
+          disabled={inlinePending}
+          aria-label="Show the experiment inline"
+        >
+          Back
+        </button>
+      </header>
+      {notice === undefined ? null : (
+        <p className="card-notice" role="status">
+          {notice}
+        </p>
+      )}
+      <div
+        className="views"
+        role="tablist"
+        aria-label="Experiment"
+        onKeyDown={onTabsKeyDown}
+      >
+        {available.map((id) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            id={`view-${id}`}
+            data-view={id}
+            aria-selected={view === id}
+            aria-controls={`panel-${id}`}
+            aria-disabled={openId !== undefined}
+            tabIndex={view === id && openId === undefined ? 0 : -1}
+            onClick={() => {
+              if (openId !== undefined) return
+              nav.select(id)
+            }}
+          >
+            {labels[id]}
+          </button>
+        ))}
+      </div>
+      <div ref={frame} className="surface-body">
+        <div hidden={openId !== undefined}>
+          <div
+            role="tabpanel"
+            id="panel-overview"
+            aria-labelledby="view-overview"
+            hidden={view !== "overview" ? true : undefined}
+          >
+            <Overview
+              title="Overview"
+              subtitle={`${head.title} · ${head.subtitle}`}
+              headline={head}
+              climb={climb}
+              path={path}
+              swarm={swarm}
+              notes={notes}
+              onOpenRun={onOpenRun}
+            />
+          </div>
+          {available.includes("areas") ? (
+            <div
+              role="tabpanel"
+              id="panel-areas"
+              aria-labelledby="view-areas"
+              hidden={view !== "areas" ? true : undefined}
+            >
+              <AreasPage title="Areas" map={map} cards={cards} onOpenRun={onOpenRun} />
+            </div>
+          ) : null}
+          <div
+            role="tabpanel"
+            id="panel-runs"
+            aria-labelledby="view-runs"
+            hidden={view !== "runs" ? true : undefined}
+          >
+            <RunsView
+              title="Runs"
+              subtitle={runsSubtitle(
+                listed.status === "ready" ? listed.runs.length : experiment.runs.length,
+                listed.status === "ready" && verdict !== undefined
+                  ? {
+                      count: rows.filter((row) => row.verdictId === verdict).length,
+                      label:
+                        labelsOfVerdicts.find((item) => item.id === verdict)?.label ??
+                        verdict,
+                    }
+                  : undefined,
+              )}
+              verdicts={labelsOfVerdicts}
+              selected={verdict}
+              onSelect={setVerdict}
+              rows={rows}
+              onOpenRun={onOpenRun}
+              runsOpenable={runsOpenable}
+              omitted={listed.status === "ready" ? listed.skipped : 0}
+              status={listed.status === "idle" ? "loading" : listed.status}
+              message={listed.status === "failed" ? listed.message : undefined}
+            />
+          </div>
+        </div>
+        {openId === undefined ? null : (
+          <div ref={nav.detailRef} className="detail-focus" tabIndex={-1}>
+            <RunDetail
+              trailLabel={labels[view]}
+              crumbs={crumbs}
+              current={runLabel(accepted, openId)}
+              onClose={nav.close}
+              outcome={outcome}
+              cases={cases}
+              change={change}
+              lineage={line}
+              onFollow={onFollowRun}
+              status={fetched.status === "idle" ? "loading" : fetched.status}
+              message={fetched.status === "failed" ? fetched.message : undefined}
+            />
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}

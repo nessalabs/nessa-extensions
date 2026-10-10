@@ -1,0 +1,275 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 0 32px;
+  color: var(--foreground);
+  font-family: var(--nessa-font-sans);
+  font-size: var(--nessa-font-size-4);
+  line-height: var(--nessa-line-height-4);
+}
+
+.page-heading,
+.page-section,
+.detail-outcome {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.page-title,
+.section-title,
+.surface-title,
+.card-title {
+  margin: 0;
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+.page-title {
+  font-size: var(--nessa-font-size-5);
+  line-height: var(--nessa-line-height-5);
+}
+
+.section-title {
+  font-size: var(--nessa-font-size-4);
+}
+
+.page-subtitle,
+.headline-caption,
+.surface-goal,
+.card-goal,
+.card-kicker,
+.card-swarm,
+.run-reason,
+.run-area,
+.guardrail-limit,
+.swarm-detail,
+.path-label {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+}
+
+.headline-value,
+.run-score {
+  font-variant-numeric: tabular-nums;
+}
+
+.path,
+.swarm,
+.notes,
+.lineage,
+.run-list,
+.guardrails,
+.card-gains {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.path li,
+.swarm li,
+.run-list li,
+.lineage li,
+.guardrails li,
+.card-gains li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+.path button,
+.notes button,
+.lineage button,
+.run-list button,
+.swarm button {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.path-run,
+.run-number,
+.swarm-name {
+  color: var(--foreground);
+}
+
+.notes li {
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+.runs-filters {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 0;
+  background: var(--background);
+}
+
+.runs-filters button,
+.views button,
+.card-open,
+.surface-back {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--card-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+
+.runs-filters button,
+.views button {
+  padding: 4px 10px;
+}
+
+.runs-filters button[aria-pressed="true"],
+.views button[aria-selected="true"] {
+  background: var(--foreground);
+  color: var(--background);
+}
+
+.runs-scroll {
+  height: 24rem;
+  overflow: auto;
+}
+
+.run-list button {
+  width: 100%;
+}
+
+.run-list button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.page-status {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.crumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.crumbs li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.crumbs li:not(:last-child)::after {
+  content: "/";
+  color: var(--muted-foreground);
+}
+
+.crumbs button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  cursor: pointer;
+}
+
+.crumbs [aria-current="page"] {
+  color: var(--foreground);
+}
+
+.detail-reason {
+  margin: 0;
+}
+
+.guardrails li {
+  gap: 12px;
+}
+
+.detail-focus:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 2px;
+}
+
+.surface {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--nessa-font-sans);
+}
+
+.surface:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: -2px;
+}
+
+.surface-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.surface-title {
+  font-size: var(--nessa-font-size-5);
+  line-height: var(--nessa-line-height-5);
+}
+
+.surface-back,
+.card-open {
+  padding: 6px 12px;
+}
+
+.surface-back:disabled,
+.card-open:disabled {
+  color: var(--muted-foreground);
+  cursor: default;
+}
+
+.views {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--foreground) 6%, transparent);
+}
+
+.surface-body {
+  min-width: 0;
+}
+
+.card-notice {
+  margin: 0;
+  color: var(--muted-foreground);
+}
