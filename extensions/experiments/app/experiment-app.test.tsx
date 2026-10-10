@@ -89,6 +89,8 @@ async function renderApp(
     readonly bareRun?: boolean
     /** A run `list_runs` adds in front of the opening snapshot's runs. */
     readonly listedRun?: Run
+    /** `get_experiment`. The default returns `sample`. */
+    readonly getExperiment?: (experimentId: string) => CallToolResult
   },
 ) {
   const modes = options?.modes ?? ["inline", "fullscreen"]
@@ -116,9 +118,14 @@ async function renderApp(
       callTool: ({ name, arguments: args }) => {
         calls.push(name)
         if (name === "get_experiment") {
-          return answered(sample.title, {
-            experiment: JSON.parse(JSON.stringify(sample)),
-          })
+          const id =
+            typeof args?.experimentId === "string" ? args.experimentId : sample.id
+          return (
+            options?.getExperiment?.(id) ??
+            answered(sample.title, {
+              experiment: JSON.parse(JSON.stringify(sample)),
+            })
+          )
         }
         if (name === "list_runs") {
           const runs = runsNewestFirst(sample).map((run) => jsonRun(run))
@@ -511,6 +518,79 @@ describe("the experiment app in the fake host", () => {
     expect(calls.filter((name) => name === "get_experiment")).toEqual(["get_experiment"])
   })
 
+  it("reads get_experiment again when a later opening result for the same id has none", async () => {
+    const checkout = experiment(checkoutSample)
+    const absent = (): CallToolResult => ({
+      content: [{ type: "text", text: checkout.title }],
+    })
+    const { host, calls } = await renderApp(checkout, { result: absent() })
+    expect(calls.filter((name) => name === "get_experiment")).toEqual(["get_experiment"])
+
+    host.sendToolInput({ experimentId: checkout.id })
+    await settle()
+    host.sendToolResult(absent())
+    await settle()
+    expect(calls.filter((name) => name === "get_experiment")).toEqual([
+      "get_experiment",
+      "get_experiment",
+    ])
+    expect(screen.getByRole("heading", { name: checkout.title })).toBeTruthy()
+  })
+
+  it("shows the experiment that was asked for again after another experiment failed", async () => {
+    const checkout = experiment(checkoutSample)
+    const latency = experiment(latencySample)
+    const absent = (title: string): CallToolResult => ({
+      content: [{ type: "text", text: title }],
+    })
+    const { host, calls } = await renderApp(checkout, {
+      result: absent(checkout.title),
+      getExperiment(id) {
+        if (id === latency.id) return answered("Latency failed.", {}, true)
+        return answered(checkout.title, {
+          experiment: JSON.parse(JSON.stringify(checkout)),
+        })
+      },
+    })
+    expect(screen.getByRole("heading", { name: checkout.title })).toBeTruthy()
+
+    host.sendToolInput({ experimentId: latency.id })
+    await settle()
+    host.sendToolResult(absent(latency.title))
+    await settle()
+    expect(screen.getByRole("alert").textContent).toContain("Latency failed.")
+
+    host.sendToolInput({ experimentId: checkout.id })
+    await settle()
+    expect(screen.queryByText("Latency failed.")).toBeNull()
+    host.sendToolResult(absent(checkout.title))
+    await settle()
+    expect(screen.getByRole("heading", { name: checkout.title })).toBeTruthy()
+    expect(screen.queryByText("Latency failed.")).toBeNull()
+    expect(calls.filter((name) => name === "get_experiment")).toEqual([
+      "get_experiment",
+      "get_experiment",
+      "get_experiment",
+    ])
+  })
+
+  it("refuses a recovered experiment whose id is not the one requested", async () => {
+    const checkout = experiment(checkoutSample)
+    const latency = experiment(latencySample)
+    await renderApp(checkout, {
+      result: { content: [{ type: "text", text: checkout.title }] },
+      getExperiment: () =>
+        answered(latency.title, {
+          experiment: JSON.parse(JSON.stringify(latency)),
+        }),
+    })
+    expect(screen.getByRole("alert").textContent).toBe(
+      "The result is for a different experiment.",
+    )
+    expect(screen.queryByRole("heading", { name: latency.title })).toBeNull()
+    expect(screen.queryByRole("heading", { name: checkout.title })).toBeNull()
+  })
+
   it("counts the runs list_runs returned, not the opening snapshot", async () => {
     const checkout = experiment(checkoutSample)
     const source = checkout.runs[0]
@@ -527,6 +607,15 @@ describe("the experiment app in the fake host", () => {
     const subtitle = screen.getByText(`${checkout.runs.length + 1} runs`, { exact: true })
     expect(subtitle.className).toContain("page-subtitle")
     expect(screen.queryByText(`${checkout.runs.length} runs`, { exact: true })).toBeNull()
+
+    const filters = screen.getByRole("group", { name: "Filter by verdict" })
+    fireEvent.click(within(filters).getByRole("button", { name: "Kept" }))
+    const kept = [extra, ...checkout.runs].filter((run) => run.verdict === "kept").length
+    expect(
+      screen.getByText(`${kept} kept of ${checkout.runs.length + 1} runs`, {
+        exact: true,
+      }),
+    ).toBeTruthy()
   })
 
   it("Escape in Find a file clears the query and leaves the run open", async () => {

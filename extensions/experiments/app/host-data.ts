@@ -10,8 +10,9 @@
  * and the run detail draw — a reason or a score that changed after the
  * opening snapshot would otherwise never show. Each body is `parseRun`'s
  * copy, then checked against this experiment: a verdict, split, guardrail,
- * area, agent, or parent it does not have is refused, and the snapshot is
- * not drawn in its place.
+ * area, or agent it does not have is refused, and the snapshot is not drawn
+ * in its place. A parent is the baseline, a run in the snapshot, or another
+ * run in the same list with a lower number.
  *
  * `open_file` is the one answer the experiment does not carry. A link is
  * `http` or `https` only, as the server already requires: a `javascript:` or
@@ -116,8 +117,12 @@ export function loadExperiment(call: ToolCall): LoadedExperiment {
  * does not have would throw when a view labelled it, so it is a refusal
  * instead.
  */
-function unfit(experiment: Experiment, run: Run): string | undefined {
-  const { definition, areas, agents, baseline } = experiment
+function unfit(
+  experiment: Experiment,
+  run: Run,
+  listed: ReadonlyMap<string, Run> | undefined,
+): string | undefined {
+  const { definition, areas, agents } = experiment
   if (!definition.verdicts.some((verdict) => verdict.id === run.verdict)) {
     return `Run ${run.id} names a verdict this experiment does not have.`
   }
@@ -137,25 +142,45 @@ function unfit(experiment: Experiment, run: Run): string | undefined {
   if (run.agentId !== undefined && !agents.some((agent) => agent.id === run.agentId)) {
     return `Run ${run.id} names an agent this experiment does not have.`
   }
-  if (run.parentId !== baseline.id && runOf(experiment, run.parentId) === undefined) {
+  if (!parentHere(experiment, run, listed)) {
     return `Run ${run.id} was not built on this experiment.`
   }
   return undefined
 }
 
+/**
+ * Whether `run` was built on this experiment. A parent in `listed` counts:
+ * a list can carry a new kept run and a run built on it, and the child may
+ * be listed first.
+ */
+function parentHere(
+  experiment: Experiment,
+  run: Run,
+  listed: ReadonlyMap<string, Run> | undefined,
+): boolean {
+  if (run.parentId === experiment.baseline.id) return true
+  if (runOf(experiment, run.parentId) !== undefined) return true
+  const parent = listed?.get(run.parentId)
+  return parent !== undefined && parent.number < run.number
+}
+
 /** `input` as a run of `experiment`, or why it cannot be drawn. */
-function runHere(experiment: Experiment, input: unknown): FetchedRun {
+function runHere(
+  experiment: Experiment,
+  input: unknown,
+  listed: ReadonlyMap<string, Run> | undefined,
+): FetchedRun {
   const parsed = parseRun(input)
   if (!parsed.ok) return { ok: false, message: parsed.message }
-  const message = unfit(experiment, parsed.run)
+  const message = unfit(experiment, parsed.run, listed)
   if (message !== undefined) return { ok: false, message }
   return { ok: true, run: parsed.run }
 }
 
 /**
  * The runs `list_runs` answered, in that order, or why that answer cannot
- * be shown. Each body is drawn; the opening snapshot only says whether it
- * belongs here.
+ * be shown. Each body is drawn. A parent may be the baseline, a run in the
+ * opening snapshot, or another run in this list with a lower number.
  */
 export function listedRuns(experiment: Experiment, result: CallToolResult): ListedRuns {
   if (result.isError === true) {
@@ -169,25 +194,35 @@ export function listedRuns(experiment: Experiment, result: CallToolResult): List
   ) {
     return { ok: false, message: "The run list is not this experiment's." }
   }
-  const runs: Run[] = []
+  const parsed: Run[] = []
   const seen = new Set<string>()
   for (const item of data.runs) {
-    const accepted = runHere(experiment, item)
-    if (!accepted.ok) return accepted
-    if (seen.has(accepted.run.id)) {
-      return { ok: false, message: `Run ${accepted.run.id} is listed twice.` }
+    const one = parseRun(item)
+    if (!one.ok) return one
+    if (seen.has(one.run.id)) {
+      return { ok: false, message: `Run ${one.run.id} is listed twice.` }
     }
-    seen.add(accepted.run.id)
-    runs.push(accepted.run)
+    seen.add(one.run.id)
+    parsed.push(one.run)
   }
-  return { ok: true, runs }
+  const listed = new Map(parsed.map((run) => [run.id, run]))
+  for (const run of parsed) {
+    const message = unfit(experiment, run, listed)
+    if (message !== undefined) return { ok: false, message }
+  }
+  return { ok: true, runs: parsed }
 }
 
-/** The run `get_run` answered, when it is `runId`, or why it cannot be drawn. */
+/**
+ * The run `get_run` answered, when it is `runId`, or why it cannot be drawn.
+ * `alongside` is the run list already accepted, so a parent that arrived in
+ * that list counts here too.
+ */
 export function fetchedRun(
   experiment: Experiment,
   runId: string,
   result: CallToolResult,
+  alongside: readonly Run[] = [],
 ): FetchedRun {
   if (result.isError === true) {
     return { ok: false, message: failed(result, "The run could not be read.") }
@@ -196,7 +231,11 @@ export function fetchedRun(
   if (data === undefined || data.experimentId !== experiment.id) {
     return { ok: false, message: "The run is not the one that was asked for." }
   }
-  const accepted = runHere(experiment, data.run)
+  const accepted = runHere(
+    experiment,
+    data.run,
+    new Map(alongside.map((run) => [run.id, run])),
+  )
   if (!accepted.ok) return accepted
   if (accepted.run.id !== runId) {
     return { ok: false, message: "The run is not the one that was asked for." }

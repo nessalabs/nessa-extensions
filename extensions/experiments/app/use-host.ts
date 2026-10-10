@@ -1,8 +1,9 @@
 /**
- * The app's calls on its own server, through the bridge: `list_runs`,
- * `get_run`, and `open_file`. Each answer is read in `host-data.ts` before
- * it is shown. A call the host refuses is shown; nothing here assumes it
- * succeeded. A call that returns after the view has moved on is ignored.
+ * The app's calls on its own server, through the bridge: `get_experiment`,
+ * `list_runs`, `get_run`, and `open_file`. Each answer is read in
+ * `host-data.ts` before it is shown. A call the host refuses is shown;
+ * nothing here assumes it succeeded. A call that returns after the view has
+ * moved on is ignored.
  *
  * A read runs only while its view is on screen. The same experiment and run
  * are not read again when the view is hidden and shown, so a display-mode
@@ -10,7 +11,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react"
 
-import { BridgeError, type Bridge } from "@nessalabs/app-shell"
+import { BridgeError, type Bridge, type CallToolResult } from "@nessalabs/app-shell"
 import { useBridge } from "@nessalabs/app-shell/react"
 
 import {
@@ -21,11 +22,13 @@ import {
   type LoadedExperiment,
   type OpenAnswer,
 } from "./host-data.ts"
-
-type RecoveredExperiment = Exclude<LoadedExperiment, { status: "absent" }>
 import type { Opening } from "./open-file.ts"
 import type { OpenRequest } from "./use-open-file.ts"
 import type { Experiment, Run } from "../model/index.ts"
+
+type RecoveredExperiment = Exclude<LoadedExperiment, { status: "absent" }>
+
+const noRuns: readonly Run[] = []
 
 export type RunList =
   | { readonly status: "idle" }
@@ -58,44 +61,91 @@ function hostOpensLinks(bridge: Bridge): boolean {
   return capabilities?.openLinks !== undefined
 }
 
+type Recovery = {
+  readonly opening: CallToolResult
+  readonly experimentId: string
+  readonly loaded: RecoveredExperiment
+}
+
+/** The experiment `get_experiment` returned, or why this opening result cannot show it. */
+function recoveredFrom(
+  read: LoadedExperiment,
+  experimentId: string,
+): RecoveredExperiment {
+  if (read.status === "absent") {
+    return { status: "failed", message: "The result has no experiment." }
+  }
+  if (read.status === "ready" && read.experiment.id !== experimentId) {
+    return { status: "failed", message: "The result is for a different experiment." }
+  }
+  return read
+}
+
 /**
- * `get_experiment` when the opening result carried no experiment. One read
- * per id. A result that still has no experiment is a failure the view shows.
+ * `get_experiment` when `opening` carried no experiment. One read per opening
+ * result: a later result for the same id is read again. What is shown belongs
+ * to that result, so a failure for another result is not shown. A ready
+ * experiment whose id is not the one requested is a failure.
  */
 export function useRecoveredExperiment(
   experimentId: string | undefined,
+  opening: CallToolResult | undefined,
 ): RecoveredExperiment {
   const bridge = useBridge()
-  const [loaded, setLoaded] = useState<RecoveredExperiment>({ status: "waiting" })
-  const held = useRef<string | undefined>(undefined)
+  const [recovery, setRecovery] = useState<Recovery | undefined>(undefined)
+  const attempt = useRef<
+    { opening: CallToolResult; experimentId: string; done: boolean } | undefined
+  >(undefined)
   useEffect(() => {
-    if (experimentId === undefined || held.current === experimentId) return
+    if (experimentId === undefined || opening === undefined) return
+    const prior = attempt.current
+    if (
+      prior !== undefined &&
+      prior.opening === opening &&
+      prior.experimentId === experimentId &&
+      prior.done
+    ) {
+      return
+    }
     let current = true
-    setLoaded({ status: "waiting" })
+    attempt.current = { opening, experimentId, done: false }
+    setRecovery({ opening, experimentId, loaded: { status: "waiting" } })
     bridge.callTool("get_experiment", { experimentId }).then(
       (result) => {
         if (!current) return
-        const read = experimentFromResult(result)
-        const settled: RecoveredExperiment =
-          read.status === "absent"
-            ? { status: "failed", message: "The result has no experiment." }
-            : read
-        if (settled.status === "ready") held.current = experimentId
-        setLoaded(settled)
+        attempt.current = { opening, experimentId, done: true }
+        setRecovery({
+          opening,
+          experimentId,
+          loaded: recoveredFrom(experimentFromResult(result), experimentId),
+        })
       },
       (error: unknown) => {
         if (!current) return
-        setLoaded({
-          status: "failed",
-          message: failureText(error, "The experiment could not be loaded."),
+        attempt.current = { opening, experimentId, done: true }
+        setRecovery({
+          opening,
+          experimentId,
+          loaded: {
+            status: "failed",
+            message: failureText(error, "The experiment could not be loaded."),
+          },
         })
       },
     )
     return () => {
       current = false
     }
-  }, [bridge, experimentId])
-  return experimentId === undefined ? { status: "waiting" } : loaded
+  }, [bridge, experimentId, opening])
+  if (experimentId === undefined || opening === undefined) return { status: "waiting" }
+  if (
+    recovery === undefined ||
+    recovery.opening !== opening ||
+    recovery.experimentId !== experimentId
+  ) {
+    return { status: "waiting" }
+  }
+  return recovery.loaded
 }
 
 /** `list_runs` while `active`. Idle until then, and not read again for the same experiment. */
@@ -142,6 +192,7 @@ export function useFetchedRun(
   experiment: Experiment,
   runId: string | undefined,
   active: boolean,
+  alongside: readonly Run[] = noRuns,
 ): RunRead {
   const bridge = useBridge()
   const [read, setRead] = useState<RunRead>(idleRead)
@@ -167,7 +218,7 @@ export function useFetchedRun(
     bridge.callTool("get_run", { experimentId: experiment.id, runId }).then(
       (result) => {
         if (!current) return
-        const fetched = fetchedRun(experiment, runId, result)
+        const fetched = fetchedRun(experiment, runId, result, alongside)
         if (fetched.ok) held.current = { experiment, runId }
         setRead(
           fetched.ok
@@ -186,7 +237,7 @@ export function useFetchedRun(
     return () => {
       current = false
     }
-  }, [active, bridge, experiment, runId])
+  }, [active, alongside, bridge, experiment, runId])
   return runId === undefined ? idleRead : read
 }
 

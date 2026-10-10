@@ -286,7 +286,16 @@ export function lineageSteps(
   ]
 }
 
-/** The runs view's subtitle: how many runs the list it is showing has. */
-export function runsSubtitle(count: number): string {
-  return count === 1 ? "1 run" : `${formatCount(count)} runs`
+/**
+ * The runs view's subtitle. With no filter it is how many runs the list has.
+ * With a filter it names that verdict and how many of the list it shows.
+ */
+export function runsSubtitle(
+  count: number,
+  filtered?: { readonly count: number; readonly label: string },
+): string {
+  const all = count === 1 ? "1 run" : `${formatCount(count)} runs`
+  if (filtered === undefined) return all
+  const name = filtered.label.toLowerCase()
+  return `${formatCount(filtered.count)} ${name} of ${all}`
 }

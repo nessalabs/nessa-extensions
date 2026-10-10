@@ -504,7 +504,7 @@ export function checkoutSample(startedAt: number): ExperimentInput {
       },
       {
         tone: "warning",
-        text: "Three prompt changes in a row overfit; the prompt area is trying examples instead of rules.",
+        text: "Three prompt changes overfit; the prompt area is trying examples instead of rules.",
         at: at(180),
       },
       {

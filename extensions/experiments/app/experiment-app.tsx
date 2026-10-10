@@ -51,6 +51,7 @@ export function ExperimentApp({
   const experimentId = typeof asked === "string" && asked !== "" ? asked : undefined
   const recovered = useRecoveredExperiment(
     opening.status === "absent" ? experimentId : undefined,
+    opening.status === "absent" ? result : undefined,
   )
   const loaded =
     opening.status === "absent"

@@ -260,15 +260,24 @@ describe("show_experiment", () => {
   /** Nessa keeps an app call's whole result, re-encoded as one JSON string, up to this. */
   const appResultBytes = 56 * 1024
 
-  /** Bytes Nessa charges for an app call: the result JSON, then that string encoded again. */
+  /** UTF-8 bytes Nessa charges for an app call: the result JSON, then that string encoded again. */
   function carried(result: { content: unknown; structuredContent?: unknown }): number {
     const wire: { content: unknown; structuredContent?: unknown } = {
       content: result.content,
     }
     if (result.structuredContent !== undefined)
       wire.structuredContent = result.structuredContent
-    return JSON.stringify(JSON.stringify(wire)).length
+    return Buffer.byteLength(JSON.stringify(JSON.stringify(wire)))
   }
+
+  it("counts an app call's size in bytes", () => {
+    const text = "é"
+    const encoded = JSON.stringify(JSON.stringify({ content: [{ type: "text", text }] }))
+    expect(Buffer.byteLength(encoded)).toBeGreaterThan(encoded.length)
+    expect(carried({ content: [{ type: "text", text }] })).toBe(
+      Buffer.byteLength(encoded),
+    )
+  })
 
   it("keeps every app call of a served sample within what an app call may be", async () => {
     const client = await connect(clients[0]!)

@@ -58,7 +58,8 @@ app/              the MCP App, in the browser
                   the components: props in, no state of their own
   index.ts        the components' barrel
   preview.tsx     mounts every component, for the tests
-  host-data.ts    the tool result and `tools/call` answers, checked before a page draws them
+  use-host.ts     the app's tool calls: get_experiment, list_runs, get_run, open_file
+  host-data.ts    those answers, checked before a page draws them
   navigation.ts   which view, and the runs opened over it
   page-reading.ts what the pages show, read from the definition and the harness
   sparkline.ts    the card's best-so-far line, drawn as given

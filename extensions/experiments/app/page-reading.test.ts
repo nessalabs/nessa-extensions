@@ -15,6 +15,7 @@ import {
   outcomeRead,
   pathSteps,
   runRows,
+  runsSubtitle,
   swarmNow,
 } from "./page-reading.ts"
 
@@ -75,5 +76,14 @@ describe("what the pages read", () => {
       "Run 3",
       "Run 5",
     ])
+  })
+
+  it("names a verdict filter in the runs subtitle", () => {
+    expect(runsSubtitle(29)).toBe("29 runs")
+    expect(runsSubtitle(1)).toBe("1 run")
+    expect(runsSubtitle(29, { count: 7, label: "Kept" })).toBe("7 kept of 29 runs")
+    expect(runsSubtitle(29, { count: 1, label: "Within noise" })).toBe(
+      "1 within noise of 29 runs",
+    )
   })
 })

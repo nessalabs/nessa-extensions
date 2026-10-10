@@ -90,6 +90,46 @@ describe("runs named by a later call", () => {
     ).toBe(false)
   })
 
+  it("accepts a run built on a parent that the same list includes", () => {
+    const checkout = experiment()
+    const source = checkout.runs[0]
+    if (source === undefined) throw new Error("a run")
+    const parent = {
+      ...copy(source),
+      id: "r100",
+      number: 100,
+      parentId: checkout.baseline.id,
+    }
+    const child = { ...copy(source), id: "r101", number: 101, parentId: "r100" }
+    const listed = listedRuns(
+      checkout,
+      result({ experimentId: checkout.id, runs: [child, parent] }),
+    )
+    expect(listed.ok).toBe(true)
+    if (!listed.ok) return
+    expect(listed.runs.map((run) => run.id)).toEqual(["r101", "r100"])
+
+    const fetched = fetchedRun(
+      checkout,
+      "r101",
+      result({ experimentId: checkout.id, run: child }),
+      listed.runs,
+    )
+    expect(fetched.ok).toBe(true)
+
+    const orphan = { ...copy(source), id: "r102", number: 102, parentId: "r999" }
+    expect(
+      listedRuns(checkout, result({ experimentId: checkout.id, runs: [orphan] })).ok,
+    ).toBe(false)
+    const laterParent = { ...child, parentId: "r100", number: 50 }
+    expect(
+      listedRuns(
+        checkout,
+        result({ experimentId: checkout.id, runs: [laterParent, parent] }),
+      ).ok,
+    ).toBe(false)
+  })
+
   it("draws the run get_run returned, and refuses a body that is not that run", () => {
     const checkout = experiment()
     const run = checkout.runs[0]

@@ -8,8 +8,9 @@
  * throw is caught; the app sets `jitless` before any schema is built so the
  * probe does not run. The reference host is driven in Chromium and in
  * WebKit; the Chromium pass writes the reference-host shots. Nessa's
- * conversation view keeps at most 16KB of a tool's structured result, and
- * the checkout sample fits, so both hosts are shown that experiment. The
+ * conversation view keeps at most 16KB of the opening structured result.
+ * The checkout sample is larger, so the app loads it with get_experiment.
+ * Both hosts are shown that experiment. The
  * scenario runner's completion does not name the MCP tool, and Nessa
  * attaches the forwarded result only when it does;
  * `forward-structured.mjs` adds that name.
@@ -159,7 +160,7 @@ async function driveReference(browser, origin, writeShots) {
   const runsSubtitle = app.locator("#panel-runs .page-subtitle")
   await runsSubtitle.waitFor()
   const runsCount = await runsSubtitle.innerText()
-  if (!/^\d+ runs$/.test(runsCount) || runsCount === "0 runs") {
+  if (!/^[1-9]\d* queued of [1-9]\d* runs$/.test(runsCount)) {
     throw new Error(`the runs subtitle was ${JSON.stringify(runsCount)}`)
   }
   await shot("reference-host-runs.png")
@@ -522,10 +523,12 @@ await build({
   configFile: join(extension, "vite.config.ts"),
   logLevel: "error",
 })
-const browser = await chromium.launch({ channel: "chrome", headless: true })
-const safari = await webkit.launch({ headless: true })
+let browser
+let safari
 let site
 try {
+  browser = await chromium.launch({ channel: "chrome", headless: true })
+  safari = await webkit.launch({ headless: true })
   log("reference host")
   await buildReferenceHost()
   site = await serve(join(hostDir, "dist"))
@@ -539,8 +542,9 @@ try {
   throw error
 } finally {
   site?.close()
+  const open = [browser, safari].filter((each) => each !== undefined)
   await Promise.race([
-    Promise.all([browser.close().catch(() => {}), safari.close().catch(() => {})]),
+    Promise.all(open.map((each) => each.close().catch(() => {}))),
     new Promise((resolve) => setTimeout(resolve, 8_000)),
   ])
   rmSync(join(hostDir, "dist"), { recursive: true, force: true })

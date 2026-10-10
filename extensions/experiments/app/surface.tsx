@@ -30,8 +30,10 @@ import { useExperimentNavigation } from "./use-navigation.ts"
 import type { ViewId } from "./navigation.ts"
 import type { Opening } from "./open-file.ts"
 import type { OpenRequest, Schedule } from "./use-open-file.ts"
-import { runOf, type Experiment } from "../model/index.ts"
+import { runOf, type Experiment, type Run } from "../model/index.ts"
 import "./pages.css"
+
+const noListedRuns: readonly Run[] = []
 
 const labels = {
   overview: "Overview",
@@ -76,7 +78,8 @@ export function ExperimentSurface({
   const view = available.includes(nav.navigation.view) ? nav.navigation.view : "overview"
   const openId = nav.navigation.trail.at(-1)
   const listed = useListedRuns(experiment, active && view === "runs")
-  const fetched = useFetchedRun(experiment, openId, active)
+  const alongside = listed.status === "ready" ? listed.runs : noListedRuns
+  const fetched = useFetchedRun(experiment, openId, active, alongside)
   const detailRun = fetched.status === "ready" ? fetched.run : undefined
   const change = useChangeView({ experiment, run: detailRun, open, schedule })
   const head = useMemo(() => headline(experiment), [experiment])
@@ -212,6 +215,14 @@ export function ExperimentSurface({
               title="Runs"
               subtitle={runsSubtitle(
                 listed.status === "ready" ? listed.runs.length : experiment.runs.length,
+                listed.status === "ready" && verdict !== undefined
+                  ? {
+                      count: rows.filter((row) => row.verdictId === verdict).length,
+                      label:
+                        labelsOfVerdicts.find((item) => item.id === verdict)?.label ??
+                        verdict,
+                    }
+                  : undefined,
               )}
               verdicts={labelsOfVerdicts}
               selected={verdict}
