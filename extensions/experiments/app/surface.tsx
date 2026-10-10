@@ -45,7 +45,8 @@ const labels = {
 
 export function ExperimentSurface({
   experiment,
-  resultToken,
+  snapshotToken,
+  runsOpenable,
   active,
   open,
   schedule,
@@ -54,8 +55,10 @@ export function ExperimentSurface({
   notice,
 }: {
   readonly experiment: Experiment
-  /** The delivered result. A new one is a new view, keyed by the caller. */
-  readonly resultToken: number
+  /** The experiment on screen. A new snapshot is a new view, keyed by the caller. */
+  readonly snapshotToken: number
+  /** A run may be opened. False while the next snapshot is still loading. */
+  readonly runsOpenable: boolean
   readonly active: boolean
   readonly open: (request: OpenRequest) => Promise<Opening>
   readonly schedule: Schedule
@@ -64,6 +67,8 @@ export function ExperimentSurface({
   readonly notice?: string
 }) {
   const nav = useExperimentNavigation(active)
+  const onOpenRun = runsOpenable ? nav.open : () => {}
+  const onFollowRun = runsOpenable ? nav.follow : () => {}
   const [frame, width] = useElementWidth<HTMLDivElement>(720)
   const climb = useClimbChart(experiment, width)
   const map = useExplorationMap(experiment, width)
@@ -79,7 +84,7 @@ export function ExperimentSurface({
   const openId = nav.navigation.trail.at(-1)
   const listed = useListedRuns(experiment, active && view === "runs")
   const alongside = listed.status === "ready" ? listed.runs : noListedRuns
-  const fetched = useFetchedRun(experiment, openId, active, resultToken, alongside)
+  const fetched = useFetchedRun(experiment, openId, active, snapshotToken, alongside)
   const detailRun = fetched.status === "ready" ? fetched.run : undefined
   // One set for the row, the outcome, the cases, the lineage, and the
   // labels. A later copy of a run replaces the earlier one.
@@ -212,7 +217,7 @@ export function ExperimentSurface({
               path={path}
               swarm={swarm}
               notes={notes}
-              onOpenRun={nav.open}
+              onOpenRun={onOpenRun}
             />
           </div>
           {available.includes("areas") ? (
@@ -222,7 +227,7 @@ export function ExperimentSurface({
               aria-labelledby="view-areas"
               hidden={view !== "areas" ? true : undefined}
             >
-              <AreasPage title="Areas" map={map} cards={cards} onOpenRun={nav.open} />
+              <AreasPage title="Areas" map={map} cards={cards} onOpenRun={onOpenRun} />
             </div>
           ) : null}
           <div
@@ -248,7 +253,7 @@ export function ExperimentSurface({
               selected={verdict}
               onSelect={setVerdict}
               rows={rows}
-              onOpenRun={nav.open}
+              onOpenRun={onOpenRun}
               status={listed.status === "idle" ? "loading" : listed.status}
               message={listed.status === "failed" ? listed.message : undefined}
             />
@@ -265,7 +270,7 @@ export function ExperimentSurface({
               cases={cases}
               change={change}
               lineage={line}
-              onFollow={nav.follow}
+              onFollow={onFollowRun}
               status={fetched.status === "idle" ? "loading" : fetched.status}
               message={fetched.status === "failed" ? fetched.message : undefined}
             />

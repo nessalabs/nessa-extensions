@@ -137,8 +137,10 @@ async function renderApp(
     readonly listRuns?: readonly Run[]
     /** `get_run` answers these ids from here, ahead of the list and the snapshot. */
     readonly fetchedRuns?: readonly Run[]
-    /** `get_experiment`. The default returns `sample`. */
-    readonly getExperiment?: (experimentId: string) => CallToolResult
+    /** `get_experiment`. The default returns `sample`. A promise holds the read. */
+    readonly getExperiment?: (
+      experimentId: string,
+    ) => CallToolResult | Promise<CallToolResult>
   },
 ) {
   const modes = options?.modes ?? ["inline", "fullscreen"]
@@ -688,6 +690,103 @@ describe("the experiment app in the fake host", () => {
     expect(screen.queryByRole("alert")).toBeNull()
     expect(document.querySelector(".detail")).toBeNull()
     expect(invocations.slice(at).filter((call) => call.name === "get_run")).toEqual([])
+  })
+
+  it("keeps the open run until get_experiment shows the next experiment, and will not open one while that is pending", async () => {
+    const checkout = experiment(checkoutSample)
+    const latency = experiment(latencySample)
+    const witness = checkout.runs.find(
+      (run) => run.id !== "r1" && run.settledAt !== undefined,
+    )
+    const asked = checkout.runs.find((run) => run.id === "r1")
+    if (witness === undefined || asked === undefined) {
+      throw new Error("the sample has r1 and another settled run")
+    }
+    let release: ((result: CallToolResult) => void) | undefined
+    const { host, invocations } = await renderApp(checkout, {
+      getExperiment: (id) =>
+        new Promise((resolve) => {
+          if (id !== latency.id) {
+            resolve(
+              answered(checkout.title, {
+                experiment: JSON.parse(JSON.stringify(checkout)),
+              }),
+            )
+            return
+          }
+          release = resolve
+        }),
+    })
+    await openFullscreen()
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }))
+    await settle()
+    fireEvent.click(
+      screen.getByRole("button", { name: new RegExp(`^Run ${witness.number}(?!\\d)`) }),
+    )
+    await settle()
+    expect(screen.getByRole("navigation", { name: "Opened run" })).toBeTruthy()
+
+    host.sendToolInput({ experimentId: latency.id })
+    await settle()
+    host.sendToolResult({ content: [{ type: "text", text: latency.title }] })
+    await settle()
+    // The text result is in hand. The experiment on screen is still checkout,
+    // so the revision has not moved and the open run stays.
+    expect(screen.getByRole("heading", { name: checkout.title })).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: latency.title })).toBeNull()
+    expect(document.querySelector("[aria-current='page']")?.textContent).toBe(
+      `Run ${witness.number}`,
+    )
+    expect(invocations.filter((call) => call.name === "get_experiment")).toEqual([
+      { name: "get_experiment", arguments: { experimentId: latency.id } },
+    ])
+
+    const during = invocations.length
+    // The runs list stays mounted under the open run. Opening r1 from it is
+    // the repro, and it must not take on the experiment that is about to leave.
+    const runs = screen.getByRole("tabpanel", { name: "Runs", hidden: true })
+    fireEvent.click(
+      within(runs).getByRole("button", {
+        name: new RegExp(`^Run ${asked.number}(?!\\d)`),
+        hidden: true,
+      }),
+    )
+    await settle()
+    expect(document.querySelector("[aria-current='page']")?.textContent).toBe(
+      `Run ${witness.number}`,
+    )
+    expect(invocations.slice(during).filter((call) => call.name === "get_run")).toEqual(
+      [],
+    )
+
+    const at = invocations.length
+    const finish = release
+    if (finish === undefined) throw new Error("get_experiment was not waiting")
+    finish(
+      answered(latency.title, {
+        experiment: JSON.parse(JSON.stringify(latency)),
+      }),
+    )
+    await settle()
+
+    expect(screen.getByRole("heading", { name: latency.title })).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: checkout.title })).toBeNull()
+    expect(screen.queryByRole("navigation", { name: "Opened run" })).toBeNull()
+    expect(
+      screen.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected"),
+    ).toBe("true")
+    expect(screen.queryByRole("alert")).toBeNull()
+    expect(screen.queryByText("The run is not the one that was asked for.")).toBeNull()
+    expect(document.querySelector(".detail")).toBeNull()
+    const carried = invocations
+      .slice(at)
+      .filter(
+        (call) =>
+          call.name === "get_run" &&
+          call.arguments?.experimentId === latency.id &&
+          (call.arguments?.runId === "r1" || call.arguments?.runId === witness.id),
+      )
+    expect(carried).toEqual([])
   })
 
   it("loads the experiment with get_experiment when the opening result has none", async () => {

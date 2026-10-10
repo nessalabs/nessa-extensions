@@ -9,10 +9,11 @@
  * The experiment is the opening tool result, validated once per result.
  * When that result has no experiment, the app loads it with `get_experiment`.
  * Later reads go through `tools/call`, and only while this view is showing.
- * A later call keeps the experiment on screen until its result arrives.
- * Each delivered result has its own revision. The full view is keyed by
- * that revision, so any new result — the same experiment id included —
- * starts at its overview instead of the run that was open.
+ * A later call keeps the experiment on screen until the next snapshot is
+ * shown, whether that snapshot came from the result or from `get_experiment`.
+ * The full view is keyed by that shown snapshot, so a new one — the same
+ * experiment id included — starts at its overview. While `get_experiment`
+ * is still loading, a run cannot be opened on the experiment that remains.
  */
 import { useMemo, useState } from "react"
 
@@ -24,6 +25,7 @@ import { loadExperiment } from "./host-data.ts"
 import { ExperimentSurface } from "./surface.tsx"
 import { useHostOpen, useRecoveredExperiment } from "./use-host.ts"
 import type { Schedule } from "./use-open-file.ts"
+import type { Experiment } from "../model/index.ts"
 import "./tokens.css"
 
 const browserSchedule: Schedule = {
@@ -64,17 +66,24 @@ export function ExperimentApp({
         : recovered
       : opening
   const ready = loaded.status === "ready" ? loaded.experiment : undefined
-  // The next call's running phase would otherwise unmount the view. Keeping
-  // the experiment that is already on screen leaves its tab and run in place
-  // until the result arrives. The revision below is what starts the new one over.
-  const [shown, setShown] = useState(ready)
-  if (ready !== undefined && shown !== ready) setShown(ready)
-  // The result object is the delivered result. A later one, even for this
-  // experiment's id, is a new revision in this render.
-  const [generation, setGeneration] = useState({ result, token: 0 })
-  if (result !== undefined && generation.result !== result) {
-    setGeneration({ result, token: generation.token + 1 })
+  // One revision for the snapshot on screen. It moves when that object
+  // changes, from the opening result or from `get_experiment`. A text
+  // result that is still loading leaves the previous snapshot in place.
+  const [view, setView] = useState<
+    { readonly experiment: Experiment; readonly token: number } | undefined
+  >(() => (ready === undefined ? undefined : { experiment: ready, token: 0 }))
+  if (ready !== undefined && view?.experiment !== ready) {
+    setView({
+      experiment: ready,
+      token: view === undefined ? 0 : view.token + 1,
+    })
   }
+  const shown = view?.experiment
+  const snapshotToken = view?.token ?? 0
+  // A complete result is in hand and the next snapshot is not. A run opened
+  // now would belong to the experiment that is about to leave.
+  const snapshotPending =
+    shown !== undefined && ready === undefined && result !== undefined
   const fullscreen = mode === "fullscreen"
 
   const ask = async (next: "fullscreen" | "inline") => {
@@ -149,9 +158,10 @@ export function ExperimentApp({
       </div>
       <div hidden={fullscreen ? undefined : true}>
         <ExperimentSurface
-          key={generation.token}
-          resultToken={generation.token}
+          key={snapshotToken}
+          snapshotToken={snapshotToken}
           experiment={shown}
+          runsOpenable={!snapshotPending}
           active={fullscreen}
           open={open}
           schedule={schedule}

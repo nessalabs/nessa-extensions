@@ -7,7 +7,7 @@
  *
  * A read runs only while its view is on screen. The same experiment and run
  * are not read again when the view is hidden and shown, so a display-mode
- * change does not flash the detail back to loading. A new delivered result
+ * change does not flash the detail back to loading. A new shown snapshot
  * drops that read in the render it arrives, including when the experiment
  * id is unchanged.
  */
@@ -187,35 +187,35 @@ export function useListedRuns(experiment: Experiment, active: boolean): RunList 
 
 /**
  * `get_run` for `runId` while `active`. Idle when no run is open. A run
- * already read for this result is kept: hiding the view does not read it
- * again or return it to loading. `resultToken` is the delivered result.
- * A different one drops the run in this render, so the previous body is
- * not drawn on the new experiment.
+ * already read for this snapshot is kept: hiding the view does not read it
+ * again or return it to loading. `snapshotToken` is the experiment on
+ * screen. A different one drops the run in this render, so the previous
+ * body is not drawn on the new experiment.
  */
 export function useFetchedRun(
   experiment: Experiment,
   runId: string | undefined,
   active: boolean,
-  resultToken: number,
+  snapshotToken: number,
   alongside: readonly Run[] = noRuns,
 ): RunRead {
   const bridge = useBridge()
   const [read, setRead] = useState<RunRead>(idleRead)
-  const [tracked, setTracked] = useState({ runId, resultToken })
+  const [tracked, setTracked] = useState({ runId, snapshotToken })
   const held = useRef<{ experiment: Experiment; runId: string } | undefined>(undefined)
-  // The run on screen, or the result it was read for, changes in this
+  // The run on screen, or the snapshot it was read for, changes in this
   // render. Waiting for the effect would show the previous run for a frame.
-  const resultChanged = tracked.resultToken !== resultToken
+  const snapshotChanged = tracked.snapshotToken !== snapshotToken
   const runChanged = tracked.runId !== runId
   const cleared: RunRead = runId === undefined ? idleRead : { status: "loading" }
-  if (resultChanged || runChanged) {
-    setTracked({ runId, resultToken })
+  if (snapshotChanged || runChanged) {
+    setTracked({ runId, snapshotToken })
     setRead(cleared)
-    if (resultChanged || runId === undefined || held.current?.runId !== runId) {
+    if (snapshotChanged || runId === undefined || held.current?.runId !== runId) {
       held.current = undefined
     }
   }
-  const visible = resultChanged || runChanged ? cleared : read
+  const visible = snapshotChanged || runChanged ? cleared : read
   useEffect(() => {
     if (!active || runId === undefined) return
     if (held.current?.experiment === experiment && held.current.runId === runId) return
@@ -243,7 +243,7 @@ export function useFetchedRun(
     return () => {
       current = false
     }
-  }, [active, alongside, bridge, experiment, resultToken, runId])
+  }, [active, alongside, bridge, experiment, snapshotToken, runId])
   return runId === undefined ? idleRead : visible
 }
 

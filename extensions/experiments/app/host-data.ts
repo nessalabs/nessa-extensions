@@ -113,9 +113,9 @@ export function loadExperiment(call: ToolCall): LoadedExperiment {
 }
 
 /**
- * Whether `run` can be drawn on `experiment`. A reference the definition
- * does not have would throw when a view labelled it, so it is a refusal
- * instead.
+ * Why `run` is refused on `experiment`, or nothing when it belongs here.
+ * A fetched or listed run is refused when its verdict, split, guardrail,
+ * area, agent, or parent is missing from this experiment, so it is not drawn.
  */
 function unfit(
   experiment: Experiment,
