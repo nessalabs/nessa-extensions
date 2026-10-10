@@ -42,6 +42,25 @@ function experiment(sample: (startedAt: number) => ExperimentInput): Experiment 
   return result.experiment
 }
 
+function revise(
+  sample: Experiment,
+  edit: (input: {
+    definition: { verdicts: { id: string }[] }
+    runs: { id: string; verdict: string }[]
+  }) => void,
+): Experiment {
+  const input = JSON.parse(JSON.stringify(sample)) as {
+    definition: { verdicts: { id: string }[] }
+    runs: { id: string; verdict: string }[]
+  }
+  edit(input)
+  const result = validateExperiment(input)
+  if (result.kind !== "valid") {
+    throw new Error(result.problems.map((problem) => problem.message).join("\n"))
+  }
+  return result.experiment
+}
+
 const settle = () =>
   act(async () => {
     for (let i = 0; i < 20; i++) await Promise.resolve()
@@ -582,6 +601,92 @@ describe("the experiment app in the fake host", () => {
       screen.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected"),
     ).toBe("true")
     expect(screen.queryByRole("alert")).toBeNull()
+    expect(invocations.slice(at).filter((call) => call.name === "get_run")).toEqual([])
+  })
+
+  it("starts clean when the same experiment arrives without the open run's verdict", async () => {
+    const checkout = experiment(checkoutSample)
+    const run = checkout.runs.find((each) => each.verdict === "queued")
+    if (run === undefined) throw new Error("the sample has a queued run")
+    const { host, invocations } = await renderApp(checkout)
+    await openFullscreen()
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }))
+    await settle()
+    fireEvent.click(
+      screen.getByRole("button", { name: new RegExp(`^Run ${run.number}(?!\\d)`) }),
+    )
+    await settle()
+    expect(screen.getByRole("navigation", { name: "Opened run" })).toBeTruthy()
+
+    const next = revise(checkout, (input) => {
+      input.definition.verdicts = input.definition.verdicts.filter(
+        (verdict) => verdict.id !== "queued",
+      )
+      for (const each of input.runs) {
+        if (each.verdict === "queued") each.verdict = "evaluating"
+      }
+    })
+    const at = invocations.length
+    host.sendToolInput({ experimentId: checkout.id })
+    await settle()
+    host.sendToolResult(
+      answered(next.title, { experiment: JSON.parse(JSON.stringify(next)) }),
+    )
+    await settle()
+
+    expect(screen.getByRole("heading", { name: checkout.title })).toBeTruthy()
+    expect(screen.queryByRole("navigation", { name: "Opened run" })).toBeNull()
+    expect(
+      screen.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected"),
+    ).toBe("true")
+    expect(screen.queryByRole("alert")).toBeNull()
+    expect(screen.queryByText("Unknown")).toBeNull()
+    expect(invocations.slice(at).filter((call) => call.name === "get_run")).toEqual([])
+  })
+
+  it("starts clean when the same experiment arrives without the open run", async () => {
+    const checkout = experiment(checkoutSample)
+    const run = checkout.runs.find(
+      (each) =>
+        each.settledAt !== undefined &&
+        !checkout.bestSoFar.includes(each.id) &&
+        !checkout.runs.some((other) => other.parentId === each.id) &&
+        !checkout.notes.some((note) => note.runId === each.id) &&
+        !checkout.agents.some(
+          (agent) =>
+            agent.activity.kind === "evaluating" && agent.activity.runId === each.id,
+        ),
+    )
+    if (run === undefined) throw new Error("the sample has a run nothing else names")
+    const { host, invocations } = await renderApp(checkout)
+    await openFullscreen()
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }))
+    await settle()
+    fireEvent.click(
+      screen.getByRole("button", { name: new RegExp(`^Run ${run.number}(?!\\d)`) }),
+    )
+    await settle()
+    expect(screen.getByRole("navigation", { name: "Opened run" })).toBeTruthy()
+    expect(document.querySelector(".detail")?.textContent).toContain(run.reason)
+
+    const next = revise(checkout, (input) => {
+      input.runs = input.runs.filter((each) => each.id !== run.id)
+    })
+    const at = invocations.length
+    host.sendToolInput({ experimentId: checkout.id })
+    await settle()
+    host.sendToolResult(
+      answered(next.title, { experiment: JSON.parse(JSON.stringify(next)) }),
+    )
+    await settle()
+
+    expect(screen.getByRole("heading", { name: checkout.title })).toBeTruthy()
+    expect(screen.queryByRole("navigation", { name: "Opened run" })).toBeNull()
+    expect(
+      screen.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected"),
+    ).toBe("true")
+    expect(screen.queryByRole("alert")).toBeNull()
+    expect(document.querySelector(".detail")).toBeNull()
     expect(invocations.slice(at).filter((call) => call.name === "get_run")).toEqual([])
   })
 

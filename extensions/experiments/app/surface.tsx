@@ -45,6 +45,7 @@ const labels = {
 
 export function ExperimentSurface({
   experiment,
+  resultToken,
   active,
   open,
   schedule,
@@ -53,6 +54,8 @@ export function ExperimentSurface({
   notice,
 }: {
   readonly experiment: Experiment
+  /** The delivered result. A new one is a new view, keyed by the caller. */
+  readonly resultToken: number
   readonly active: boolean
   readonly open: (request: OpenRequest) => Promise<Opening>
   readonly schedule: Schedule
@@ -76,7 +79,7 @@ export function ExperimentSurface({
   const openId = nav.navigation.trail.at(-1)
   const listed = useListedRuns(experiment, active && view === "runs")
   const alongside = listed.status === "ready" ? listed.runs : noListedRuns
-  const fetched = useFetchedRun(experiment, openId, active, alongside)
+  const fetched = useFetchedRun(experiment, openId, active, resultToken, alongside)
   const detailRun = fetched.status === "ready" ? fetched.run : undefined
   // One set for the row, the outcome, the cases, the lineage, and the
   // labels. A later copy of a run replaces the earlier one.

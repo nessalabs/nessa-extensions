@@ -9,9 +9,10 @@
  * The experiment is the opening tool result, validated once per result.
  * When that result has no experiment, the app loads it with `get_experiment`.
  * Later reads go through `tools/call`, and only while this view is showing.
- * A later call keeps the experiment on screen until its result arrives. The
- * full view is keyed by that experiment, so a different one starts at its
- * overview instead of the run that was open.
+ * A later call keeps the experiment on screen until its result arrives.
+ * Each delivered result has its own revision. The full view is keyed by
+ * that revision, so any new result — the same experiment id included —
+ * starts at its overview instead of the run that was open.
  */
 import { useMemo, useState } from "react"
 
@@ -65,9 +66,15 @@ export function ExperimentApp({
   const ready = loaded.status === "ready" ? loaded.experiment : undefined
   // The next call's running phase would otherwise unmount the view. Keeping
   // the experiment that is already on screen leaves its tab and run in place
-  // until the result arrives, and the key below is what starts the new one over.
+  // until the result arrives. The revision below is what starts the new one over.
   const [shown, setShown] = useState(ready)
   if (ready !== undefined && shown !== ready) setShown(ready)
+  // The result object is the delivered result. A later one, even for this
+  // experiment's id, is a new revision in this render.
+  const [generation, setGeneration] = useState({ result, token: 0 })
+  if (result !== undefined && generation.result !== result) {
+    setGeneration({ result, token: generation.token + 1 })
+  }
   const fullscreen = mode === "fullscreen"
 
   const ask = async (next: "fullscreen" | "inline") => {
@@ -142,7 +149,8 @@ export function ExperimentApp({
       </div>
       <div hidden={fullscreen ? undefined : true}>
         <ExperimentSurface
-          key={shown.id}
+          key={generation.token}
+          resultToken={generation.token}
           experiment={shown}
           active={fullscreen}
           open={open}

@@ -15,6 +15,7 @@ import {
   noteReads,
   outcomeRead,
   pathSteps,
+  runRow,
   runRows,
   runsSubtitle,
   swarmNow,
@@ -78,6 +79,20 @@ describe("what the pages read", () => {
       "Run 3",
       "Run 5",
     ])
+  })
+
+  it("shows a run whose verdict the definition dropped as unknown", () => {
+    const checkout = experiment(checkoutSample)
+    const run = checkout.runs[0]
+    if (run === undefined) throw new Error("the sample has a run")
+    const row = runRow(
+      checkout,
+      { ...run, verdict: "retired" },
+      acceptedRuns(checkout.runs),
+    )
+    expect(row.verdict).toBe("Unknown")
+    expect(row.verdictId).toBe("retired")
+    expect(row.tone).toBe("neutral")
   })
 
   it("names a verdict filter in the runs subtitle", () => {

@@ -29,28 +29,41 @@ export function runOf(experiment: Experiment, id: string): Run | undefined {
 }
 
 /**
- * The verdict `run` was given. Validation holds that it is one of the
- * definition's (`verdict-defined`); this is the one place that is relied on.
+ * A verdict or split the definition does not name. A view can be asked to
+ * draw a run from an earlier result against a later definition that dropped
+ * it; rendering shows this rather than throwing.
+ */
+const unknown = "Unknown"
+
+/**
+ * The verdict `run` was given. Validation holds that a run of this experiment
+ * names one of the definition's (`verdict-defined`). A verdict the definition
+ * does not have is unknown.
  */
 export function verdictOf(experiment: Experiment, run: Run): Verdict {
-  const verdict = experiment.definition.verdicts.find((each) => each.id === run.verdict)
-  if (verdict === undefined) {
-    throw new Error(`run ${run.id}'s verdict ${run.verdict} is not defined`)
-  }
-  return verdict
+  return (
+    experiment.definition.verdicts.find((each) => each.id === run.verdict) ?? {
+      id: run.verdict,
+      label: unknown,
+      tone: "neutral",
+      outcome: "pending",
+    }
+  )
 }
 
 /**
  * The split the climb follows. Validation holds that it is one of the
- * definition's (`primary-split-defined`); this is the one place that is
- * relied on.
+ * definition's (`primary-split-defined`). A primary split the definition
+ * does not have is unknown.
  */
 export function primarySplitOf(experiment: Experiment): Split {
   const { splits, primarySplit } = experiment.definition
-  const split = splits.find((each) => each.id === primarySplit)
-  if (split === undefined)
-    throw new Error(`the primary split ${primarySplit} is not defined`)
-  return split
+  return (
+    splits.find((each) => each.id === primarySplit) ?? {
+      id: primarySplit,
+      label: unknown,
+    }
+  )
 }
 
 /** The runs by id; validation holds them unique (`run-ids-unique`). */

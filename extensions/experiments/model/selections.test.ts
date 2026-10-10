@@ -55,12 +55,31 @@ describe("verdictOf", () => {
       expect(checkout.definition.verdicts).toContain(verdict)
     }
   })
+
+  it("reads a verdict the definition does not have as unknown", () => {
+    const run = checkout.runs[0]
+    if (run === undefined) throw new Error("the sample has a run")
+    expect(verdictOf(checkout, { ...run, verdict: "retired" })).toEqual({
+      id: "retired",
+      label: "Unknown",
+      tone: "neutral",
+      outcome: "pending",
+    })
+  })
 })
 
 describe("primarySplitOf", () => {
   it("is the definition's split the climb follows", () => {
     expect(primarySplitOf(checkout)).toEqual({ id: "test", label: "Test" })
     expect(primarySplitOf(latency)).toEqual({ id: "replay", label: "Replayed traffic" })
+  })
+
+  it("reads a primary split the definition does not have as unknown", () => {
+    const dropped = {
+      ...checkout,
+      definition: { ...checkout.definition, primarySplit: "missing-split" },
+    } as Experiment
+    expect(primarySplitOf(dropped)).toEqual({ id: "missing-split", label: "Unknown" })
   })
 })
 
