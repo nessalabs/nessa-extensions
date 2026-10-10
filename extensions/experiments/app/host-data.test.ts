@@ -61,7 +61,7 @@ function copy(value: unknown): Record<string, unknown> {
 }
 
 describe("runs named by a later call", () => {
-  it("draws the listed bodies, in the answered order, and refuses one that is not a run", () => {
+  it("draws the listed bodies in the answered order, and skips one that is not a run", () => {
     const checkout = experiment()
     const [first, second] = checkout.runs
     if (first === undefined || second === undefined) throw new Error("two runs")
@@ -75,19 +75,21 @@ describe("runs named by a later call", () => {
     expect(listed.runs.map((run) => run.id)).toEqual([second.id, first.id])
     expect(listed.runs[0]?.reason).toBe("Fresh from the server.")
     expect(listed.runs[0]).not.toBe(second)
+    expect(listed.skipped).toBe(0)
 
-    expect(
-      listedRuns(
-        checkout,
-        result({ experimentId: checkout.id, runs: [{ id: "missing" }] }),
-      ).ok,
-    ).toBe(false)
-    expect(
-      listedRuns(
-        checkout,
-        result({ experimentId: checkout.id, runs: [copy(first), copy(first)] }),
-      ).ok,
-    ).toBe(false)
+    const again = { ...copy(first), reason: "The later copy." }
+    const skipped = listedRuns(
+      checkout,
+      result({
+        experimentId: checkout.id,
+        runs: [copy(first), { id: "missing" }, again],
+      }),
+    )
+    expect(skipped.ok).toBe(true)
+    if (!skipped.ok) return
+    expect(skipped.runs.map((run) => run.id)).toEqual([first.id])
+    expect(skipped.runs[0]?.reason).toBe(first.reason)
+    expect(skipped.skipped).toBe(2)
   })
 
   it("accepts a run built on a parent that the same list includes", () => {
@@ -108,6 +110,7 @@ describe("runs named by a later call", () => {
     expect(listed.ok).toBe(true)
     if (!listed.ok) return
     expect(listed.runs.map((run) => run.id)).toEqual(["r101", "r100"])
+    expect(listed.skipped).toBe(0)
 
     const fetched = fetchedRun(
       checkout,
@@ -118,16 +121,49 @@ describe("runs named by a later call", () => {
     expect(fetched.ok).toBe(true)
 
     const orphan = { ...copy(source), id: "r102", number: 102, parentId: "r999" }
-    expect(
-      listedRuns(checkout, result({ experimentId: checkout.id, runs: [orphan] })).ok,
-    ).toBe(false)
+    const dropped = listedRuns(
+      checkout,
+      result({ experimentId: checkout.id, runs: [orphan] }),
+    )
+    expect(dropped.ok).toBe(true)
+    if (!dropped.ok) return
+    expect(dropped.runs).toEqual([])
+    expect(dropped.skipped).toBe(1)
     const laterParent = { ...child, parentId: "r100", number: 50 }
-    expect(
-      listedRuns(
-        checkout,
-        result({ experimentId: checkout.id, runs: [laterParent, parent] }),
-      ).ok,
-    ).toBe(false)
+    const outOfOrder = listedRuns(
+      checkout,
+      result({ experimentId: checkout.id, runs: [laterParent, parent] }),
+    )
+    expect(outOfOrder.ok).toBe(true)
+    if (!outOfOrder.ok) return
+    expect(outOfOrder.runs.map((run) => run.id)).toEqual(["r100"])
+    expect(outOfOrder.skipped).toBe(1)
+  })
+
+  it("keeps the good runs when one is bad, and drops a child of that run", () => {
+    const checkout = experiment()
+    const source = checkout.runs[0]
+    if (source === undefined) throw new Error("a run")
+    const bad = {
+      ...copy(source),
+      id: "r100",
+      number: 100,
+      verdict: "retired",
+      parentId: checkout.baseline.id,
+    }
+    const child = { ...copy(source), id: "r101", number: 101, parentId: "r100" }
+    const listed = listedRuns(
+      checkout,
+      result({
+        experimentId: checkout.id,
+        runs: [child, ...checkout.runs.map((run) => copy(run)), bad],
+      }),
+    )
+    expect(listed.ok).toBe(true)
+    if (!listed.ok) return
+    expect(listed.runs.map((run) => run.id)).toEqual(checkout.runs.map((run) => run.id))
+    expect(listed.skipped).toBe(2)
+    expect(listed.runs.some((run) => run.id === "r100" || run.id === "r101")).toBe(false)
   })
 
   it("draws the run get_run returned, and refuses a body that is not that run", () => {

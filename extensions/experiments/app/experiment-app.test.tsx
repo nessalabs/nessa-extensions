@@ -745,6 +745,12 @@ describe("the experiment app in the fake host", () => {
     // The runs list stays mounted under the open run. Opening r1 from it is
     // the repro, and it must not take on the experiment that is about to leave.
     const runs = screen.getByRole("tabpanel", { name: "Runs", hidden: true })
+    const pendingRow = within(runs).getByRole("button", {
+      name: new RegExp(`^Run ${asked.number}(?!\\d)`),
+      hidden: true,
+    })
+    expect((pendingRow as HTMLButtonElement).disabled).toBe(true)
+    expect(runs.textContent).toContain("Loading the next experiment…")
     fireEvent.click(
       within(runs).getByRole("button", {
         name: new RegExp(`^Run ${asked.number}(?!\\d)`),
@@ -896,6 +902,39 @@ describe("the experiment app in the fake host", () => {
         exact: true,
       }),
     ).toBeTruthy()
+  })
+
+  it("shows the good runs when one listed run is bad, and drops a child of that run", async () => {
+    const checkout = experiment(checkoutSample)
+    const source = checkout.runs[0]
+    if (source === undefined) throw new Error("the sample has a run")
+    const bad = {
+      ...(JSON.parse(JSON.stringify(source)) as Run),
+      id: "r100",
+      number: 100,
+      verdict: "retired",
+      parentId: checkout.baseline.id,
+    }
+    const child = {
+      ...(JSON.parse(JSON.stringify(source)) as Run),
+      id: "r101",
+      number: 101,
+      parentId: "r100",
+    }
+    await renderApp(checkout, { listRuns: [...checkout.runs, bad, child] })
+    await openFullscreen()
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }))
+    await settle()
+
+    const panel = screen.getByRole("tabpanel", { name: "Runs" })
+    const rows = within(panel).getAllByRole("button", { name: /^Run / })
+    expect(rows).toHaveLength(checkout.runs.length)
+    expect(within(panel).queryByRole("button", { name: /^Run 100(?!\d)/ })).toBeNull()
+    expect(within(panel).queryByRole("button", { name: /^Run 101(?!\d)/ })).toBeNull()
+    expect(screen.getByText("2 runs could not be shown")).toBeTruthy()
+    expect(screen.getByText(`${checkout.runs.length} runs`, { exact: true })).toBeTruthy()
+    expect(screen.queryByRole("alert")).toBeNull()
+    expect(screen.queryByText("No runs.")).toBeNull()
   })
 
   it("a new child of a new parent shows a delta and a two-step lineage", async () => {

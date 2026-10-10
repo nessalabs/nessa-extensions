@@ -35,7 +35,7 @@ const noRuns: readonly Run[] = []
 export type RunList =
   | { readonly status: "idle" }
   | { readonly status: "loading" }
-  | { readonly status: "ready"; readonly runs: readonly Run[] }
+  | { readonly status: "ready"; readonly runs: readonly Run[]; readonly skipped: number }
   | { readonly status: "failed"; readonly message: string }
 
 export type RunRead =
@@ -166,7 +166,7 @@ export function useListedRuns(experiment: Experiment, active: boolean): RunList 
         if (listed.ok) held.current = experiment
         setList(
           listed.ok
-            ? { status: "ready", runs: listed.runs }
+            ? { status: "ready", runs: listed.runs, skipped: listed.skipped }
             : { status: "failed", message: listed.message },
         )
       },

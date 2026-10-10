@@ -254,6 +254,8 @@ export function ExperimentSurface({
               onSelect={setVerdict}
               rows={rows}
               onOpenRun={onOpenRun}
+              runsOpenable={runsOpenable}
+              omitted={listed.status === "ready" ? listed.skipped : 0}
               status={listed.status === "idle" ? "loading" : listed.status}
               message={listed.status === "failed" ? listed.message : undefined}
             />

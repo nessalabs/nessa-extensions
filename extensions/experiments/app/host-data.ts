@@ -5,14 +5,18 @@
  * `validateExperiment` parses it into a copy, and that copy is the
  * experiment the views read. A result with no experiment — a chat view
  * dropped the structured result and kept the text — is `absent`, and the
- * app loads it with `get_experiment`. `list_runs`
- * and `get_run` re-read the source, so their bodies are what the runs list
- * and the run detail draw — a reason or a score that changed after the
- * opening snapshot would otherwise never show. Each body is `parseRun`'s
- * copy, then checked against this experiment: a verdict, split, guardrail,
- * area, or agent it does not have is refused, and the snapshot is not drawn
- * in its place. A parent is the baseline, a run in the snapshot, or another
- * run in the same list with a lower number.
+ * app loads it with `get_experiment`. `list_runs` and `get_run` re-read the
+ * source, so their bodies are what the runs list and the run detail draw —
+ * a reason or a score that changed after the opening snapshot would
+ * otherwise never show. Each body is `parseRun`'s copy, then checked
+ * against this experiment. A listed run that does not parse, or whose
+ * verdict, split, guardrail, area, agent, or parent is not here, is
+ * skipped, and the rest of the list is drawn. The first copy of an id is
+ * the one kept. A listed parent counts only once it has been accepted, so
+ * a child of a skipped parent is skipped too. `get_run` still refuses that
+ * one run, and the snapshot is not drawn in its place. A parent is the
+ * baseline, a run in the snapshot, or an accepted run in this list with a
+ * lower number.
  *
  * `open_file` is the one answer the experiment does not carry. A link is
  * `http` or `https` only, as the server already requires: a `javascript:` or
@@ -38,7 +42,7 @@ export type LoadedExperiment =
   | { readonly status: "ready"; readonly experiment: Experiment }
 
 export type ListedRuns =
-  | { readonly ok: true; readonly runs: readonly Run[] }
+  | { readonly ok: true; readonly runs: readonly Run[]; readonly skipped: number }
   | { readonly ok: false; readonly message: string }
 
 export type FetchedRun =
@@ -149,9 +153,10 @@ function unfit(
 }
 
 /**
- * Whether `run` was built on this experiment. A parent in `listed` counts:
- * a list can carry a new kept run and a run built on it, and the child may
- * be listed first.
+ * Whether `run` was built on this experiment. A parent in `listed` counts
+ * when that map already holds it and its number is lower. The list pass
+ * fills the map in number order, so a skipped parent does not carry its
+ * children, even when the child was listed first.
  */
 function parentHere(
   experiment: Experiment,
@@ -178,9 +183,14 @@ function runHere(
 }
 
 /**
- * The runs `list_runs` answered, in that order, or why that answer cannot
- * be shown. Each body is drawn. A parent may be the baseline, a run in the
- * opening snapshot, or another run in this list with a lower number.
+ * The runs `list_runs` answered that belong on `experiment`, in the order
+ * they arrived. One bad item is skipped: it did not parse, it repeats an
+ * id, or its verdict, split, guardrail, area, agent, or parent is not here.
+ * The first copy of an id is kept. Acceptance is one pass from lower run
+ * numbers to higher, which is parent before child, and a listed parent
+ * counts only after that pass has accepted it. `skipped` is how many were
+ * left out. The whole answer is refused when the call failed, or when the
+ * body is not this experiment's list.
  */
 export function listedRuns(experiment: Experiment, result: CallToolResult): ListedRuns {
   if (result.isError === true) {
@@ -194,23 +204,36 @@ export function listedRuns(experiment: Experiment, result: CallToolResult): List
   ) {
     return { ok: false, message: "The run list is not this experiment's." }
   }
-  const parsed: Run[] = []
+  const candidates: Run[] = []
   const seen = new Set<string>()
+  let skipped = 0
   for (const item of data.runs) {
     const one = parseRun(item)
-    if (!one.ok) return one
+    if (!one.ok) {
+      skipped += 1
+      continue
+    }
     if (seen.has(one.run.id)) {
-      return { ok: false, message: `Run ${one.run.id} is listed twice.` }
+      skipped += 1
+      continue
     }
     seen.add(one.run.id)
-    parsed.push(one.run)
+    candidates.push(one.run)
   }
-  const listed = new Map(parsed.map((run) => [run.id, run]))
-  for (const run of parsed) {
-    const message = unfit(experiment, run, listed)
-    if (message !== undefined) return { ok: false, message }
+  // A parent has a lower number, so this order accepts it before its children.
+  const accepted = new Map<string, Run>()
+  for (const run of [...candidates].sort((a, b) => a.number - b.number)) {
+    if (unfit(experiment, run, accepted) !== undefined) {
+      skipped += 1
+      continue
+    }
+    accepted.set(run.id, run)
   }
-  return { ok: true, runs: parsed }
+  return {
+    ok: true,
+    runs: candidates.filter((run) => accepted.has(run.id)),
+    skipped,
+  }
 }
 
 /**

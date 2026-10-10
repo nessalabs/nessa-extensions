@@ -3,12 +3,17 @@
  * has its own height and scrolls inside it. This view holds no state: the
  * filter and the list arrive as props.
  */
+import { countLabel } from "./count.ts"
 import { Delta } from "./kit-stand-in/index.ts"
 import { PageHeading } from "./page-heading.tsx"
 import type { RunRow } from "./page-reading.ts"
 import type { VerdictRead } from "./reading.ts"
 import { VerdictLabel } from "./verdict-label.tsx"
 import "./pages.css"
+
+function omittedNote(count: number): string {
+  return `${countLabel(count, { one: "run", other: "runs" })} could not be shown`
+}
 
 export function RunsView({
   title,
@@ -18,6 +23,8 @@ export function RunsView({
   onSelect,
   rows,
   onOpenRun,
+  runsOpenable,
+  omitted,
   status,
   message,
 }: {
@@ -28,6 +35,10 @@ export function RunsView({
   readonly onSelect: (verdictId: string | undefined) => void
   readonly rows: readonly RunRow[]
   readonly onOpenRun: (runId: string) => void
+  /** A row may be opened. False while the next snapshot is still loading. */
+  readonly runsOpenable: boolean
+  /** Listed runs this experiment could not draw. */
+  readonly omitted: number
   readonly status: "idle" | "loading" | "ready" | "failed"
   readonly message?: string
 }) {
@@ -65,6 +76,14 @@ export function RunsView({
           {message}
         </p>
       ) : null}
+      {status === "ready" && !runsOpenable ? (
+        <p className="page-status" role="status">
+          Loading the next experiment…
+        </p>
+      ) : null}
+      {status === "ready" && omitted > 0 ? (
+        <p className="page-status">{omittedNote(omitted)}</p>
+      ) : null}
       {status === "ready" ? (
         <div className="runs-scroll" tabIndex={0} aria-label="Runs">
           {shown.length === 0 ? (
@@ -73,7 +92,11 @@ export function RunsView({
             <ul className="run-list">
               {shown.map((row) => (
                 <li key={row.id}>
-                  <button type="button" onClick={() => onOpenRun(row.id)}>
+                  <button
+                    type="button"
+                    disabled={!runsOpenable}
+                    onClick={() => onOpenRun(row.id)}
+                  >
                     <span className="run-number">Run {row.number}</span>
                     <VerdictLabel label={row.verdict} tone={row.tone} />
                     {row.score === undefined ? null : (
