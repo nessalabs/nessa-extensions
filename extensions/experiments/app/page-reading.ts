@@ -1,8 +1,12 @@
 /**
  * What the pages show, read from the definition and from what the harness
  * decided. Titles a page can be given default to these. The path is
- * `bestSoFar` in order, not a run's parent chain. Numbers are `Formatted`
- * and `Change` from the model; this module does not write one itself.
+ * `bestSoFar` in order, not a run's parent chain. A run's row, its outcome,
+ * its lineage, and its label read the accepted set the caller gathered —
+ * the opening snapshot, then later copies — and not the snapshot alone.
+ * Numbers are
+ * `Formatted` and `Change` from the model; this module does not write one
+ * itself.
  */
 import { formatCount } from "./count.ts"
 import { areaCards } from "./reading.ts"
@@ -11,7 +15,7 @@ import {
   bestVersion,
   formatValue,
   limitOf,
-  lineage,
+  lineageFrom,
   measureOf,
   metricChange,
   pathToBest,
@@ -103,11 +107,34 @@ export interface AreaGain {
   readonly change?: Change
 }
 
-function parentMean(experiment: Experiment, run: Run): number | undefined {
+/**
+ * The runs a view reads, in the order they were accepted. A later run with
+ * the same id replaces the earlier one: the opening snapshot, then the
+ * listed runs, then the fetched run.
+ */
+export function acceptedRuns(
+  ...sources: readonly (readonly Run[])[]
+): ReadonlyMap<string, Run> {
+  const accepted = new Map<string, Run>()
+  for (const source of sources) {
+    for (const run of source) accepted.set(run.id, run)
+  }
+  return accepted
+}
+
+/** The run's label, or "Run" when `runs` has no such run. */
+export function runLabel(runs: ReadonlyMap<string, Run>, id: string): string {
+  const run = runs.get(id)
+  return run === undefined ? "Run" : `Run ${run.number}`
+}
+
+function parentMean(
+  experiment: Experiment,
+  run: Run,
+  runs: ReadonlyMap<string, Run>,
+): number | undefined {
   const parent =
-    run.parentId === experiment.baseline.id
-      ? experiment.baseline
-      : runOf(experiment, run.parentId)
+    run.parentId === experiment.baseline.id ? experiment.baseline : runs.get(run.parentId)
   if (parent === undefined) return undefined
   return scoreOf(parent, experiment.definition.primarySplit)?.mean
 }
@@ -191,11 +218,15 @@ export function areaGains(experiment: Experiment): readonly AreaGain[] {
 }
 
 /** One run, with its score on the primary split against what it was built on. */
-export function runRow(experiment: Experiment, run: Run): RunRow {
+export function runRow(
+  experiment: Experiment,
+  run: Run,
+  runs: ReadonlyMap<string, Run>,
+): RunRow {
   const { metric, primarySplit } = experiment.definition
   const verdict = verdictOf(experiment, run)
   const score = scoreOf(run, primarySplit)
-  const from = parentMean(experiment, run)
+  const from = parentMean(experiment, run, runs)
   const change =
     score === undefined || from === undefined
       ? undefined
@@ -217,7 +248,8 @@ export function runRow(experiment: Experiment, run: Run): RunRow {
 
 /** Every run, newest first, with its score on the primary split. */
 export function runRows(experiment: Experiment): readonly RunRow[] {
-  return runsNewestFirst(experiment).map((run) => runRow(experiment, run))
+  const runs = acceptedRuns(experiment.runs)
+  return runsNewestFirst(experiment).map((run) => runRow(experiment, run, runs))
 }
 
 function limitText(experiment: Experiment, guardrailId: string): string | undefined {
@@ -230,11 +262,15 @@ function limitText(experiment: Experiment, guardrailId: string): string | undefi
 }
 
 /** A run's outcome: its verdict, its score, and each guardrail the definition names. */
-export function outcomeRead(experiment: Experiment, run: Run): OutcomeRead {
+export function outcomeRead(
+  experiment: Experiment,
+  run: Run,
+  runs: ReadonlyMap<string, Run>,
+): OutcomeRead {
   const { metric, primarySplit, guardrails } = experiment.definition
   const verdict = verdictOf(experiment, run)
   const score = scoreOf(run, primarySplit)
-  const from = parentMean(experiment, run)
+  const from = parentMean(experiment, run, runs)
   const change =
     score === undefined || from === undefined
       ? undefined
@@ -266,14 +302,15 @@ export function outcomeRead(experiment: Experiment, run: Run): OutcomeRead {
 }
 
 /**
- * The lineage of `runId`: the baseline, then each parent, the run last.
- * Undefined when the experiment has no such run.
+ * The lineage of `runId` through `runs`: the baseline, then each parent,
+ * the run last. Undefined when `runs` has no such run.
  */
 export function lineageSteps(
   experiment: Experiment,
   runId: string,
+  runs: ReadonlyMap<string, Run>,
 ): readonly LineageStep[] | undefined {
-  const line = lineage(experiment, runId)
+  const line = lineageFrom(experiment.baseline, runs, runId)
   if (line === undefined) return undefined
   return [
     { key: `baseline:${line.baseline.id}`, label: "Baseline", current: false },

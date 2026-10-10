@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest"
 
 import { checkoutSample, latencySample } from "../samples/index.ts"
-import { measureOf, movedCount, scoreOf, type Experiment } from "./experiment.ts"
+import {
+  measureOf,
+  movedCount,
+  parseRun,
+  scoreOf,
+  type Experiment,
+  type Run,
+} from "./experiment.ts"
 import { fixture, start, type Fixture } from "./fixture.ts"
 import {
   bestVersion,
@@ -10,6 +17,7 @@ import {
   guardrailChange,
   limitOf,
   lineage,
+  lineageFrom,
   lineTotals,
   metricChange,
   pathToBest,
@@ -223,6 +231,29 @@ describe("lineage", () => {
   it("is undefined for a run that is not one, the baseline included", () => {
     expect(lineage(checkout, "r999")).toBeUndefined()
     expect(lineage(checkout, checkout.baseline.id)).toBeUndefined()
+  })
+
+  it("ends when a run is reached again", () => {
+    const source = checkout.runs[0]
+    const other = checkout.runs[1]
+    if (source === undefined || other === undefined) throw new Error("two runs")
+    const copy = (run: Run, id: string, parentId: string): Run => {
+      const parsed = parseRun({ ...JSON.parse(JSON.stringify(run)), id, parentId })
+      if (!parsed.ok) throw new Error(parsed.message)
+      return parsed.run
+    }
+    const left = copy(source, "left", "right")
+    const right = copy(other, "right", "left")
+    const line = lineageFrom(
+      checkout.baseline,
+      new Map([
+        ["left", left],
+        ["right", right],
+      ]),
+      "right",
+    )
+    expect(line?.baseline).toBe(checkout.baseline)
+    expect(ids(line?.runs ?? [])).toEqual(["left", "right"])
   })
 })
 

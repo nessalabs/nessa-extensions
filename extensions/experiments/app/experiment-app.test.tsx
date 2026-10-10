@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react"
+import { flushSync } from "react-dom"
 import { afterEach, describe, expect, it } from "vitest"
 
 import {
@@ -17,8 +18,10 @@ import { BridgeProvider, HostThemeScope } from "@nessalabs/app-shell/react"
 
 import {
   lineage,
+  metricChange,
   pathToBest,
   runsNewestFirst,
+  scoreOf,
   validateExperiment,
   type Experiment,
   type ExperimentInput,
@@ -69,6 +72,28 @@ function displayModeRequests(host: FakeHost): number {
   }).length
 }
 
+function findRun(runs: readonly Run[] | undefined, id: unknown): Run | undefined {
+  if (typeof id !== "string" || runs === undefined) return undefined
+  return runs.find((run) => run.id === id)
+}
+
+function copyRun(run: Run): Run {
+  return JSON.parse(JSON.stringify(run)) as Run
+}
+
+function withTestMean(run: Run, mean: number): Run {
+  const copy = copyRun(run)
+  const test = copy.scores.test
+  if (test === undefined) throw new Error(`${run.id} has no test score`)
+  return { ...copy, scores: { ...copy.scores, test: { ...test, mean } } }
+}
+
+function deltaLabel(sample: Experiment, from: number, to: number): string {
+  const change = metricChange(sample, from, to)
+  const sign = change.value > 0 ? "+" : change.value < 0 ? "\u2212" : ""
+  return `${sign}${change.size}`
+}
+
 function jsonRun(run: Run, reason?: string): Record<string, unknown> {
   const copy = JSON.parse(JSON.stringify(run)) as Record<string, unknown>
   if (reason !== undefined) copy.reason = reason
@@ -89,6 +114,10 @@ async function renderApp(
     readonly bareRun?: boolean
     /** A run `list_runs` adds in front of the opening snapshot's runs. */
     readonly listedRun?: Run
+    /** When set, this is the whole `list_runs` answer, in this order. */
+    readonly listRuns?: readonly Run[]
+    /** `get_run` answers these ids from here, ahead of the list and the snapshot. */
+    readonly fetchedRuns?: readonly Run[]
     /** `get_experiment`. The default returns `sample`. */
     readonly getExperiment?: (experimentId: string) => CallToolResult
   },
@@ -128,17 +157,27 @@ async function renderApp(
           )
         }
         if (name === "list_runs") {
-          const runs = runsNewestFirst(sample).map((run) => jsonRun(run))
-          if (options?.listedRun !== undefined) runs.unshift(jsonRun(options.listedRun))
+          const runs = (options?.listRuns ?? runsNewestFirst(sample)).map((run) =>
+            jsonRun(run),
+          )
+          if (options?.listedRun !== undefined && options.listRuns === undefined) {
+            runs.unshift(jsonRun(options.listedRun))
+          }
           return answered("runs", {
             experimentId: sample.id,
             runs,
           })
         }
         if (name === "get_run") {
-          const run = sample.runs.find((each) => each.id === args?.runId)
+          const id = args?.runId
+          const listedRun = options?.listedRun
+          const run =
+            findRun(options?.fetchedRuns, id) ??
+            findRun(options?.listRuns, id) ??
+            (listedRun?.id === id ? listedRun : undefined) ??
+            sample.runs.find((each) => each.id === id)
           if (run === undefined || options?.bareRun === true) {
-            return answered("run", { experimentId: sample.id, run: { id: args?.runId } })
+            return answered("run", { experimentId: sample.id, run: { id } })
           }
           return answered("run", {
             experimentId: sample.id,
@@ -616,6 +655,174 @@ describe("the experiment app in the fake host", () => {
         exact: true,
       }),
     ).toBeTruthy()
+  })
+
+  it("a new child of a new parent shows a delta and a two-step lineage", async () => {
+    const checkout = experiment(checkoutSample)
+    const child = checkout.runs.find((run) => {
+      const parent = checkout.runs.find((each) => each.id === run.parentId)
+      return (
+        parent !== undefined &&
+        scoreOf(run, "test") !== undefined &&
+        scoreOf(parent, "test") !== undefined
+      )
+    })
+    const parent = checkout.runs.find((run) => run.id === child?.parentId)
+    const childMean = child === undefined ? undefined : scoreOf(child, "test")?.mean
+    const parentMean = parent === undefined ? undefined : scoreOf(parent, "test")?.mean
+    if (
+      child === undefined ||
+      parent === undefined ||
+      childMean === undefined ||
+      parentMean === undefined
+    ) {
+      throw new Error("the sample has a scored child of a scored run")
+    }
+    const template = copyRun(child)
+    const addedParent = withTestMean(
+      {
+        ...template,
+        id: "r100",
+        number: 100,
+        parentId: checkout.baseline.id,
+        reason: "A parent the opening snapshot never had.",
+      },
+      70,
+    )
+    const addedChild = withTestMean(
+      {
+        ...template,
+        id: "r101",
+        number: 101,
+        parentId: addedParent.id,
+        reason: "Built on the new parent.",
+      },
+      80,
+    )
+    const listed = [
+      addedChild,
+      addedParent,
+      ...checkout.runs.map((run) =>
+        run.id === parent.id ? withTestMean(run, 10) : copyRun(run),
+      ),
+    ]
+    await renderApp(checkout, { listRuns: listed })
+    await openFullscreen()
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }))
+    await settle()
+
+    const stale = deltaLabel(checkout, parentMean, childMean)
+    const refreshed = deltaLabel(checkout, 10, childMean)
+    expect(stale).not.toBe(refreshed)
+    const existing = screen.getByRole("button", {
+      name: new RegExp(`^Run ${child.number}(?!\\d)`),
+    })
+    expect(existing.querySelector("[data-slot=delta]")?.textContent).toBe(refreshed)
+
+    const added = screen.getByRole("button", { name: /^Run 101(?!\d)/ })
+    expect(added.querySelector("[data-slot=delta]")?.textContent).toBe("+10.0 pts")
+    fireEvent.click(added)
+    await settle()
+    const region = screen.getByRole("region", { name: "Lineage" })
+    expect(
+      within(region)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Baseline", "Run 100", "Run 101"])
+    const detail = document.querySelector(".detail")
+    expect(detail?.querySelector("[data-slot=delta]")?.textContent).toBe("+10.0 pts")
+    expect(detail?.textContent).toContain("Built on the new parent.")
+  })
+
+  it("draws the run get_run returned through the accepted set", async () => {
+    const checkout = experiment(checkoutSample)
+    const template = checkout.runs.find((run) => run.cases !== undefined)
+    if (template === undefined) throw new Error("the sample has a run with cases")
+    const addedParent = withTestMean(
+      {
+        ...copyRun(template),
+        id: "r100",
+        number: 100,
+        parentId: checkout.baseline.id,
+        reason: "A parent the opening snapshot never had.",
+      },
+      70,
+    )
+    const listedChild = withTestMean(
+      {
+        ...copyRun(template),
+        id: "r101",
+        number: 101,
+        parentId: addedParent.id,
+        reason: "Listed child.",
+      },
+      80,
+    )
+    const cases = listedChild.cases
+    if (cases === undefined) throw new Error("the child has cases")
+    const fetchedChild = {
+      ...withTestMean(listedChild, 90),
+      reason: "Fetched from the server.",
+      cases: { ...cases, total: 5000, fixed: 4242, broken: cases.broken },
+    }
+    const { calls } = await renderApp(checkout, {
+      listRuns: [listedChild, addedParent, ...checkout.runs.map(copyRun)],
+      fetchedRuns: [fetchedChild],
+    })
+    await openFullscreen()
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }))
+    await settle()
+    const row = screen.getByRole("button", { name: /^Run 101(?!\d)/ })
+    expect(row.querySelector("[data-slot=delta]")?.textContent).toBe("+10.0 pts")
+    expect(row.textContent).toContain("Listed child.")
+
+    fireEvent.click(row)
+    await settle()
+    expect(calls).toContain("get_run")
+    const detail = document.querySelector(".detail")
+    expect(detail?.querySelector("[data-slot=delta]")?.textContent).toBe("+20.0 pts")
+    expect(detail?.textContent).toContain("Fetched from the server.")
+    expect(detail?.textContent).not.toContain("Listed child.")
+    expect(detail?.textContent).toContain("4,242 test cases fixed")
+    expect(screen.getByRole("navigation", { name: "Opened run" }).textContent).toContain(
+      "Run 101",
+    )
+  })
+
+  it("shows the next run loading in the same frame the previous one closes", async () => {
+    const checkout = experiment(checkoutSample)
+    const opened = checkout.runs.find((run) => {
+      const line = lineage(checkout, run.id)
+      return line !== undefined && line.runs.length >= 2 && run.reason.length > 0
+    })
+    if (opened === undefined) throw new Error("no run has a parent run")
+    const line = lineage(checkout, opened.id)
+    const earlier = line?.runs[0]
+    if (line === undefined || earlier === undefined || earlier.id === opened.id) {
+      throw new Error("the run has an earlier run")
+    }
+    await renderApp(checkout)
+    await openFullscreen()
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }))
+    await settle()
+    fireEvent.click(
+      screen.getByRole("button", { name: new RegExp(`^Run ${opened.number}(?!\\d)`) }),
+    )
+    await settle()
+    const detail = () => document.querySelector(".detail")
+    expect(detail()?.textContent).toContain(opened.reason)
+
+    const follow = within(screen.getByRole("region", { name: "Lineage" })).getByRole(
+      "button",
+      { name: new RegExp(`^Run ${earlier.number}$`) },
+    )
+    flushSync(() => {
+      follow.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    })
+    expect(detail()?.textContent).not.toContain(opened.reason)
+    expect(detail()?.textContent).toContain("Loading this run…")
+    await settle()
+    expect(detail()?.textContent).toContain(earlier.reason)
   })
 
   it("Escape in Find a file clears the query and leaves the run open", async () => {

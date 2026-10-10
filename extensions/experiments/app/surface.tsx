@@ -10,11 +10,13 @@ import { areaCards, caseResults, verdicts } from "./reading.ts"
 import { AreasPage } from "./areas-page.tsx"
 import { Overview } from "./overview.tsx"
 import {
+  acceptedRuns,
   headline,
   lineageSteps,
   noteReads,
   outcomeRead,
   pathSteps,
+  runLabel,
   runRow,
   runsSubtitle,
   swarmNow,
@@ -30,7 +32,7 @@ import { useExperimentNavigation } from "./use-navigation.ts"
 import type { ViewId } from "./navigation.ts"
 import type { Opening } from "./open-file.ts"
 import type { OpenRequest, Schedule } from "./use-open-file.ts"
-import { runOf, type Experiment, type Run } from "../model/index.ts"
+import type { Experiment, Run } from "../model/index.ts"
 import "./pages.css"
 
 const noListedRuns: readonly Run[] = []
@@ -40,11 +42,6 @@ const labels = {
   areas: "Areas",
   runs: "Runs",
 } as const satisfies Record<ViewId, string>
-
-function runLabel(experiment: Experiment, id: string): string {
-  const run = runOf(experiment, id)
-  return run === undefined ? "Run" : `Run ${run.number}`
-}
 
 export function ExperimentSurface({
   experiment,
@@ -81,7 +78,20 @@ export function ExperimentSurface({
   const alongside = listed.status === "ready" ? listed.runs : noListedRuns
   const fetched = useFetchedRun(experiment, openId, active, alongside)
   const detailRun = fetched.status === "ready" ? fetched.run : undefined
-  const change = useChangeView({ experiment, run: detailRun, open, schedule })
+  // One set for the row, the outcome, the cases, the lineage, and the
+  // labels. A later copy of a run replaces the earlier one.
+  const accepted = useMemo(
+    () =>
+      acceptedRuns(
+        experiment.runs,
+        alongside,
+        detailRun === undefined ? noListedRuns : [detailRun],
+      ),
+    [alongside, detailRun, experiment],
+  )
+  const openRun = openId === undefined ? undefined : accepted.get(openId)
+  const shown = fetched.status === "ready" ? openRun : undefined
+  const change = useChangeView({ experiment, run: shown, open, schedule })
   const head = useMemo(() => headline(experiment), [experiment])
   const path = useMemo(() => pathSteps(experiment), [experiment])
   const swarm = useMemo(() => swarmNow(experiment), [experiment])
@@ -90,15 +100,22 @@ export function ExperimentSurface({
   const labelsOfVerdicts = useMemo(() => verdicts(experiment), [experiment])
   const rows = useMemo(
     () =>
-      listed.status === "ready" ? listed.runs.map((run) => runRow(experiment, run)) : [],
-    [experiment, listed],
+      listed.status === "ready"
+        ? listed.runs.flatMap((run) => {
+            const current = accepted.get(run.id)
+            return current === undefined ? [] : [runRow(experiment, current, accepted)]
+          })
+        : [],
+    [accepted, experiment, listed],
   )
-  const outcome = detailRun === undefined ? undefined : outcomeRead(experiment, detailRun)
-  const cases = detailRun === undefined ? undefined : caseResults(experiment, detailRun)
-  const line = openId === undefined ? undefined : lineageSteps(experiment, openId)
+  const outcome =
+    shown === undefined ? undefined : outcomeRead(experiment, shown, accepted)
+  const cases = shown === undefined ? undefined : caseResults(experiment, shown)
+  const line =
+    openId === undefined ? undefined : lineageSteps(experiment, openId, accepted)
   const crumbs = nav.navigation.trail.slice(0, -1).map((id, index) => ({
     key: `${index}:${id}`,
-    label: runLabel(experiment, id),
+    label: runLabel(accepted, id),
     onSelect: () => nav.through(index),
   }))
 
@@ -239,11 +256,7 @@ export function ExperimentSurface({
             <RunDetail
               trailLabel={labels[view]}
               crumbs={crumbs}
-              current={
-                detailRun === undefined
-                  ? runLabel(experiment, openId)
-                  : `Run ${detailRun.number}`
-              }
+              current={runLabel(accepted, openId)}
               onClose={nav.close}
               outcome={outcome}
               cases={cases}

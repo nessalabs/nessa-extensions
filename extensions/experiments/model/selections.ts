@@ -187,20 +187,35 @@ export interface Lineage {
 }
 
 /**
+ * The lineage of `runId` through `runs`, or `undefined` when `runs` has no
+ * such run. A parent that is not in `runs` ends the chain: the baseline is
+ * not a run. A run reached again ends it too, so a parent retargeted at its
+ * own descendant stays a finite chain.
+ */
+export function lineageFrom(
+  baseline: Baseline,
+  runs: ReadonlyMap<string, Run>,
+  runId: string,
+): Lineage | undefined {
+  const chain: Run[] = []
+  const seen = new Set<string>()
+  let at = runs.get(runId)
+  if (at === undefined) return undefined
+  while (at !== undefined && !seen.has(at.id)) {
+    seen.add(at.id)
+    chain.unshift(at)
+    at = runs.get(at.parentId)
+  }
+  return { baseline, runs: chain }
+}
+
+/**
  * The lineage of the run with `runId`, or `undefined` when there is no such
  * run. It ends: validation holds that each parent is the baseline or a
  * lower-numbered run.
  */
 export function lineage(experiment: Experiment, runId: string): Lineage | undefined {
-  const byId = runsById(experiment)
-  const chain: Run[] = []
-  let at = byId.get(runId)
-  if (at === undefined) return undefined
-  while (at !== undefined) {
-    chain.unshift(at)
-    at = byId.get(at.parentId)
-  }
-  return { baseline: experiment.baseline, runs: chain }
+  return lineageFrom(experiment.baseline, runsById(experiment), runId)
 }
 
 /** Newest first: by `startedAt`, then by `number`. */

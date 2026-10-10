@@ -8,6 +8,7 @@ import {
 } from "../model/index.ts"
 import { checkoutSample, latencySample } from "../samples/index.ts"
 import {
+  acceptedRuns,
   areaGains,
   headline,
   lineageSteps,
@@ -66,11 +67,12 @@ describe("what the pages read", () => {
     expect(slower?.change?.tone).toBe("bad")
     const run = latency.runs.find((each) => each.id === "l5")
     if (run === undefined) throw new Error("l5 is a run")
-    const outcome = outcomeRead(latency, run)
+    const runs = acceptedRuns(latency.runs)
+    const outcome = outcomeRead(latency, run, runs)
     expect(outcome.guardrails.map((guardrail) => guardrail.name)).toContain(
       "Answer accuracy",
     )
-    expect(lineageSteps(latency, "l5")?.map((step) => step.label)).toEqual([
+    expect(lineageSteps(latency, "l5", runs)?.map((step) => step.label)).toEqual([
       "Baseline",
       "Run 1",
       "Run 3",
