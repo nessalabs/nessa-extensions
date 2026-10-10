@@ -38,7 +38,7 @@ server/           the MCP server, on @nessalabs/server-kit; runs in Node
   samples-source.ts  the samples as a source, dated from when the server starts
   text.ts         what each tool says in text, standing on its own
   view.ts         the experiment view's URI, and a placeholder document the server tests inject
-  result-bound.ts the most bytes of JSON a structured result may be
+  result-bound.ts the chat view's 16,384-byte bound on the opening structured result
   extension.ts    experimentsExtension: the view and the five tools, over a source
   main.ts         the bin: the extension over stdio, on the samples, serving dist/app/index.html
 app/              the MCP App, in the browser
@@ -187,13 +187,16 @@ built into `dist/main.js`). Its tools, all read-only:
 and exits 0. The reference host (`@modelcontextprotocol/ext-apps`'s
 `AppBridge`) is given the checkout sample and driven in Chromium and WebKit.
 Nessa is the desktop behind its sandbox proxy, through a real gateway and
-this extension's server, in Chromium. A host keeps at most 16,384 bytes of a
-tool's structured result and drops a larger object whole, so `show_experiment`,
-`list_runs`, and `get_run` refuse a result over that and the samples that the
-server serves stay within it. The scenario runner's completion does not name
-the MCP tool, and Nessa attaches the forwarded structured result only when it
-does; `forward-structured.mjs` adds that name. The capture fails if the page
-shows "Blocked a connection this app didn't declare". Zod's fast path probes
-`new Function`, and a strict CSP reports that even when the throw is caught;
-the app sets `jitless` before any schema is built, so the probe does not run.
-An earlier shot of that banner was the fixture slot, which is not this server.
+this extension's server, in Chromium. Nessa's conversation view keeps at
+most 16,384 bytes of the opening tool's structured result and drops a larger
+one whole, keeping the text. `show_experiment` leaves that structured result
+out and still returns the text. The app then loads the experiment with
+`get_experiment`. A call the app makes is a different bound: 56KB of the
+whole result. The checkout sample's `get_experiment` fits in that. The
+scenario runner's completion does not name the MCP tool, and Nessa attaches
+the forwarded structured result only when it does; `forward-structured.mjs`
+adds that name. The capture fails if the page shows "Blocked a connection
+this app didn't declare". Zod's fast path probes `new Function`, and a
+strict CSP reports that even when the throw is caught; the app sets
+`jitless` before any schema is built, so the probe does not run. An earlier
+shot of that banner was the fixture slot, which is not this server.

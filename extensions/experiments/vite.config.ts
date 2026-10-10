@@ -14,14 +14,30 @@
  * whose `buildStart` then sees the public directory and refuses a file in
  * it. `config` is what inlines the script, the styles, and every asset.
  */
+import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
 import { defineConfig, type Plugin } from "vite"
 
 import { mcpApp } from "@nessalabs/app-shell/build"
 
-/** The byte-copied kit imports `@/…` (nessa_ui's alias). It stays inside this package. */
-const kitSrc = fileURLToPath(new URL("./app/kit-stand-in/src", import.meta.url))
+/**
+ * The byte-copied kit imports `@/…`. The path is this package's tsconfig
+ * `paths`, the one declaration of that alias.
+ */
+function kitSrcFromTsconfig(): string {
+  const tsconfig = JSON.parse(
+    readFileSync(new URL("./tsconfig.json", import.meta.url), "utf8"),
+  ) as { compilerOptions?: { paths?: Record<string, string[]> } }
+  const star = tsconfig.compilerOptions?.paths?.["@/*"]?.[0]
+  if (star === undefined || !star.endsWith("/*")) {
+    throw new Error("tsconfig paths must map @/* into this package")
+  }
+  const directory = fileURLToPath(new URL(star.slice(0, -1), import.meta.url))
+  return directory.endsWith("/") ? directory : `${directory}/`
+}
+
+const kitSrc = kitSrcFromTsconfig()
 
 function handler<Args extends readonly unknown[], Result>(
   hook: ((...args: Args) => Result) | { handler: (...args: Args) => Result } | undefined,

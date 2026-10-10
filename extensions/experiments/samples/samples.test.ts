@@ -74,7 +74,7 @@ describe("the samples", () => {
       expect(before, run.id).toEqual(after)
       compared += 1
     }
-    expect(compared).toBeGreaterThan(4)
+    expect(compared).toBeGreaterThan(10)
   })
 
   it("build each run on a version kept before the run started", () => {
@@ -88,7 +88,7 @@ describe("the samples", () => {
       expect(parent.settledAt!, run.id).toBeLessThanOrEqual(run.startedAt)
       compared += 1
     }
-    expect(compared).toBeGreaterThan(5)
+    expect(compared).toBeGreaterThan(10)
   })
 
   it("agree among siblings: runs built on one version give it the same slices and cases", () => {
@@ -109,7 +109,7 @@ describe("the samples", () => {
         state.set(key, was)
       }
     }
-    expect(before.size).toBeGreaterThan(2)
+    expect(before.size).toBeGreaterThan(3)
   })
 
   it("name each case as one case: one slice and title in every run, moved in turn along a lineage", () => {
@@ -122,6 +122,8 @@ describe("the samples", () => {
         named.set(moved.id, said)
       }
     }
+    // The 2,400-case census named more than a thousand. That JSON does not
+    // fit in an app call, so the served sample names the cases it still moves.
     expect(named.size).toBeGreaterThan(10)
     // Down each lineage, a case fixed is not fixed again until it breaks.
     const byId = new Map(experiment.runs.map((run) => [run.id, run]))

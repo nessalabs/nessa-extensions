@@ -13,7 +13,16 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { BridgeError, type Bridge } from "@nessalabs/app-shell"
 import { useBridge } from "@nessalabs/app-shell/react"
 
-import { fetchedRun, listedRuns, openAnswer, type OpenAnswer } from "./host-data.ts"
+import {
+  experimentFromResult,
+  fetchedRun,
+  listedRuns,
+  openAnswer,
+  type LoadedExperiment,
+  type OpenAnswer,
+} from "./host-data.ts"
+
+type RecoveredExperiment = Exclude<LoadedExperiment, { status: "absent" }>
 import type { Opening } from "./open-file.ts"
 import type { OpenRequest } from "./use-open-file.ts"
 import type { Experiment, Run } from "../model/index.ts"
@@ -47,6 +56,46 @@ function hostOpensLinks(bridge: Bridge): boolean {
         ? connection.opened?.capabilities
         : undefined
   return capabilities?.openLinks !== undefined
+}
+
+/**
+ * `get_experiment` when the opening result carried no experiment. One read
+ * per id. A result that still has no experiment is a failure the view shows.
+ */
+export function useRecoveredExperiment(
+  experimentId: string | undefined,
+): RecoveredExperiment {
+  const bridge = useBridge()
+  const [loaded, setLoaded] = useState<RecoveredExperiment>({ status: "waiting" })
+  const held = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (experimentId === undefined || held.current === experimentId) return
+    let current = true
+    setLoaded({ status: "waiting" })
+    bridge.callTool("get_experiment", { experimentId }).then(
+      (result) => {
+        if (!current) return
+        const read = experimentFromResult(result)
+        const settled: RecoveredExperiment =
+          read.status === "absent"
+            ? { status: "failed", message: "The result has no experiment." }
+            : read
+        if (settled.status === "ready") held.current = experimentId
+        setLoaded(settled)
+      },
+      (error: unknown) => {
+        if (!current) return
+        setLoaded({
+          status: "failed",
+          message: failureText(error, "The experiment could not be loaded."),
+        })
+      },
+    )
+    return () => {
+      current = false
+    }
+  }, [bridge, experimentId])
+  return experimentId === undefined ? { status: "waiting" } : loaded
 }
 
 /** `list_runs` while `active`. Idle until then, and not read again for the same experiment. */

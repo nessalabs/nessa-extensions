@@ -1,10 +1,9 @@
 /**
  * The samples as a source: the checkout hill-climb and the latency
  * experiment, each dated from the `startedAt` it is given. The scale fixture
- * stays off this source: one run of ten thousand files does not fit in a
- * structured result a host will keep. It is the server's source until a
- * harness serves experiments; the harness plugs into the same port
- * (`source.ts`), in `main.ts`.
+ * stays off this source: one run of ten thousand files does not fit in an
+ * app call. It is the server's source until a harness serves experiments;
+ * the harness plugs into the same port (`source.ts`), in `main.ts`.
  */
 import { checkoutSample, latencySample } from "../samples/index.ts"
 import type { ExperimentSource } from "./source.ts"

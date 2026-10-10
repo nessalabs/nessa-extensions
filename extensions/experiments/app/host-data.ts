@@ -1,8 +1,11 @@
 /**
  * What the app reads from its host, checked before a view draws it.
  *
- * The opening tool result is the experiment: `validateExperiment` parses it
- * into a copy, and that copy is the experiment the views read. `list_runs`
+ * The opening tool result is the experiment when it carries one:
+ * `validateExperiment` parses it into a copy, and that copy is the
+ * experiment the views read. A result with no experiment — a chat view
+ * dropped the structured result and kept the text — is `absent`, and the
+ * app loads it with `get_experiment`. `list_runs`
  * and `get_run` re-read the source, so their bodies are what the runs list
  * and the run detail draw — a reason or a score that changed after the
  * opening snapshot would otherwise never show. Each body is `parseRun`'s
@@ -29,6 +32,7 @@ import {
 export type LoadedExperiment =
   | { readonly status: "waiting" }
   | { readonly status: "cancelled"; readonly reason: string }
+  | { readonly status: "absent" }
   | { readonly status: "failed"; readonly message: string }
   | { readonly status: "ready"; readonly experiment: Experiment }
 
@@ -77,8 +81,10 @@ export function experimentFromResult(result: CallToolResult): LoadedExperiment {
     }
   }
   const data = record(result.structuredContent)
+  // A chat view drops a structured result over its bound and keeps the text.
+  // That is not a failure: the app reads the experiment with get_experiment.
   if (data === undefined || !Object.hasOwn(data, "experiment")) {
-    return { status: "failed", message: "The result has no experiment." }
+    return { status: "absent" }
   }
   const validation = validateExperiment(data.experiment)
   if (validation.kind === "invalid") {

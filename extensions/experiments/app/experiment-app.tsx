@@ -7,6 +7,7 @@
  * its own view — is drawn as that mode, not told it failed.
  *
  * The experiment is the opening tool result, validated once per result.
+ * When that result has no experiment, the app loads it with `get_experiment`.
  * Later reads go through `tools/call`, and only while this view is showing.
  */
 import { useMemo, useState } from "react"
@@ -17,7 +18,7 @@ import { useConnection, useDisplayMode, useToolCall } from "@nessalabs/app-shell
 import { ExperimentCard } from "./experiment-card.tsx"
 import { loadExperiment } from "./host-data.ts"
 import { ExperimentSurface } from "./surface.tsx"
-import { useHostOpen } from "./use-host.ts"
+import { useHostOpen, useRecoveredExperiment } from "./use-host.ts"
 import type { Schedule } from "./use-open-file.ts"
 import "./tokens.css"
 
@@ -42,7 +43,21 @@ export function ExperimentApp({
   const phase = call.phase
   const result = call.phase === "complete" ? call.result : undefined
   const reason = call.phase === "cancelled" ? call.reason : undefined
-  const loaded = useMemo(() => loadExperiment(call), [call, phase, reason, result])
+  const opening = useMemo(() => loadExperiment(call), [call, phase, reason, result])
+  const asked =
+    call.phase === "running" || call.phase === "complete" || call.phase === "cancelled"
+      ? call.input?.experimentId
+      : undefined
+  const experimentId = typeof asked === "string" && asked !== "" ? asked : undefined
+  const recovered = useRecoveredExperiment(
+    opening.status === "absent" ? experimentId : undefined,
+  )
+  const loaded =
+    opening.status === "absent"
+      ? experimentId === undefined
+        ? { status: "failed" as const, message: "The result has no experiment." }
+        : recovered
+      : opening
   const fullscreen = mode === "fullscreen"
 
   const ask = async (next: "fullscreen" | "inline") => {

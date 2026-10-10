@@ -27,7 +27,7 @@ import {
   runsText,
   unchangedPathText,
 } from "./text.ts"
-import { structuredResultBytes, structuredResultTooLarge } from "./result-bound.ts"
+import { structuredResultTooLarge } from "./result-bound.ts"
 import { experimentView } from "./view.ts"
 
 export interface ExperimentsOptions {
@@ -40,11 +40,6 @@ export interface ExperimentsOptions {
 /** A request the tool cannot answer, said as its text; the kit makes it a tool error. */
 class Refusal extends Error {
   override readonly name = "Refusal"
-}
-
-/** What a tool says when its structured result would be dropped whole. */
-function tooLarge(experimentId: string): string {
-  return `Experiment "${experimentId}" is too large to send: a host keeps at most ${structuredResultBytes} bytes of a structured result.`
 }
 
 const experimentId = z.string().min(1).describe("The experiment's id.")
@@ -70,9 +65,21 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
     { signal }: { signal: AbortSignal },
   ): Promise<ToolOutcome> => {
     const experiment = await experimentOf(experimentId, signal)
+    const text = experimentText(experiment)
     const data = { experiment }
-    if (structuredResultTooLarge(data)) throw new Refusal(tooLarge(experiment.id))
-    return { text: experimentText(experiment), data }
+    // The opening result is what a chat view keeps. Over its bound the text
+    // stands alone and the structured result is left out, so the view can
+    // read the experiment again with get_experiment.
+    if (structuredResultTooLarge(data)) return { text }
+    return { text, data }
+  }
+
+  const getExperiment = async (
+    { experimentId }: { experimentId: string },
+    { signal }: { signal: AbortSignal },
+  ): Promise<ToolOutcome> => {
+    const experiment = await experimentOf(experimentId, signal)
+    return { text: experimentText(experiment), data: { experiment } }
   }
 
   return defineExtension({
@@ -109,7 +116,7 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
         effects: "read-only",
         view: experimentView,
         callers: ["app"],
-        run: showExperiment,
+        run: getExperiment,
       }),
       defineTool({
         name: "list_runs",
@@ -122,9 +129,10 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
         run: async ({ experimentId }, { signal }) => {
           const experiment = await experimentOf(experimentId, signal)
           const runs = runsNewestFirst(experiment)
-          const data = { experimentId: experiment.id, runs }
-          if (structuredResultTooLarge(data)) throw new Refusal(tooLarge(experiment.id))
-          return { text: runsText(experiment, runs), data }
+          return {
+            text: runsText(experiment, runs),
+            data: { experimentId: experiment.id, runs },
+          }
         },
       }),
       defineTool({
@@ -140,9 +148,10 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
           const experiment = await experimentOf(experimentId, signal)
           const run = runOf(experiment, runId)
           if (run === undefined) throw new Refusal(missingRunText(experiment, runId))
-          const data = { experimentId: experiment.id, run }
-          if (structuredResultTooLarge(data)) throw new Refusal(tooLarge(experiment.id))
-          return { text: runText(experiment, run), data }
+          return {
+            text: runText(experiment, run),
+            data: { experimentId: experiment.id, run },
+          }
         },
       }),
       defineTool({

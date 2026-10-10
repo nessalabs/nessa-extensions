@@ -15,23 +15,32 @@
  *
  *   export default defineConfig({ test: { projects: unitProjects(root) } })
  */
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 
 import { moduleJudge } from "./modules.mjs"
 import { declaredPackages, units } from "./units.mjs"
 
 /**
- * The experiments kit copies import `@/…`, nessa_ui's alias, and those
- * files are inside the unit. Pointing the alias there does not widen what
- * the guard allows: the resolved file is still judged.
+ * A unit's kit copies import `@/…`. The path is that unit's tsconfig
+ * `paths`, the one declaration of the alias. Pointing Vitest there does
+ * not widen what the guard allows: the resolved file is still judged.
  */
 function kitAlias(unitDir) {
-  const src = join(unitDir, "app/kit-stand-in/src")
+  const tsconfig = join(unitDir, "tsconfig.json")
+  if (!existsSync(tsconfig)) return {}
+  let star
+  try {
+    star = JSON.parse(readFileSync(tsconfig, "utf8")).compilerOptions?.paths?.["@/*"]?.[0]
+  } catch {
+    return {}
+  }
+  if (typeof star !== "string" || !star.endsWith("/*")) return {}
+  const src = join(unitDir, star.slice(0, -2))
   if (!existsSync(src)) return {}
   return {
     resolve: {
-      alias: [{ find: /^@\//, replacement: `${src}/` }],
+      alias: [{ find: /^@\//, replacement: src.endsWith("/") ? src : `${src}/` }],
     },
   }
 }

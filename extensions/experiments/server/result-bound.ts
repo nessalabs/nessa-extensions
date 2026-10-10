@@ -1,12 +1,13 @@
 /**
- * The most bytes of JSON a tool's structured result may be. A host keeps a
- * structured result only up to this, and drops a larger one whole — the app
- * then has no experiment. 16,384 is that bound (Nessa's conversation view).
- * Text still stands on its own when the structured result is refused.
+ * The most bytes of JSON Nessa's conversation view keeps of the opening
+ * tool result. A larger structured result is dropped whole (`<=` keeps
+ * 16,384). The text stays. This is that view only: a call the app makes
+ * itself is a different bound, 56KB of the whole result, which the host
+ * enforces.
  */
 export const structuredResultBytes = 16_384
 
-/** Whether `data` would be dropped whole by a host that keeps this bound. */
+/** Whether `data` would be dropped whole from the opening tool result. */
 export function structuredResultTooLarge(data: unknown): boolean {
   return Buffer.byteLength(JSON.stringify(data)) > structuredResultBytes
 }

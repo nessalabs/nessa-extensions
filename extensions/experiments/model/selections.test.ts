@@ -63,6 +63,7 @@ describe("bestVersion", () => {
     if (last === undefined || latencyLast === undefined) {
       throw new Error("each sample kept a run")
     }
+    expect(last).toBe("r23")
     expect(bestVersion(checkout)).toEqual({ kind: "run", run: runOf(checkout, last) })
     expect(bestVersion(latency)).toEqual({
       kind: "run",
@@ -111,6 +112,9 @@ describe("climb", () => {
     expect(points.map((point) => point.at)).toEqual(
       [...points.map((point) => point.at)].sort((a, b) => a - b),
     )
+    // r20 was kept after reruns: it settled after r21 and r22, which were made after it.
+    const order = points.map((point) => point.runId)
+    expect(order.indexOf("r20")).toBeGreaterThan(order.indexOf("r22"))
   })
 
   it("never steps backwards in time when a keep settles late", () => {
@@ -225,7 +229,7 @@ describe("lineage", () => {
 describe("runsNewestFirst", () => {
   it("orders by startedAt, newest first", () => {
     const runs = runsNewestFirst(checkout)
-    expect(runs[0]!.id).toBe("r13")
+    expect(runs[0]!.id).toBe("r29")
     expect(runs.at(-1)!.id).toBe("r1")
   })
 

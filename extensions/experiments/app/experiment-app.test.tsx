@@ -115,6 +115,11 @@ async function renderApp(
     handlers: {
       callTool: ({ name, arguments: args }) => {
         calls.push(name)
+        if (name === "get_experiment") {
+          return answered(sample.title, {
+            experiment: JSON.parse(JSON.stringify(sample)),
+          })
+        }
         if (name === "list_runs") {
           const runs = runsNewestFirst(sample).map((run) => jsonRun(run))
           if (options?.listedRun !== undefined) runs.unshift(jsonRun(options.listedRun))
@@ -174,8 +179,9 @@ async function openFullscreen() {
 describe("the experiment app in the fake host", () => {
   it("opens the checkout experiment from the card into the full view, and Escape walks the trail", async () => {
     const checkout = experiment(checkoutSample)
-    const { host } = await renderApp(checkout)
+    const { host, calls } = await renderApp(checkout)
     expect(screen.getByRole("heading", { name: checkout.title })).toBeTruthy()
+    expect(calls).not.toContain("get_experiment")
     expect(screen.getByRole("img", { name: "Best so far" })).toBeTruthy()
     expect(screen.queryByRole("tab", { name: "Overview" })).toBeNull()
     expect(host.app?.capabilities.availableDisplayModes).toEqual(["inline", "fullscreen"])
@@ -494,6 +500,15 @@ describe("the experiment app in the fake host", () => {
     fireEvent.keyDown(document, { key: "Escape" })
     await settle()
     expect(screen.queryByRole("navigation", { name: "Opened run" })).toBeNull()
+  })
+
+  it("loads the experiment with get_experiment when the opening result has none", async () => {
+    const checkout = experiment(checkoutSample)
+    const { calls } = await renderApp(checkout, {
+      result: { content: [{ type: "text", text: checkout.title }] },
+    })
+    expect(screen.getByRole("heading", { name: checkout.title })).toBeTruthy()
+    expect(calls.filter((name) => name === "get_experiment")).toEqual(["get_experiment"])
   })
 
   it("counts the runs list_runs returned, not the opening snapshot", async () => {

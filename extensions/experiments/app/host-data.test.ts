@@ -38,10 +38,10 @@ describe("the tool result", () => {
     expect(loaded.experiment).not.toBe(checkout)
 
     expect(experimentFromResult(result({}, true)).status).toBe("failed")
-    expect(experimentFromResult(result({}))).toMatchObject({
-      status: "failed",
-      message: "The result has no experiment.",
-    })
+    expect(experimentFromResult(result({}))).toEqual({ status: "absent" })
+    expect(
+      experimentFromResult({ content: [{ type: "text", text: "The experiment." }] }),
+    ).toEqual({ status: "absent" })
     expect(experimentFromResult(result({ experiment: { id: "nope" } })).status).toBe(
       "failed",
     )

@@ -72,7 +72,13 @@ describe("the bin", () => {
         arguments: { experimentId: checkoutExperimentId },
       })
       expect(result.isError).toBeFalsy()
-      expect(result.structuredContent).toMatchObject({
+      expect(result.structuredContent).toBeUndefined()
+      const read = await client.callTool({
+        name: "get_experiment",
+        arguments: { experimentId: checkoutExperimentId },
+      })
+      expect(read.isError).toBeFalsy()
+      expect(read.structuredContent).toMatchObject({
         experiment: { id: checkoutExperimentId },
       })
       if (appHtml === undefined) throw new Error("the app is built")
