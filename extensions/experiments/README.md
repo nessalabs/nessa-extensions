@@ -38,12 +38,14 @@ server/           the MCP server, on @nessalabs/server-kit; runs in Node
   samples-source.ts  the samples as a source, dated from when the server starts
   text.ts         what each tool says in text, standing on its own
   view.ts         the experiment view's URI, and a placeholder document the server tests inject
+  result-bound.ts the most bytes of JSON a structured result may be
   extension.ts    experimentsExtension: the view and the five tools, over a source
   main.ts         the bin: the extension over stdio, on the samples, serving dist/app/index.html
 app/              the MCP App, in the browser
   count.ts        how a count is written; a metric's numbers stay in metric.ts
   geometry.ts     the climb's and the map's pixels
-  kit-stand-in/   a temporary copy of nessa_ui at e02b577, deleted when
+  kit-stand-in/   a temporary copy of nessa_ui at e02b577, byte for byte
+                  under src/ (stand-in.test.ts), deleted when
                   @nessalabs/ui is installable (nessa_ui#115)
   open-file.ts    opening a file or the whole change: the latest request per target
   reading.ts      what a view shows; labels from the definition, numbers from metric.ts
@@ -183,15 +185,15 @@ built into `dist/main.js`). Its tools, all read-only:
 
 `verification/capture.mjs` records the inline card and the fullscreen view
 and exits 0. The reference host (`@modelcontextprotocol/ext-apps`'s
-`AppBridge`) is given the checkout sample. Nessa is the desktop behind its
-sandbox proxy, through a real gateway and this extension's server. Nessa's
-conversation view keeps at most 16KB of a tool's structured result and drops
-a larger object whole, so the checkout result (about 232KB) arrives with no
-experiment and the app says so. The capture asks for the latency sample,
-which fits. The scenario runner's completion does not name the MCP tool, and
-Nessa attaches the forwarded structured result only when it does;
-`forward-structured.mjs` adds that name. The capture fails if the page shows
-"Blocked a connection this app didn't declare". Zod's fast path probes
+`AppBridge`) is given the checkout sample and driven in Chromium and WebKit.
+Nessa is the desktop behind its sandbox proxy, through a real gateway and
+this extension's server, in Chromium. A host keeps at most 16,384 bytes of a
+tool's structured result and drops a larger object whole, so `show_experiment`,
+`list_runs`, and `get_run` refuse a result over that and the samples that the
+server serves stay within it. The scenario runner's completion does not name
+the MCP tool, and Nessa attaches the forwarded structured result only when it
+does; `forward-structured.mjs` adds that name. The capture fails if the page
+shows "Blocked a connection this app didn't declare". Zod's fast path probes
 `new Function`, and a strict CSP reports that even when the throw is caught;
 the app sets `jitless` before any schema is built, so the probe does not run.
 An earlier shot of that banner was the fixture slot, which is not this server.

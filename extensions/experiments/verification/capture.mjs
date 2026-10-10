@@ -6,12 +6,13 @@
  * notice is a sandbox CSP violation. This app declares no network. Zod's
  * fast path probes `new Function`, which a strict CSP reports even when the
  * throw is caught; the app sets `jitless` before any schema is built so the
- * probe does not run. Nessa keeps at most 16KB of a tool's structured
- * result, so the capture asks for the latency sample (the checkout result
- * is about 232KB and would arrive with no experiment). The scenario
- * runner's completion does not name the MCP tool, and Nessa attaches the
- * forwarded result only when it does; `forward-structured.mjs` adds that
- * name.
+ * probe does not run. The reference host is driven in Chromium and in
+ * WebKit; the Chromium pass writes the reference-host shots. Nessa's
+ * conversation view keeps at most 16KB of a tool's structured result, and
+ * the checkout sample fits, so both hosts are shown that experiment. The
+ * scenario runner's completion does not name the MCP tool, and Nessa
+ * attaches the forwarded result only when it does;
+ * `forward-structured.mjs` adds that name.
  *
  *   node extensions/experiments/verification/capture.mjs
  *
@@ -65,7 +66,7 @@ const playwrightDir = readdirSync(pnpm).find((name) =>
   name.startsWith("@playwright+test@"),
 )
 if (playwrightDir === undefined) throw new Error("playwright is not installed")
-const { chromium } = await import(
+const { chromium, webkit } = await import(
   pathToFileURL(
     packageEntry(join(pnpm, playwrightDir, "node_modules/playwright/package.json"), "."),
   ).href
@@ -105,7 +106,7 @@ function serve(root) {
   })
 }
 
-async function referenceShots(browser) {
+async function buildReferenceHost() {
   await build({
     root: hostDir,
     configFile: false,
@@ -119,7 +120,10 @@ async function referenceShots(browser) {
       rolldownOptions: { input: { reference: join(hostDir, "reference.html") } },
     },
   })
-  const site = await serve(join(hostDir, "dist"))
+}
+
+/** Drive the reference host. Chromium writes the shots; WebKit asserts the same path. */
+async function driveReference(browser, origin, writeShots) {
   const page = await browser.newPage({
     viewport: { width: 1100, height: 900 },
     deviceScaleFactor: 1,
@@ -131,7 +135,7 @@ async function referenceShots(browser) {
     if (message.text().includes("favicon")) return
     errors.push(message.text())
   })
-  await page.goto(`${site.origin}/reference.html`)
+  await page.goto(`${origin}/reference.html`)
   await page.waitForFunction(() =>
     document.querySelector("iframe")?.hasAttribute("data-ready"),
   )
@@ -140,6 +144,7 @@ async function referenceShots(browser) {
   const app = page.frameLocator("iframe")
   await app.getByRole("heading", { name: "Hill-climb checkout support" }).waitFor()
   const shot = async (name) => {
+    if (!writeShots) return
     await page.locator("#host").screenshot({ path: join(shots, name) })
   }
   await shot("reference-host-card.png")
@@ -151,6 +156,12 @@ async function referenceShots(browser) {
   await shot("reference-host-areas.png")
   await app.getByRole("tab", { name: "Runs" }).click()
   await app.getByRole("button", { name: "Queued", exact: true }).click()
+  const runsSubtitle = app.locator("#panel-runs .page-subtitle")
+  await runsSubtitle.waitFor()
+  const runsCount = await runsSubtitle.innerText()
+  if (!/^\d+ runs$/.test(runsCount) || runsCount === "0 runs") {
+    throw new Error(`the runs subtitle was ${JSON.stringify(runsCount)}`)
+  }
   await shot("reference-host-runs.png")
   await app.getByRole("button", { name: "All", exact: true }).click()
   await app
@@ -159,8 +170,9 @@ async function referenceShots(browser) {
     .click()
   await app.getByRole("navigation", { name: "Opened run" }).waitFor()
   await shot("reference-host-run.png")
+  await page.keyboard.press("Escape")
+  await app.getByRole("navigation", { name: "Opened run" }).waitFor({ state: "detached" })
   await page.close()
-  site.close()
   if (errors.length > 0) throw new Error(errors.join("\n"))
 }
 
@@ -303,7 +315,7 @@ try {
   writeSync(2, "driver: ready\\n")
   // The send receipt can stay outstanding after the turn has finished.
   // Screenshots wait on the app; this process waits on the capture's stdin.
-  const sent = client.conversation.send(conversationId, "Show the search latency experiment.")
+  const sent = client.conversation.send(conversationId, "Show the checkout support experiment.")
   sent.catch((error) => writeSync(2, "driver: send " + String(error) + "\\n"))
   await new Promise((resolve) => {
     if (process.stdin.readableEnded) resolve()
@@ -375,11 +387,11 @@ async function nessaShots(browser) {
       turns: [
         {
           steps: [
-            { do: "text", chunks: ["Showing the search latency experiment."] },
+            { do: "text", chunks: ["Showing the checkout support experiment."] },
             {
               do: "tool",
               tool: "show_experiment",
-              arguments: { experimentId: "search-latency" },
+              arguments: { experimentId: "checkout-hillclimb" },
             },
             { do: "end" },
           ],
@@ -440,7 +452,7 @@ async function nessaShots(browser) {
       throw new Error(`the experiment did not appear\n${text}`)
     }
     log("inline frame attached")
-    const titled = await titledApp(page, "inline", "Bring search p95 down", 45_000)
+    const titled = await titledApp(page, "inline", "Hill-climb checkout support", 45_000)
     if (!titled) {
       await page
         .screenshot({ path: "/tmp/nessa-fail.png", timeout: 5_000 })
@@ -511,17 +523,24 @@ await build({
   logLevel: "error",
 })
 const browser = await chromium.launch({ channel: "chrome", headless: true })
+const safari = await webkit.launch({ headless: true })
+let site
 try {
   log("reference host")
-  await referenceShots(browser)
+  await buildReferenceHost()
+  site = await serve(join(hostDir, "dist"))
+  await driveReference(browser, site.origin, true)
+  log("reference host (webkit)")
+  await driveReference(safari, site.origin, false)
   log("nessa")
   await nessaShots(browser)
 } catch (error) {
   log(error instanceof Error ? (error.stack ?? error.message) : String(error))
   throw error
 } finally {
+  site?.close()
   await Promise.race([
-    browser.close().catch(() => {}),
+    Promise.all([browser.close().catch(() => {}), safari.close().catch(() => {})]),
     new Promise((resolve) => setTimeout(resolve, 8_000)),
   ])
   rmSync(join(hostDir, "dist"), { recursive: true, force: true })

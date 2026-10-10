@@ -76,7 +76,7 @@ describe("cases and changes", () => {
     const checkout = experiment(checkoutSample)
     const checkoutRun = runWithCases(checkout)
     if (checkoutRun === undefined) throw new Error("checkout has a run with cases")
-    expect(caseResults(checkout, checkoutRun)?.fixed).toMatch(/test cases fixed/)
+    expect(caseResults(checkout, checkoutRun)?.fixed).toMatch(/test cases? fixed/)
 
     const latency = experiment(latencySample)
     expect(latency.runs.every((run) => caseResults(latency, run) === undefined)).toBe(

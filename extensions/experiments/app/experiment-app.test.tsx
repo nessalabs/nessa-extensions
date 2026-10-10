@@ -87,6 +87,8 @@ async function renderApp(
     readonly capabilities?: HostCapabilities
     /** `get_run` answers `{ id }` only, which is not a run. */
     readonly bareRun?: boolean
+    /** A run `list_runs` adds in front of the opening snapshot's runs. */
+    readonly listedRun?: Run
   },
 ) {
   const modes = options?.modes ?? ["inline", "fullscreen"]
@@ -114,9 +116,11 @@ async function renderApp(
       callTool: ({ name, arguments: args }) => {
         calls.push(name)
         if (name === "list_runs") {
+          const runs = runsNewestFirst(sample).map((run) => jsonRun(run))
+          if (options?.listedRun !== undefined) runs.unshift(jsonRun(options.listedRun))
           return answered("runs", {
             experimentId: sample.id,
-            runs: runsNewestFirst(sample).map((run) => jsonRun(run)),
+            runs,
           })
         }
         if (name === "get_run") {
@@ -490,6 +494,24 @@ describe("the experiment app in the fake host", () => {
     fireEvent.keyDown(document, { key: "Escape" })
     await settle()
     expect(screen.queryByRole("navigation", { name: "Opened run" })).toBeNull()
+  })
+
+  it("counts the runs list_runs returned, not the opening snapshot", async () => {
+    const checkout = experiment(checkoutSample)
+    const source = checkout.runs[0]
+    if (source === undefined) throw new Error("the sample has a run")
+    const extra = {
+      ...(JSON.parse(JSON.stringify(source)) as Run),
+      id: "r100",
+      number: 100,
+    }
+    await renderApp(checkout, { listedRun: extra })
+    await openFullscreen()
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }))
+    await settle()
+    const subtitle = screen.getByText(`${checkout.runs.length + 1} runs`, { exact: true })
+    expect(subtitle.className).toContain("page-subtitle")
+    expect(screen.queryByText(`${checkout.runs.length} runs`, { exact: true })).toBeNull()
   })
 
   it("Escape in Find a file clears the query and leaves the run open", async () => {

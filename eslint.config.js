@@ -4,7 +4,12 @@ import tseslint from "typescript-eslint"
 
 export default tseslint.config(
   {
-    ignores: ["**/node_modules", "**/dist"],
+    ignores: [
+      "**/node_modules",
+      "**/dist",
+      // Byte-for-byte nessa_ui at e02b577a. stand-in.test.ts is the check.
+      "extensions/experiments/app/kit-stand-in/src/**",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

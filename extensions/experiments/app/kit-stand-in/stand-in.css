@@ -1,21 +1,27 @@
-.delta {
+/*
+ * What the copied components draw with Tailwind, written for this app. The
+ * copies under src/ are not edited to add these selectors: they already
+ * expose data-slot, data-tone, and the CSS variables the classes set.
+ */
+
+[data-slot="delta"] {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.delta[data-tone="good"] {
+[data-slot="delta"][data-tone="good"] {
   color: var(--nessa-market-gain);
 }
 
-.delta[data-tone="bad"] {
+[data-slot="delta"][data-tone="bad"] {
   color: var(--nessa-market-loss);
 }
 
-.delta[data-tone="neutral"] {
+[data-slot="delta"][data-tone="neutral"] {
   color: var(--muted-foreground);
 }
 
-.status {
+[data-slot="status-label"] {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -26,56 +32,50 @@
   white-space: nowrap;
 }
 
-.status[data-tone="neutral"] {
+[data-slot="status-label"][data-tone="neutral"] {
   color: var(--muted-foreground);
 }
 
-.status-mark {
+[data-slot="status-label-mark"] {
   display: flex;
   flex: none;
+  align-items: center;
   color: var(--foreground);
 }
 
-.status[data-tone="good"] .status-mark {
+[data-slot="status-label"][data-tone="good"] [data-slot="status-label-mark"] {
   color: var(--nessa-market-gain);
 }
 
-.status[data-tone="bad"] .status-mark {
+[data-slot="status-label"][data-tone="bad"] [data-slot="status-label-mark"] {
   color: var(--nessa-market-loss);
 }
 
-.status[data-tone="neutral"] .status-mark {
+[data-slot="status-label"][data-tone="neutral"] [data-slot="status-label-mark"] {
   color: var(--muted-foreground);
 }
 
-.status-mark svg {
+[data-slot="status-label-mark"] svg {
   width: 12px;
   height: 12px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  flex: none;
 }
 
-.status[data-tone="active"] .status-mark svg {
-  fill: currentColor;
-  stroke: none;
-}
-
-.status-word {
+[data-slot="status-label-word"] {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.stat {
+[data-slot="stat"] {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 0.15rem;
 }
 
-.stat-caption {
+[data-slot="stat-caption"] {
+  display: block;
   overflow: hidden;
   color: var(--muted-foreground);
   font-size: var(--nessa-font-size-2);
@@ -84,77 +84,87 @@
   white-space: nowrap;
 }
 
-.stat-figure {
+[data-slot="stat-figure"] {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
+  min-width: 0;
 }
 
-.stat-value {
+[data-slot="stat-value"] {
   color: var(--foreground);
   font-size: var(--nessa-font-size-5);
   font-variant-numeric: tabular-nums;
+  font-weight: 500;
   line-height: var(--nessa-line-height-5);
 }
 
-.meter {
+[data-slot="stat-of"] {
+  color: var(--muted-foreground);
+  font-weight: 400;
+}
+
+[data-slot="meter"] {
   display: block;
   position: relative;
+  width: 100%;
+  min-width: 2.5rem;
   height: 6px;
   overflow: hidden;
   border-radius: 999px;
   background: color-mix(in oklab, var(--foreground) 12%, transparent);
 }
 
-.meter-fill {
-  display: block;
-  height: 100%;
+[data-slot="meter-fill"] {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--nessa-meter-fill);
   border-radius: inherit;
   background: var(--foreground);
 }
 
-.meter[data-tone="good"] .meter-fill {
+[data-slot="meter"][data-tone="good"] [data-slot="meter-fill"] {
   background: var(--nessa-market-gain);
 }
 
-.meter[data-tone="bad"] .meter-fill {
+[data-slot="meter"][data-tone="bad"] [data-slot="meter-fill"] {
   background: var(--nessa-market-loss);
 }
 
-.bar {
+[data-slot="proportion-bar"] {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 8px;
-  min-width: 0;
 }
 
-.bar-track {
+[data-slot="proportion-bar-track"] {
   display: flex;
   width: 100%;
   height: 10px;
   overflow: hidden;
   border-radius: 999px;
+  background: var(--nessa-proportion-bar-track);
 }
 
-.bar-track-sm {
-  height: 6px;
-}
-
-.bar-fill {
+[data-slot="proportion-bar-fill"] {
   display: flex;
   height: 100%;
   min-width: max-content;
   gap: 2px;
 }
 
-.bar-segment {
+[data-slot="proportion-bar-segment"] {
   display: block;
   height: 100%;
   min-width: 4px;
   flex-basis: 0;
+  background: var(--nessa-proportion-bar-color);
 }
 
-.bar-legend {
+[data-slot="proportion-bar-legend"] {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 16px;
@@ -165,24 +175,21 @@
   font-size: var(--nessa-font-size-2);
 }
 
-.bar-legend li {
+[data-slot="proportion-bar-legend-item"] {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
-.bar-swatch {
+[data-slot="proportion-bar-legend-item"] > span[aria-hidden="true"] {
   width: 10px;
   height: 10px;
+  flex: none;
   border-radius: 999px;
+  background: var(--nessa-proportion-bar-color);
 }
 
-.bar-legend-value {
-  color: var(--foreground);
-  font-variant-numeric: tabular-nums;
-}
-
-.virtual-list {
+[data-slot="virtual-list"] {
   position: relative;
   margin: 0;
   padding: 0;
@@ -190,20 +197,19 @@
   list-style: none;
 }
 
-.virtual-list-spacer {
+[data-slot="virtual-list"] > [role="presentation"] {
   pointer-events: none;
 }
 
-.virtual-list-row {
+[data-slot="virtual-list"] > [role="listitem"] {
   position: absolute;
   right: 0;
   left: 0;
 }
 
-.chart-card {
+[data-slot="chart-tooltip"] {
   position: absolute;
   z-index: 1;
-  pointer-events: none;
   width: max-content;
   max-width: 240px;
   padding: 8px 10px;
@@ -213,5 +219,10 @@
   color: var(--popover-foreground);
   font-size: var(--nessa-font-size-3);
   line-height: var(--nessa-line-height-3);
+  pointer-events: none;
   box-shadow: 0 8px 24px color-mix(in oklab, var(--foreground) 12%, transparent);
+}
+
+[data-slot="chart-tooltip"][data-placed="false"] {
+  visibility: hidden;
 }

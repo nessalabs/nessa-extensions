@@ -14,9 +14,14 @@
  * whose `buildStart` then sees the public directory and refuses a file in
  * it. `config` is what inlines the script, the styles, and every asset.
  */
+import { fileURLToPath } from "node:url"
+
 import { defineConfig, type Plugin } from "vite"
 
 import { mcpApp } from "@nessalabs/app-shell/build"
+
+/** The byte-copied kit imports `@/…` (nessa_ui's alias). It stays inside this package. */
+const kitSrc = fileURLToPath(new URL("./app/kit-stand-in/src", import.meta.url))
 
 function handler<Args extends readonly unknown[], Result>(
   hook: ((...args: Args) => Result) | { handler: (...args: Args) => Result } | undefined,
@@ -55,6 +60,9 @@ function experimentsApp(): Plugin {
 
 export default defineConfig({
   base: "./",
+  resolve: {
+    alias: [{ find: /^@\//, replacement: `${kitSrc}/` }],
+  },
   plugins: [experimentsApp()],
   environments: {
     client: {

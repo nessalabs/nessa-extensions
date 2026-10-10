@@ -210,7 +210,9 @@ export function ExperimentSurface({
           >
             <RunsView
               title="Runs"
-              subtitle={runsSubtitle(experiment)}
+              subtitle={runsSubtitle(
+                listed.status === "ready" ? listed.runs.length : experiment.runs.length,
+              )}
               verdicts={labelsOfVerdicts}
               selected={verdict}
               onSelect={setVerdict}

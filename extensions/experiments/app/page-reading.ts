@@ -286,8 +286,7 @@ export function lineageSteps(
   ]
 }
 
-/** The runs view's subtitle: how many there are. */
-export function runsSubtitle(experiment: Experiment): string {
-  const count = experiment.runs.length
+/** The runs view's subtitle: how many runs the list it is showing has. */
+export function runsSubtitle(count: number): string {
   return count === 1 ? "1 run" : `${formatCount(count)} runs`
 }

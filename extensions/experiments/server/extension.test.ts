@@ -7,9 +7,10 @@ import {
   checkoutExperimentId,
   checkoutSample,
   latencyExperimentId,
-  scaleExperimentId,
+  scaleSample,
 } from "../samples/index.ts"
 import { experimentsExtension } from "./extension.ts"
+import { structuredResultBytes } from "./result-bound.ts"
 import { samplesSource } from "./samples-source.ts"
 import type { ExperimentSource, FileOpening } from "./source.ts"
 import { experimentText, runText } from "./text.ts"
@@ -195,7 +196,7 @@ describe("show_experiment", () => {
     },
   )
 
-  it.each([checkoutExperimentId, latencyExperimentId, scaleExperimentId])(
+  it.each([checkoutExperimentId, latencyExperimentId])(
     "shows the sample %s",
     async (id) => {
       const client = await connect(clients[0])
@@ -208,6 +209,57 @@ describe("show_experiment", () => {
     },
   )
 
+  it("keeps every served structured result within what a host keeps", async () => {
+    const client = await connect(clients[0]!)
+    for (const id of [checkoutExperimentId, latencyExperimentId]) {
+      const shown = await client.callTool({
+        name: "show_experiment",
+        arguments: { experimentId: id },
+      })
+      const listed = await client.callTool({
+        name: "list_runs",
+        arguments: { experimentId: id },
+      })
+      const runs = (listed.structuredContent as { runs: { id: string }[] }).runs
+      expect(
+        Buffer.byteLength(JSON.stringify(shown.structuredContent)),
+      ).toBeLessThanOrEqual(structuredResultBytes)
+      expect(
+        Buffer.byteLength(JSON.stringify(listed.structuredContent)),
+      ).toBeLessThanOrEqual(structuredResultBytes)
+      for (const run of runs) {
+        const read = await client.callTool({
+          name: "get_run",
+          arguments: { experimentId: id, runId: run.id },
+        })
+        expect(
+          Buffer.byteLength(JSON.stringify(read.structuredContent)),
+        ).toBeLessThanOrEqual(structuredResultBytes)
+      }
+    }
+  })
+
+  it("refuses a structured result a host would drop whole", async () => {
+    const client = await connect(
+      clients[0]!,
+      experimentsExtension({
+        source: {
+          ids: async () => ["search-latency-at-scale"],
+          experiment: async () => scaleSample(startedAt),
+          openFile: async () => ({ kind: "unavailable", reason: "none" }),
+        },
+        html: () => placeholderHtml,
+      }),
+    )
+    const result = await client.callTool({
+      name: "show_experiment",
+      arguments: { experimentId: "search-latency-at-scale" },
+    })
+    expect(result.isError).toBe(true)
+    expect(textOf(result)).toContain(`${structuredResultBytes} bytes`)
+    expect(result.structuredContent).toBeUndefined()
+  })
+
   it("says which experiments there are when asked for one there is not", async () => {
     const client = await connect(clients[1])
     const result = await client.callTool({
@@ -216,7 +268,7 @@ describe("show_experiment", () => {
     })
     expect(result.isError).toBe(true)
     expect(textOf(result)).toBe(
-      `show_experiment failed: There is no experiment "nope". The experiments are: ${checkoutExperimentId}, ${latencyExperimentId}, ${scaleExperimentId}.`,
+      `show_experiment failed: There is no experiment "nope". The experiments are: ${checkoutExperimentId}, ${latencyExperimentId}.`,
     )
     expect(result.structuredContent).toBeUndefined()
   })
@@ -300,7 +352,7 @@ describe("show_experiment", () => {
     })
     expect(result.isError).toBe(true)
     expect(textOf(result)).toBe(
-      `show_experiment failed: There is no experiment "nope". The experiments are: ${checkoutExperimentId}, ${latencyExperimentId}, ${scaleExperimentId}.`,
+      `show_experiment failed: There is no experiment "nope". The experiments are: ${checkoutExperimentId}, ${latencyExperimentId}.`,
     )
   })
 

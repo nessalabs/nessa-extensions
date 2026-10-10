@@ -15,10 +15,26 @@
  *
  *   export default defineConfig({ test: { projects: unitProjects(root) } })
  */
+import { existsSync } from "node:fs"
 import { join } from "node:path"
 
 import { moduleJudge } from "./modules.mjs"
 import { declaredPackages, units } from "./units.mjs"
+
+/**
+ * The experiments kit copies import `@/…`, nessa_ui's alias, and those
+ * files are inside the unit. Pointing the alias there does not widen what
+ * the guard allows: the resolved file is still judged.
+ */
+function kitAlias(unitDir) {
+  const src = join(unitDir, "app/kit-stand-in/src")
+  if (!existsSync(src)) return {}
+  return {
+    resolve: {
+      alias: [{ find: /^@\//, replacement: `${src}/` }],
+    },
+  }
+}
 
 /**
  * One Vitest project per unit under `root` (a real path), each with the
@@ -33,6 +49,7 @@ export function unitProjects(root) {
       base: join(root, unit),
     })
     return {
+      ...kitAlias(join(root, unit)),
       plugins: [
         {
           name: "nessa:boundary-tests",

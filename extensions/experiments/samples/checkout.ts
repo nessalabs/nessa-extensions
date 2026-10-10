@@ -93,20 +93,15 @@ type AgentId = (typeof agents)[number]["id"]
 const slices: readonly SliceKind[] = [
   {
     name: "Refunds",
-    share: 0.24,
+    share: 0.5,
     titles: ["Refund for a damaged item", "Refund outside the 30-day window"],
   },
   {
     name: "Where is my order",
-    share: 0.18,
-    titles: ["Order shows delivered but never arrived", "Tracking stuck for a week"],
+    share: 0.3,
+    titles: ["Order shows delivered but never arrived"],
   },
-  { name: "Partial refunds", share: 0.12, titles: ["Refund one item of three"] },
-  { name: "Escalations", share: 0.1, titles: ["Refund over $200 without a manager"] },
-  { name: "Cancellations", share: 0.1, titles: ["Cancel after dispatch"] },
-  { name: "Address changes", share: 0.09, titles: ["Change address after dispatch"] },
-  { name: "Promo codes", share: 0.09, titles: ["Code rejected at checkout"] },
-  { name: "Account & login", share: 0.08, titles: ["Order placed as a guest"] },
+  { name: "Cancellations", share: 0.2, titles: ["Cancel after dispatch"] },
 ]
 
 type Settled = "kept" | "overfit" | "regressed" | "flat" | "costly"
@@ -175,135 +170,12 @@ const history: readonly Planned[] = [
     52,
   ],
   ["harness", "sable", "Runs order lookups in parallel.", 2.2, 1.9, "kept", 58],
-  [
-    "model",
-    "pike",
-    "Runs the agent at medium effort.",
-    -3.4,
-    -4.1,
-    "regressed",
-    63,
-    -0.38,
-  ],
-  [
-    "prompt",
-    "tamsin",
-    "Asks for the order number before anything else.",
-    0.4,
-    0.2,
-    "flat",
-    69,
-  ],
-  [
-    "tools",
-    "juno",
-    "Documents issue_refund's partial-amount field.",
-    1.9,
-    1.6,
-    "kept",
-    74,
-  ],
-  [
-    "retrieval",
-    "orla",
-    "Includes each policy's effective date in its chunk.",
-    0.3,
-    -0.2,
-    "flat",
-    80,
-  ],
-  ["prompt", "wren", "Quotes policy text verbatim.", 2.6, 0.1, "overfit", 85],
-  [
-    "harness",
-    "sable",
-    "Surfaces tool errors to the model as text.",
-    0.9,
-    0.6,
-    "flat",
-    91,
-  ],
-  [
-    "model",
-    "pike",
-    "Runs escalations only at high effort.",
-    1.1,
-    0.7,
-    "costly",
-    96,
-    0.22,
-  ],
-  [
-    "prompt",
-    "tamsin",
-    "Confirms the resolution back to the customer.",
-    1.8,
-    1.4,
-    "kept",
-    102,
-  ],
-  [
-    "tools",
-    "juno",
-    "Merges get_shipment into lookup_order.",
-    -0.8,
-    -1.4,
-    "regressed",
-    107,
-  ],
-  [
-    "retrieval",
-    "orla",
-    "Retrieves policy by intent, not by keywords.",
-    1.5,
-    1.2,
-    "kept",
-    113,
-  ],
-  ["harness", "sable", "Caps tool calls per turn at 12.", -0.2, 0.1, "flat", 118, -0.05],
-  [
-    "model",
-    "pike",
-    "Routes status checks to a smaller model.",
-    -0.4,
-    -0.6,
-    "flat",
-    124,
-    -0.31,
-  ],
-  [
-    "prompt",
-    "tamsin",
-    "Handles 'where is my order' before refunds.",
-    2.3,
-    1.8,
-    "kept",
-    146,
-  ],
-  [
-    "harness",
-    "sable",
-    "Streams tool results into the context.",
-    -0.9,
-    -2.0,
-    "regressed",
-    151,
-  ],
-  [
-    "prompt",
-    "wren",
-    "Orders rules: safety, policy, then tone.",
-    1.9,
-    0.4,
-    "overfit",
-    173,
-  ],
 ]
 
 /** Being evaluated now: area, agent, summary, start, and cases done. */
 const live: readonly (readonly [AreaId, AgentId, string, number, number])[] = [
   ["prompt", "tamsin", "Asks one clarifying question when intent is unclear.", 181, 3920],
   ["tools", "juno", "Describes error codes in lookup_order's schema.", 183, 6160],
-  ["harness", "sable", "Validates refund amounts before calling the tool.", 184, 7000],
 ]
 
 /** Written, waiting for an evaluator. */
@@ -330,15 +202,16 @@ const reasons: Record<Settled, string> = {
   costly: "Test rose, but cost per task went past the limit. Reverted.",
 }
 
-const testCases = 2400
+const testCases = 40
 const round = (value: number, decimals: number) => Number(value.toFixed(decimals))
 
 /** The checkout-support hill-climb, begun at `startedAt`. */
 export function checkoutSample(startedAt: number): ExperimentInput {
   const at = (after: number) => startedAt + minutes(after)
   const areaOf = (areaId: AreaId) => areasById[areaId]
-  const fileCount = (number: number, areaId: AreaId) =>
-    number === 16 ? 214 : areaId === "harness" ? 3 + (number % 12) : 1 + (number % 3)
+  // Two files a run: enough to open and to find, and small enough that the
+  // experiment's structured result stays within what a host keeps.
+  const fileCount = 2
 
   const baseline = {
     id: "baseline",
@@ -394,11 +267,9 @@ export function checkoutSample(startedAt: number): ExperimentInput {
         parent.cost * (1 + (costChange ?? (number % 5) * 0.01 - 0.02)),
         2,
       )
-      // Run 20's keep was decided after reruns, so it settled late: after
-      // runs made after it, and before the next keep.
-      const settledAt = at(startedAfter + 4 + (number % 5) + (number === 20 ? 24 : 0))
+      const settledAt = at(startedAfter + 4 + (number % 5))
       const net = Math.round((test / 100) * testCases)
-      const churn = 12 + (number % 7) * 3
+      const churn = 1
       // Its slices start where its parent's ended, and its cases agree with
       // what its siblings say of their parent.
       const { cases, states } = casesFor(
@@ -428,13 +299,7 @@ export function checkoutSample(startedAt: number): ExperimentInput {
         areaId,
         agentId,
         cases,
-        change: changeFor(
-          id,
-          summary,
-          area.folders,
-          area.extension,
-          fileCount(number, areaId),
-        ),
+        change: changeFor(id, summary, area.folders, area.extension, fileCount),
       })
       if (verdict === "kept") {
         versions.push({
@@ -504,14 +369,15 @@ export function checkoutSample(startedAt: number): ExperimentInput {
       },
       {
         tone: "warning",
-        text: "Three prompt changes in a row overfit; the prompt area is trying examples instead of rules.",
-        at: at(180),
+        text: "A prompt change overfit: it learned the train cases, not the task.",
+        at: at(50),
+        runId: "r8",
       },
       {
         tone: "neutral",
-        text: "Run 20's keep held after two reruns.",
-        at: at(141),
-        runId: "r20",
+        text: "Run 10's keep is the best so far.",
+        at: at(60),
+        runId: "r10",
       },
     ],
     definition: {
@@ -555,7 +421,7 @@ export function checkoutSample(startedAt: number): ExperimentInput {
         id,
         name,
         since: run === undefined ? at(175) : run.startedAt,
-        brief: `Improve the ${areaOf(areaId).name.toLowerCase()} of the checkout support agent, one change at a time, from the best version so far.`,
+        brief: `Improve the ${areaOf(areaId).name.toLowerCase()}, one change at a time.`,
         areaId,
         model,
         activity:

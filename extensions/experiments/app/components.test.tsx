@@ -128,8 +128,8 @@ describe("the components in the fake host", () => {
     expect(textOf("areas")).toContain("System prompt")
     expect(textOf("verdicts")).toContain("Kept")
     expect(textOf("verdicts")).toContain("Too costly")
-    expect(textOf("cases")).toMatch(/test cases fixed/)
-    expect(textOf("cases")).toMatch(/test cases broken/)
+    expect(textOf("cases")).toMatch(/test cases? fixed/)
+    expect(textOf("cases")).toMatch(/test cases? broken/)
     expect(screen.getByRole("button", { name: "Open change" })).toBeTruthy()
     expect(screen.getByRole("textbox", { name: "Find a file" })).toBeTruthy()
 

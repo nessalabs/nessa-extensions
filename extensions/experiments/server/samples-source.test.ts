@@ -5,7 +5,6 @@ import {
   checkoutExperimentId,
   checkoutSample,
   latencyExperimentId,
-  scaleExperimentId,
 } from "../samples/index.ts"
 import { samplesSource } from "./samples-source.ts"
 
@@ -15,12 +14,8 @@ const signal = new AbortController().signal
 describe("samplesSource", () => {
   const source = samplesSource(startedAt)
 
-  it("has the three samples, each valid and dated from startedAt", async () => {
-    expect(await source.ids(signal)).toEqual([
-      checkoutExperimentId,
-      latencyExperimentId,
-      scaleExperimentId,
-    ])
+  it("has the checkout and latency samples, each valid and dated from startedAt", async () => {
+    expect(await source.ids(signal)).toEqual([checkoutExperimentId, latencyExperimentId])
     for (const id of await source.ids(signal)) {
       const validation = validateExperiment(await source.experiment(id, signal))
       expect(validation.kind).toBe("valid")

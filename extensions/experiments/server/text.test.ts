@@ -54,7 +54,7 @@ describe("experimentText", () => {
     const text = experimentText(validated(checkoutSample(startedAt)))
     expect(text).toContain("\nReference: Best model, max effort, 81.5%.\n")
     expect(text).toMatch(
-      /\nRuns: 29 of a budget of 60; 7 kept, 18 rejected, 4 pending\.\n/,
+      /\nRuns: 13 of a budget of 60; 3 kept, 7 rejected, 3 pending\.\n/,
     )
     expect(text).toContain(
       "\nAreas: System prompt, Tool descriptions, Policy retrieval, Model & effort, Harness.\nAgents: 6.\n",

@@ -2,3 +2,5 @@ node_modules
 dist
 pnpm-lock.yaml
 *.md
+# Byte-for-byte nessa_ui at e02b577a. Formatting them is a drift.
+extensions/experiments/app/kit-stand-in/src
