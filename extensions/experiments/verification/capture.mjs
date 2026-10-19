@@ -9,11 +9,9 @@
  * gateway and this extension's built server, writes the Nessa shots.
  * Exits 0 when the fake-host pass holds and the shots are written.
  *
- * Needs Google Chrome and Playwright's WebKit installed. Chromium launches
- * with `channel: "chrome"`, so Chrome itself has to be on the machine.
- * WebKit is `webkit.launch()` from the Playwright package this repo
- * installs; its browser binary has to be installed too (`playwright
- * install webkit` when that launch cannot find it).
+ * Needs the pinned Playwright Chromium and WebKit already installed.
+ * Both launch from this repo's Playwright package; this script does not
+ * install browsers or substitute another channel when one is absent.
  *
  * A page that shows "Blocked a connection this app didn't declare" fails
  * the run: that notice is a sandbox CSP violation. This app declares no
@@ -36,6 +34,7 @@ import { tmpdir } from "node:os"
 import { createServer } from "node:http"
 import {
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -45,6 +44,10 @@ import {
 import { readFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+
+import { captureDriver } from "./capture-driver.ts"
+import { CaptureCalls } from "./capture-calls.ts"
+import { checkoutSample, scaleSample } from "../samples/index.ts"
 
 import { build } from "vite"
 
@@ -338,86 +341,8 @@ async function stopChild(child) {
   await wait(2_000)
 }
 
-const driver = `
-import { randomUUID } from "node:crypto"
-import { readFileSync, writeSync } from "node:fs"
-import { resolve } from "node:path"
-import { MODELS, startLocalGateway } from "./scripts/mcp-test-server/local-gateway.mjs"
-import { freePort, startDevServer } from "./verification/desktop/scripts/lib/server.mjs"
-import { register } from "tsx/esm/api"
-
-register()
-const { NessaClient } = await import("@nessa/client")
-
-const agent = "claude"
-const scenario = process.env.EXPERIMENTS_SCENARIO
-const server = process.env.EXPERIMENTS_SERVER
-const port = await freePort()
-const gateway = await startLocalGateway({
-  agent,
-  port,
-  instance: "experiments-shot",
-  agentArgv: [
-    process.execPath,
-    "--import",
-    process.env.EXPERIMENTS_FORWARD_HOOK,
-    resolve("scripts/mcp-test-server/scripted-agent.mjs"),
-    agent,
-    "--scenario",
-    scenario,
-  ],
-  model: MODELS[agent],
-  mcpServer: { command: process.execPath, args: [server] },
-  signedOut: true,
-})
-let dev
-let client
-try {
-  dev = await startDevServer(
-    {},
-    {
-      NESSA_STAGE: "ci",
-      VITE_NESSA_STAGE: "ci",
-      NESSA_BROWSER_GATEWAY_URL: gateway.url,
-    },
-  )
-  const token = readFileSync(gateway.token, "utf8").trim()
-  client = await NessaClient.connect({
-    stage: "ci",
-    url: gateway.url.replace(/^http/, "ws"),
-    role: "surface",
-    surface: { kind: "panel", instance: "experiments-shot" },
-    client: { id: "experiments-shot", version: "0.1.0", platform: "node" },
-    profile: "product",
-    auth: { credential: token },
-  })
-  const conversationId = randomUUID()
-  await client.conversation.create({ conversationId, agent, approvalMode: "full" })
-  writeSync(1, JSON.stringify({ url: dev.url, token }) + "\\n")
-  writeSync(2, "driver: ready\\n")
-  // The send receipt can stay outstanding after the turn has finished.
-  // Screenshots wait on the app; this process waits on the capture's stdin.
-  const sent = client.conversation.send(conversationId, "Show the checkout support experiment.")
-  sent.catch((error) => writeSync(2, "driver: send " + String(error) + "\\n"))
-  await new Promise((resolve) => {
-    if (process.stdin.readableEnded) resolve()
-    else process.stdin.once("end", resolve)
-  })
-} finally {
-  const force = setTimeout(() => process.exit(0), 8_000)
-  try {
-    client?.close()
-    await dev?.close()
-    await gateway.stop()
-  } catch (error) {
-    writeSync(2, "driver: stop " + String(error) + "\\n")
-  }
-  clearTimeout(force)
-}
-`
-
 function startGateway(scenarioPath, serverPath) {
-  const child = spawn(process.execPath, ["--input-type=module", "-e", driver], {
+  const child = spawn(process.execPath, ["--input-type=module", "-e", captureDriver], {
     cwd: nessaRoot,
     env: {
       ...process.env,
@@ -462,7 +387,15 @@ function startGateway(scenarioPath, serverPath) {
 }
 
 async function nessaShots(browser, engine) {
-  const scenarioPath = join(tmpdir(), "experiments-shot-scenario.json")
+  const fixture = scaleSample(Date.UTC(2026, 9, 1))
+  const calls = largeMode
+    ? new CaptureCalls(
+        fixture,
+        Buffer.byteLength(JSON.stringify(checkoutSample(fixture.startedAt))),
+      )
+    : null
+  const scenarioDirectory = mkdtempSync(join(tmpdir(), "experiments-capture-"))
+  const scenarioPath = join(scenarioDirectory, "scenario.json")
   writeFileSync(
     scenarioPath,
     JSON.stringify({
@@ -483,6 +416,7 @@ async function nessaShots(browser, engine) {
   )
   const stack = startGateway(scenarioPath, nessaSample.server)
   let page
+  let passed = false
   try {
     log("waiting for the gateway")
     const { url, token } = await stack.ready
@@ -491,6 +425,7 @@ async function nessaShots(browser, engine) {
       viewport: { width: 1280, height: 900 },
       deviceScaleFactor: 1,
     })
+    if (calls) page.on("websocket", (socket) => calls.attach(socket))
     page.setDefaultTimeout(15_000)
     page.setDefaultNavigationTimeout(20_000)
     await page.addInitScript(() => {
@@ -526,7 +461,7 @@ async function nessaShots(browser, engine) {
     const inline = await appDocument(page, "inline", 45_000)
     if (!inline) {
       await page
-        .screenshot({ path: "/tmp/nessa-fail.png", timeout: 5_000 })
+        .screenshot({ path: join(shots, `nessa-${engine}-fail.png`), timeout: 5_000 })
         .catch(() => {})
       const text = await page
         .evaluate(() => document.body?.innerText?.slice(0, 800) ?? "")
@@ -537,7 +472,7 @@ async function nessaShots(browser, engine) {
     const titled = await titledApp(page, "inline", nessaSample.title, 45_000)
     if (!titled) {
       await page
-        .screenshot({ path: "/tmp/nessa-fail.png", timeout: 5_000 })
+        .screenshot({ path: join(shots, `nessa-${engine}-fail.png`), timeout: 5_000 })
         .catch(() => {})
       throw new Error("the experiment title did not appear")
     }
@@ -605,7 +540,9 @@ async function nessaShots(browser, engine) {
       log(
         `${engine}: large experiment, runs, run detail and file refusal held; ${rows} visible files`,
       )
+      calls.assertComplete()
     }
+    passed = true
   } finally {
     if (page) {
       await Promise.race([
@@ -613,8 +550,20 @@ async function nessaShots(browser, engine) {
         new Promise((resolve) => setTimeout(resolve, 5_000)),
       ])
     }
-    await stopChild(stack.child)
-    rmSync(scenarioPath, { force: true })
+    try {
+      await stopChild(stack.child)
+    } finally {
+      rmSync(scenarioDirectory, { recursive: true, force: true })
+      if (calls)
+        writeFileSync(
+          join(shots, `nessa-${engine}-calls.json`),
+          JSON.stringify(
+            { passed, engine, version: browser.version(), ...calls.report() },
+            null,
+            2,
+          ) + "\n",
+        )
+    }
   }
 }
 
@@ -628,7 +577,7 @@ let browser
 let safari
 let site
 try {
-  browser = await chromium.launch({ channel: "chrome", headless: true })
+  browser = await chromium.launch({ headless: true })
   safari = await webkit.launch({ headless: true })
   log("fake host")
   await buildHostPages()

@@ -250,6 +250,25 @@ Source failures retain at most 4,096 diagnostic code units plus an explicit
 truncation marker and are made well-formed Unicode, so malformed field names and thrown source errors also fit
 the wire bound.
 Browser qualification of this change is separate from those transport tests. The
+real-host capture's child program is `verification/capture-driver.ts`. It uses
+the host client's public `prepare`/`submit` API and resumes stdin so the parent's
+close releases the client, dev server and gateway even while the submission
+receipt is pending. Its subprocess regression uses a client with only that
+current API; it does not start a browser or modify the host.
+
+`verification/capture-calls.ts` observes real gateway WebSocket replies during
+the large capture. It measures the host's original `resultJson` string after
+one further JSON encoding, rather than recreating its first serialization.
+
+| Capture event | Required evidence | Regression |
+| --- | --- | --- |
+| Parent closes stdin while the submission receipt is pending | Driver closes client, dev server and gateway | `verification/capture-driver.test.ts` |
+| An app request is sent | Correlate id within its own socket; ignore other RPC methods | `verification/capture-calls.test.ts` |
+| Its reply arrives | Measure original resultJson, reject refusal/tool error or excess bytes | `verification/capture-calls.test.ts` |
+| Repeated or reordered pages arrive | Identical duplicates may combine; require consistent totals, contiguous offsets and the full revision hash | `verification/capture-calls.test.ts` |
+| Capture finishes | No pending requests or observation errors; all four tools observed and exact experiment/run/list/file data recovered | `verification/capture-calls.test.ts` |
+
+The
 scenario runner's completion does not name the MCP tool, and Nessa attaches
 the forwarded structured result only when it does; `forward-structured.mjs`
 adds that name. The capture fails if the page shows "Blocked a connection
