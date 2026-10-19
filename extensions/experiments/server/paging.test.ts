@@ -24,6 +24,15 @@ function wire(outcome: ReturnType<typeof pageResult>): CallToolResult {
 }
 
 describe("bounded continuation results", () => {
+  it("keeps a summary cutoff before the complete emoji instead of replacing its half", () => {
+    const text = "a".repeat(1023) + "😀" + "after"
+    const result = pageResult({ text, data: { large: "x".repeat(20_000) } })
+    expect(result.text.startsWith(`${"a".repeat(1023)}… [summary truncated]`)).toBe(true)
+    expect(result.text).not.toContain("�")
+    expect(result.text).not.toContain("😀")
+    expect(toUSVString(result.text)).toBe(result.text)
+  })
+
   it("keeps the standalone explanation on every page for clients without assembly", () => {
     const outcome = {
       text: "Can't open this file: the artifact expired.",
@@ -83,7 +92,7 @@ describe("bounded continuation results", () => {
             ids: async () => [sample.id],
             experiment: async () => (invalid ? malformed : sample),
             openFile: async () => {
-              throw new Error("a".repeat(4095) + "😀" + "\\\\".repeat(60_000))
+              throw new Error("\ud800" + "a".repeat(4094) + "😀" + "\\\\".repeat(60_000))
             },
           },
           html: () => placeholderHtml,

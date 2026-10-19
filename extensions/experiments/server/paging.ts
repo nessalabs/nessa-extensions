@@ -1,8 +1,8 @@
 /** Extension-owned continuation pages; MCP still carries ordinary tools/call results. */
 import { createHash } from "node:crypto"
-import { toUSVString } from "node:util"
 import { z } from "zod/v4"
 import type { ToolOutcome } from "@nessalabs/server-kit"
+import { shortText } from "./text.ts"
 
 /** A continuation identifies both a position and the source revision it belongs to. */
 export const continuation = z
@@ -39,7 +39,7 @@ export function pageResult(outcome: ToolOutcome, next?: Continuation): ToolOutco
   if (offset >= json.length) throw new Error("The page is outside this result.")
   const end = Math.min(offset + pageCharacters, json.length)
   return {
-    text: `${toUSVString(outcome.text.slice(0, 1024))}${outcome.text.length > 1024 ? "… [summary truncated]" : ""}\nResult characters ${offset} to ${end} of ${json.length}. Follow the continuation when present.`,
+    text: `${shortText(outcome.text, 1024, "… [summary truncated]")}\nResult characters ${offset} to ${end} of ${json.length}. Follow the continuation when present.`,
     data: {
       page: {
         revision,

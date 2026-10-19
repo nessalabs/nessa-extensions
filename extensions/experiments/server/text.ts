@@ -5,6 +5,7 @@
  * best version — is the harness's, read through `model/selections.ts`; none
  * is worked out here.
  */
+import { toUSVString } from "node:util"
 import {
   bestVersion,
   formatSize,
@@ -285,14 +286,25 @@ export function missingRunText(experiment: Experiment, runId: string): string {
   return `Experiment ${experiment.id} has no run ${JSON.stringify(runId)}.`
 }
 
-/**
- * The first `downloadShown` code units of `text`, never ending inside a
- * character that takes two, then how many more there are.
- */
+/** The end of a prefix, keeping a paired surrogate together at its boundary. */
+function prefixEnd(text: string, maximum: number): number {
+  const end = Math.min(text.length, maximum)
+  const high = text.charCodeAt(end - 1)
+  const low = text.charCodeAt(end)
+  return high >= 0xd800 && high <= 0xdbff && low >= 0xdc00 && low <= 0xdfff
+    ? end - 1
+    : end
+}
+
+/** A bounded Unicode-safe text prefix, with an explicit notice when it is incomplete. */
+export function shortText(text: string, maximum: number, notice: string): string {
+  const end = prefixEnd(text, maximum)
+  return `${toUSVString(text.slice(0, end))}${end < text.length ? notice : ""}`
+}
+
+/** The first `downloadShown` code units, ending before an incomplete character. */
 function shownPart(text: string): string {
-  const high = text.charCodeAt(downloadShown - 1)
-  const end = high >= 0xd800 && high <= 0xdbff ? downloadShown - 1 : downloadShown
-  // Characters, not code units: a character that takes two is one.
+  const end = prefixEnd(text, downloadShown)
   return `${text.slice(0, end)}\n…and ${counted([...text.slice(end)].length, "more character", "more characters")}`
 }
 

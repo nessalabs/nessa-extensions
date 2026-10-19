@@ -123,5 +123,20 @@
     "rule": "file-visibility-generation",
     "caught": true,
     "exit": 1
+  },
+  {
+    "rule": "complete-character-prefix",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "shared-text-bound",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "original-diagnostic-unicode",
+    "caught": true,
+    "exit": 1
   }
 ]

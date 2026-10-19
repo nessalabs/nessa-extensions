@@ -36,7 +36,7 @@ server/           the MCP server, on @nessalabs/server-kit; runs in Node
   source.ts       ExperimentSource: the port a source of experiments plugs into
   reading.ts      the one place a source's answers are checked, each parsed into a copy
   samples-source.ts  the samples as a source, dated from when the server starts
-  text.ts         what each tool says in text, standing on its own
+  text.ts         standalone tool text and character-safe bounded summaries/diagnostics
   view.ts         the experiment view's URI, and a placeholder document the server tests inject
   paging.ts       continuation pages of one source revision, with no retained server state
   result-bound.ts the chat view's 16,384-byte bound on the opening structured result
@@ -228,7 +228,7 @@ calls, not the final in-memory experiment or its rendering cost.
 | Server refuses a later page | Show the refusal, without a partial result | `app/paged-call.test.ts` |
 | Source becomes malformed, or throws a long diagnostic | Bound refusal text before the server kit encodes it, including between pages | `server/paging.test.ts` |
 | View changes during an outstanding read | Ignore the result and stop requesting further pages | `app/paged-call.test.ts` and hook tests |
-| A model or a client without assembly reads a large result | Every page retains a bounded original text summary and its continuation instruction | `server/paging.test.ts` |
+| A model or a client without assembly reads a large result | Every page retains a bounded original text summary and its continuation instruction; a cutoff keeps complete characters | `server/paging.test.ts` and `server/text.test.ts` |
 | File target is retried, its run changes, its view becomes hidden, or the control unmounts while a call waits | The existing mounted/generation/latest-request authority becomes false; issue no further page or link request | `app/use-open-file.test.tsx` and app integration tests |
 | Different file targets are open concurrently | Each keeps its own latest request authority | `app/use-open-file.test.tsx` |
 | Final file response arrives after its request became stale | Do not call the host's openLink | App integration tests |

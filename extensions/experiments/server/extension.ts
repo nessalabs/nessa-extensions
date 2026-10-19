@@ -4,7 +4,6 @@
  * the extension's README; negotiation, input parsing and the checks on what
  * a tool answers are the server kit's.
  */
-import { toUSVString } from "node:util"
 import {
   defineExtension,
   defineTool,
@@ -26,6 +25,7 @@ import {
   noChangeText,
   openingText,
   runText,
+  shortText,
   runsText,
   unchangedPathText,
 } from "./text.ts"
@@ -47,13 +47,7 @@ class Refusal extends Error {
   constructor(message: string) {
     // A malformed source can put unbounded field names in diagnostics.
     // paging.test.ts checks failures with the host's double JSON encoding.
-    super(
-      toUSVString(
-        message.length <= 4096
-          ? message
-          : `${message.slice(0, 4096)}… [diagnostic truncated]`,
-      ),
-    )
+    super(shortText(message, 4096, "… [diagnostic truncated]"))
   }
 }
 
