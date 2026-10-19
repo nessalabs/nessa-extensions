@@ -1,0 +1,62 @@
+[
+  {
+    "rule": "page-size",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "source-revision",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "offset-range",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "page-offset",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "page-revision",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "page-total",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "page-length",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "final-continuation",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "next-revision",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "next-offset",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "stale-view",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "missing-later-page",
+    "caught": true,
+    "exit": 1
+  }
+]

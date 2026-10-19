@@ -28,6 +28,8 @@ import type { Opening } from "./open-file.ts"
 import type { OpenRequest } from "./use-open-file.ts"
 import type { Experiment, Run } from "../model/index.ts"
 
+import { callPaged } from "./paged-call.ts"
+
 type RecoveredExperiment = Exclude<LoadedExperiment, { status: "absent" }>
 
 const noRuns: readonly Run[] = []
@@ -112,7 +114,7 @@ export function useRecoveredExperiment(
     let current = true
     attempt.current = { opening, experimentId, done: false }
     setRecovery({ opening, experimentId, loaded: { status: "waiting" } })
-    bridge.callTool("get_experiment", { experimentId }).then(
+    callPaged(bridge, "get_experiment", { experimentId }, () => current).then(
       (result) => {
         if (!current) return
         attempt.current = { opening, experimentId, done: true }
@@ -159,7 +161,7 @@ export function useListedRuns(experiment: Experiment, active: boolean): RunList 
     if (!active || held.current === experiment) return
     let current = true
     setList({ status: "loading" })
-    bridge.callTool("list_runs", { experimentId: experiment.id }).then(
+    callPaged(bridge, "list_runs", { experimentId: experiment.id }, () => current).then(
       (result) => {
         if (!current) return
         const listed = listedRuns(experiment, result)
@@ -221,7 +223,12 @@ export function useFetchedRun(
     if (held.current?.experiment === experiment && held.current.runId === runId) return
     let current = true
     setRead({ status: "loading" })
-    bridge.callTool("get_run", { experimentId: experiment.id, runId }).then(
+    callPaged(
+      bridge,
+      "get_run",
+      { experimentId: experiment.id, runId },
+      () => current,
+    ).then(
       (result) => {
         if (!current) return
         const fetched = fetchedRun(experiment, runId, result, alongside)
@@ -253,7 +260,7 @@ export function useHostOpen(): (request: OpenRequest) => Promise<Opening> {
   return useCallback(
     async (request: OpenRequest): Promise<Opening> => {
       try {
-        const result = await bridge.callTool("open_file", {
+        const result = await callPaged(bridge, "open_file", {
           experimentId: request.experimentId,
           runId: request.runId,
           ...(request.path === undefined ? {} : { path: request.path }),

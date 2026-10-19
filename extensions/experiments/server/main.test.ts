@@ -6,6 +6,8 @@ import { StdioClientTransport } from "@modelcontextprotocol/client/stdio"
 import { apps, capabilitiesFor } from "@nessalabs/server-kit/testing"
 import { afterEach, describe, expect, it } from "vitest"
 
+import type { CallToolResult } from "@nessalabs/app-shell"
+import { callPaged } from "../app/paged-call.ts"
 import { checkoutExperimentId } from "../samples/index.ts"
 import { experimentView } from "./view.ts"
 
@@ -73,10 +75,22 @@ describe("the bin", () => {
       })
       expect(result.isError).toBeFalsy()
       expect(result.structuredContent).toBeUndefined()
-      const read = await client.callTool({
-        name: "get_experiment",
-        arguments: { experimentId: checkoutExperimentId },
-      })
+      const read = await callPaged(
+        {
+          callTool: async (name, args) => {
+            const result = (await client.callTool({
+              name,
+              arguments: args,
+            })) as CallToolResult
+            expect(
+              Buffer.byteLength(JSON.stringify(JSON.stringify(result))),
+            ).toBeLessThanOrEqual(57_344)
+            return result
+          },
+        },
+        "get_experiment",
+        { experimentId: checkoutExperimentId },
+      )
       expect(read.isError).toBeFalsy()
       expect(read.structuredContent).toMatchObject({
         experiment: { id: checkoutExperimentId },

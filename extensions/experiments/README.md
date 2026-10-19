@@ -38,6 +38,7 @@ server/           the MCP server, on @nessalabs/server-kit; runs in Node
   samples-source.ts  the samples as a source, dated from when the server starts
   text.ts         what each tool says in text, standing on its own
   view.ts         the experiment view's URI, and a placeholder document the server tests inject
+  paging.ts       continuation pages of one source revision, with no retained server state
   result-bound.ts the chat view's 16,384-byte bound on the opening structured result
   extension.ts    experimentsExtension: the view and the five tools, over a source
   main.ts         the bin: the extension over stdio, on the samples, serving dist/app/index.html
@@ -59,6 +60,7 @@ app/              the MCP App, in the browser
   index.ts        the components' barrel
   preview.tsx     mounts every component, for the tests
   use-host.ts     the app's tool calls: get_experiment, list_runs, get_run, open_file
+  paged-call.ts   assembles and checks continuation pages before reading their bodies
   host-data.ts    those answers, checked before a page draws them
   navigation.ts   which view, and the runs opened over it
   page-reading.ts what the pages show, read from the definition and the harness
@@ -197,7 +199,41 @@ most 16,384 bytes of the opening tool's structured result and drops a larger
 one whole, keeping the text. `show_experiment` leaves that structured result
 out and still returns the text. The app then loads the experiment with
 `get_experiment`. A call the app makes is a different bound: 56KB of the
-whole result. The checkout sample's `get_experiment` fits in that. The
+whole result, JSON-encoded and then encoded again as a JSON string.
+`get_experiment`, `list_runs`, `get_run`, and `open_file` split large answers
+into continuation pages. Each page carries at most 8,192 UTF-16 units of the
+JSON outcome, leaving room for escaping and the MCP envelope. This is an
+extension transport choice; the host's limit stays unchanged. Small results
+use their ordinary text and data. Large results carry `data.page` with
+`revision`, `offset`, `total`, `json`, and an optional `next`. Call the same
+tool with its original arguments and `continuation: next` until complete.
+The app assembles the outcome before its existing domain readers validate it.
+This is ordinary MCP `tools/call`, with no host API addition.
+
+A continuation identifies the SHA-256 of the complete outcome, including its
+text, rather than a mutable source name. The server re-reads and validates the
+source on each page. A changed answer is refused instead of mixing revisions;
+reopening starts a fresh read. This keeps no server-side snapshot cache or
+lifetime, at the cost of repeated serialization and source validation. It bounds
+calls, not the final in-memory experiment or its rendering cost.
+
+| State / event | Result | Evidence |
+| --- | --- | --- |
+| First read, small outcome | Return ordinary text and data | Existing server and app suites |
+| First read, large outcome | Return first page and continuation | `server/paging.test.ts` |
+| Continuation, unchanged outcome | Advance by the page length; omit next on final page | `server/paging.test.ts` |
+| Continuation, changed outcome or offset past end | Refuse; publish no partial experiment | `server/paging.test.ts` |
+| Page repeats, changes revision/total, fails to advance, or ends with invalid JSON | Fail the read before domain/UI publication | `app/paged-call.test.ts` |
+| Server refuses a later page | Show the refusal, without a partial result | `app/paged-call.test.ts` |
+| View changes during an outstanding read | Ignore the result and stop requesting further pages | `app/paged-call.test.ts` and existing hook tests |
+
+The byte regression suite measures every actual stdio-entry and loopback HTTP
+response with `Buffer.byteLength(JSON.stringify(JSON.stringify(result)))`,
+matching Nessa's `mcp_servers/domain/app_call.rs` limit and
+`conversation/application/service/app_calls.rs` encoding. It includes an
+experiment over ten times checkout, a single large run, large file contents,
+and quotes, backslashes, controls, surrogate halves, and non-ASCII text.
+Browser qualification of this change is separate from those transport tests. The
 scenario runner's completion does not name the MCP tool, and Nessa attaches
 the forwarded structured result only when it does; `forward-structured.mjs`
 adds that name. The capture fails if the page shows "Blocked a connection
@@ -205,3 +241,18 @@ this app didn't declare". Zod's fast path probes `new Function`, and a
 strict CSP reports that even when the throw is caught; the app sets
 `jitless` before any schema is built, so the probe does not run. An earlier
 shot of that banner was the fixture slot, which is not this server.
+
+The large-input verifier runs after `pnpm build`:
+
+```sh
+node extensions/experiments/verification/large.mjs
+node extensions/experiments/verification/large.mjs --transport-only
+```
+
+The default opens the built app in the fake host in Chromium and WebKit,
+recovers a large experiment from a text-only opening, then opens its runs and
+full run detail with a virtualized list of files. It forwards the app's calls
+to the real extension MCP server entry. `verification/evidence/large/` holds
+the per-call bytes and the browser assertions/screenshots; the transport-only
+mode writes a separate file with an empty browser list. This does not establish
+Nessa-host or native acceptance; those require the real gateway/browser stack.

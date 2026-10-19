@@ -28,6 +28,7 @@ import {
   unchangedPathText,
 } from "./text.ts"
 import { structuredResultTooLarge } from "./result-bound.ts"
+import { continuation, pageResult } from "./paging.ts"
 import { experimentView } from "./view.ts"
 
 export interface ExperimentsOptions {
@@ -75,11 +76,14 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
   }
 
   const getExperiment = async (
-    { experimentId }: { experimentId: string },
+    {
+      experimentId,
+      continuation: next,
+    }: { experimentId: string; continuation?: { revision: string; offset: number } },
     { signal }: { signal: AbortSignal },
   ): Promise<ToolOutcome> => {
     const experiment = await experimentOf(experimentId, signal)
-    return { text: experimentText(experiment), data: { experiment } }
+    return pageResult({ text: experimentText(experiment), data: { experiment } }, next)
   }
 
   return defineExtension({
@@ -112,7 +116,7 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
         name: "get_experiment",
         title: "Get experiment",
         description: "Reads an experiment again, for the experiment view.",
-        input: z.object({ experimentId }),
+        input: z.object({ experimentId, continuation }),
         effects: "read-only",
         view: experimentView,
         callers: ["app"],
@@ -122,17 +126,20 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
         name: "list_runs",
         title: "List runs",
         description: "Lists an experiment's runs, newest first, for the experiment view.",
-        input: z.object({ experimentId }),
+        input: z.object({ experimentId, continuation }),
         effects: "read-only",
         view: experimentView,
         callers: ["app"],
-        run: async ({ experimentId }, { signal }) => {
+        run: async ({ experimentId, continuation: next }, { signal }) => {
           const experiment = await experimentOf(experimentId, signal)
           const runs = runsNewestFirst(experiment)
-          return {
-            text: runsText(experiment, runs),
-            data: { experimentId: experiment.id, runs },
-          }
+          return pageResult(
+            {
+              text: runsText(experiment, runs),
+              data: { experimentId: experiment.id, runs },
+            },
+            next,
+          )
         },
       }),
       defineTool({
@@ -140,18 +147,21 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
         title: "Get run",
         description:
           "Reads one run of an experiment in full: its verdict and reason, scores, guardrails, cases, and change, for the experiment view.",
-        input: z.object({ experimentId, runId }),
+        input: z.object({ experimentId, runId, continuation }),
         effects: "read-only",
         view: experimentView,
         callers: ["app"],
-        run: async ({ experimentId, runId }, { signal }) => {
+        run: async ({ experimentId, runId, continuation: next }, { signal }) => {
           const experiment = await experimentOf(experimentId, signal)
           const run = runOf(experiment, runId)
           if (run === undefined) throw new Refusal(missingRunText(experiment, runId))
-          return {
-            text: runText(experiment, run),
-            data: { experimentId: experiment.id, run },
-          }
+          return pageResult(
+            {
+              text: runText(experiment, run),
+              data: { experimentId: experiment.id, run },
+            },
+            next,
+          )
         },
       }),
       defineTool({
@@ -162,6 +172,7 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
         input: z.object({
           experimentId,
           runId,
+          continuation,
           path: z
             .string()
             .min(1)
@@ -171,7 +182,7 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
             ),
         }),
         effects: "read-only",
-        run: async ({ experimentId, runId, path }, { signal }) => {
+        run: async ({ experimentId, runId, path, continuation: next }, { signal }) => {
           const experiment = await experimentOf(experimentId, signal)
           const run = runOf(experiment, runId)
           if (run === undefined) throw new Refusal(missingRunText(experiment, runId))
@@ -190,7 +201,10 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
             ...(path === undefined ? {} : { path }),
           }
           const opening = await readOpening(source, request, signal)
-          return { text: openingText(request, opening), data: { ...request, opening } }
+          return pageResult(
+            { text: openingText(request, opening), data: { ...request, opening } },
+            next,
+          )
         },
       }),
     ],
