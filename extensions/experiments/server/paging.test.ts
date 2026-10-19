@@ -23,6 +23,63 @@ function wire(outcome: ReturnType<typeof pageResult>): CallToolResult {
 }
 
 describe("bounded continuation results", () => {
+  it.each([overStdio, overHttp])(
+    "keeps malformed-source failures bounded before and between pages",
+    async (connect) => {
+      const sample = checkoutSample(startedAt)
+      let invalid = false
+      const malformed = { ...sample, ["x".repeat(60_000)]: true }
+      const connection = await connect(
+        experimentsExtension({
+          source: {
+            ids: async () => [sample.id],
+            experiment: async () => (invalid ? malformed : sample),
+            openFile: async () => {
+              throw new Error("\\\\".repeat(60_000))
+            },
+          },
+          html: () => placeholderHtml,
+        }),
+        { era: "modern", mimeTypes: apps },
+      )
+      try {
+        const first = await connection.client.callTool({
+          name: "get_experiment",
+          arguments: { experimentId: sample.id },
+        })
+        expect(first.isError).toBeFalsy()
+        const next = (first.structuredContent as { page: { next: unknown } }).page.next
+        invalid = true
+        for (const continuation of [undefined, next]) {
+          const result = await connection.client.callTool({
+            name: "get_experiment",
+            arguments: {
+              experimentId: sample.id,
+              ...(continuation === undefined ? {} : { continuation }),
+            },
+          })
+          expect(result.isError).toBe(true)
+          expect(carriedBytes(result)).toBeLessThanOrEqual(hostLimit)
+          expect(result.content).toMatchObject([
+            { text: expect.stringContaining("diagnostic truncated") },
+          ])
+        }
+        invalid = false
+        const file = await connection.client.callTool({
+          name: "open_file",
+          arguments: {
+            experimentId: sample.id,
+            runId: sample.runs.find((run) => run.change !== undefined)!.id,
+          },
+        })
+        expect(file.isError).toBe(true)
+        expect(carriedBytes(file)).toBeLessThanOrEqual(hostLimit)
+      } finally {
+        await connection.close()
+      }
+    },
+  )
+
   it.each(["a", '"', "\\", "\n", "\u0000", "\ud800", "界", "😀"])(
     "bounds every page of escaped %j",
     async (character) => {

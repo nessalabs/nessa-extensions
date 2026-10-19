@@ -58,5 +58,15 @@
     "rule": "missing-later-page",
     "caught": true,
     "exit": 1
+  },
+  {
+    "rule": "failure-diagnostic-bound",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "source-error-bound",
+    "caught": true,
+    "exit": 1
   }
 ]

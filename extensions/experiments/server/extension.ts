@@ -9,6 +9,7 @@ import {
   defineTool,
   type Extension,
   type ToolOutcome,
+  type ToolCall,
 } from "@nessalabs/server-kit"
 import { z } from "zod/v4"
 
@@ -41,6 +42,30 @@ export interface ExperimentsOptions {
 /** A request the tool cannot answer, said as its text; the kit makes it a tool error. */
 class Refusal extends Error {
   override readonly name = "Refusal"
+
+  constructor(message: string) {
+    // A malformed source can put unbounded field names in diagnostics.
+    // paging.test.ts checks failures with the host's double JSON encoding.
+    super(
+      message.length <= 4096
+        ? message
+        : `${message.slice(0, 4096)}… [diagnostic truncated]`,
+    )
+  }
+}
+
+/** Bounds source failures too, including failures before a result can be paged. */
+function boundedRead<Input>(run: (input: Input, call: ToolCall) => Promise<ToolOutcome>) {
+  return async (input: Input, call: ToolCall): Promise<ToolOutcome> => {
+    try {
+      return await run(input, call)
+    } catch (error) {
+      if (error instanceof Refusal) throw error
+      throw new Refusal(
+        error instanceof Error ? error.message : "The source could not be read.",
+      )
+    }
+  }
 }
 
 const experimentId = z.string().min(1).describe("The experiment's id.")
@@ -110,7 +135,7 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
         input: z.object({ experimentId }),
         effects: "read-only",
         view: experimentView,
-        run: showExperiment,
+        run: boundedRead(showExperiment),
       }),
       defineTool({
         name: "get_experiment",
@@ -120,7 +145,7 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
         effects: "read-only",
         view: experimentView,
         callers: ["app"],
-        run: getExperiment,
+        run: boundedRead(getExperiment),
       }),
       defineTool({
         name: "list_runs",
@@ -130,7 +155,7 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
         effects: "read-only",
         view: experimentView,
         callers: ["app"],
-        run: async ({ experimentId, continuation: next }, { signal }) => {
+        run: boundedRead(async ({ experimentId, continuation: next }, { signal }) => {
           const experiment = await experimentOf(experimentId, signal)
           const runs = runsNewestFirst(experiment)
           return pageResult(
@@ -140,7 +165,7 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
             },
             next,
           )
-        },
+        }),
       }),
       defineTool({
         name: "get_run",
@@ -151,18 +176,20 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
         effects: "read-only",
         view: experimentView,
         callers: ["app"],
-        run: async ({ experimentId, runId, continuation: next }, { signal }) => {
-          const experiment = await experimentOf(experimentId, signal)
-          const run = runOf(experiment, runId)
-          if (run === undefined) throw new Refusal(missingRunText(experiment, runId))
-          return pageResult(
-            {
-              text: runText(experiment, run),
-              data: { experimentId: experiment.id, run },
-            },
-            next,
-          )
-        },
+        run: boundedRead(
+          async ({ experimentId, runId, continuation: next }, { signal }) => {
+            const experiment = await experimentOf(experimentId, signal)
+            const run = runOf(experiment, runId)
+            if (run === undefined) throw new Refusal(missingRunText(experiment, runId))
+            return pageResult(
+              {
+                text: runText(experiment, run),
+                data: { experimentId: experiment.id, run },
+              },
+              next,
+            )
+          },
+        ),
       }),
       defineTool({
         name: "open_file",
@@ -182,30 +209,32 @@ export function experimentsExtension({ source, html }: ExperimentsOptions): Exte
             ),
         }),
         effects: "read-only",
-        run: async ({ experimentId, runId, path, continuation: next }, { signal }) => {
-          const experiment = await experimentOf(experimentId, signal)
-          const run = runOf(experiment, runId)
-          if (run === undefined) throw new Refusal(missingRunText(experiment, runId))
-          if (run.change === undefined) {
-            throw new Refusal(noChangeText(experiment, run))
-          }
-          if (
-            path !== undefined &&
-            !run.change.files.some((file) => file.path === path)
-          ) {
-            throw new Refusal(unchangedPathText(experiment, run, path))
-          }
-          const request: FileRequest = {
-            experimentId: experiment.id,
-            runId: run.id,
-            ...(path === undefined ? {} : { path }),
-          }
-          const opening = await readOpening(source, request, signal)
-          return pageResult(
-            { text: openingText(request, opening), data: { ...request, opening } },
-            next,
-          )
-        },
+        run: boundedRead(
+          async ({ experimentId, runId, path, continuation: next }, { signal }) => {
+            const experiment = await experimentOf(experimentId, signal)
+            const run = runOf(experiment, runId)
+            if (run === undefined) throw new Refusal(missingRunText(experiment, runId))
+            if (run.change === undefined) {
+              throw new Refusal(noChangeText(experiment, run))
+            }
+            if (
+              path !== undefined &&
+              !run.change.files.some((file) => file.path === path)
+            ) {
+              throw new Refusal(unchangedPathText(experiment, run, path))
+            }
+            const request: FileRequest = {
+              experimentId: experiment.id,
+              runId: run.id,
+              ...(path === undefined ? {} : { path }),
+            }
+            const opening = await readOpening(source, request, signal)
+            return pageResult(
+              { text: openingText(request, opening), data: { ...request, opening } },
+              next,
+            )
+          },
+        ),
       }),
     ],
   })

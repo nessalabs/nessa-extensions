@@ -225,6 +225,7 @@ calls, not the final in-memory experiment or its rendering cost.
 | Continuation, changed outcome or offset past end | Refuse; publish no partial experiment | `server/paging.test.ts` |
 | Page repeats, changes revision/total, fails to advance, or ends with invalid JSON | Fail the read before domain/UI publication | `app/paged-call.test.ts` |
 | Server refuses a later page | Show the refusal, without a partial result | `app/paged-call.test.ts` |
+| Source becomes malformed, or throws a long diagnostic | Bound refusal text before the server kit encodes it, including between pages | `server/paging.test.ts` |
 | View changes during an outstanding read | Ignore the result and stop requesting further pages | `app/paged-call.test.ts` and existing hook tests |
 
 The byte regression suite measures every actual stdio-entry and loopback HTTP
@@ -233,6 +234,9 @@ matching Nessa's `mcp_servers/domain/app_call.rs` limit and
 `conversation/application/service/app_calls.rs` encoding. It includes an
 experiment over ten times checkout, a single large run, large file contents,
 and quotes, backslashes, controls, surrogate halves, and non-ASCII text.
+Source failures retain at most 4,096 diagnostic code units plus an explicit
+truncation marker, so malformed field names and thrown source errors also fit
+the wire bound.
 Browser qualification of this change is separate from those transport tests. The
 scenario runner's completion does not name the MCP tool, and Nessa attaches
 the forwarded structured result only when it does; `forward-structured.mjs`
