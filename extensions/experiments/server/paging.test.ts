@@ -23,6 +23,36 @@ function wire(outcome: ReturnType<typeof pageResult>): CallToolResult {
 }
 
 describe("bounded continuation results", () => {
+  it.each([8180, 8181, 8182, 8183])(
+    "keeps each page Unicode-safe at shifted boundary %s",
+    async (padding) => {
+      const outcome = { text: "a".repeat(padding) + "😀" + "界".repeat(100) }
+      let pages = 0
+      const result = await callPaged(
+        {
+          callTool: async (_name, args) => {
+            const answer = wire(
+              pageResult(
+                outcome,
+                args?.continuation as { revision: string; offset: number } | undefined,
+              ),
+            )
+            const page = (answer.structuredContent as { page: { json: string } }).page
+            expect(page.json.isWellFormed()).toBe(true)
+            expect(page.json).toMatch(/^[\x00-\x7f]*$/)
+            expect(carriedBytes(answer)).toBeLessThanOrEqual(hostLimit)
+            pages++
+            return answer
+          },
+        },
+        "get_experiment",
+        {},
+      )
+      expect(pages).toBeGreaterThan(1)
+      expect(result).toEqual(wire(outcome))
+    },
+  )
+
   it.each([overStdio, overHttp])(
     "keeps malformed-source failures bounded before and between pages",
     async (connect) => {
@@ -35,7 +65,7 @@ describe("bounded continuation results", () => {
             ids: async () => [sample.id],
             experiment: async () => (invalid ? malformed : sample),
             openFile: async () => {
-              throw new Error("\\\\".repeat(60_000))
+              throw new Error("a".repeat(4095) + "😀" + "\\\\".repeat(60_000))
             },
           },
           html: () => placeholderHtml,
@@ -74,6 +104,7 @@ describe("bounded continuation results", () => {
         })
         expect(file.isError).toBe(true)
         expect(carriedBytes(file)).toBeLessThanOrEqual(hostLimit)
+        expect((file.content as { text: string }[])[0]!.text.isWellFormed()).toBe(true)
       } finally {
         await connection.close()
       }
@@ -98,6 +129,11 @@ describe("bounded continuation results", () => {
               ),
             )
             expect(carriedBytes(result)).toBeLessThanOrEqual(hostLimit)
+            const page = result.structuredContent as { page?: { json: string } }
+            if (page.page !== undefined) {
+              expect(page.page.json.isWellFormed()).toBe(true)
+              expect(page.page.json).toMatch(/^[\x00-\x7f]*$/)
+            }
             calls++
             return result
           },

@@ -68,5 +68,15 @@
     "rule": "source-error-bound",
     "caught": true,
     "exit": 1
+  },
+  {
+    "rule": "unicode-page-encoding",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "unicode-failure-encoding",
+    "caught": true,
+    "exit": 1
   }
 ]

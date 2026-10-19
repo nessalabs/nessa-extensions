@@ -47,9 +47,10 @@ class Refusal extends Error {
     // A malformed source can put unbounded field names in diagnostics.
     // paging.test.ts checks failures with the host's double JSON encoding.
     super(
-      message.length <= 4096
+      (message.length <= 4096
         ? message
-        : `${message.slice(0, 4096)}… [diagnostic truncated]`,
+        : `${message.slice(0, 4096)}… [diagnostic truncated]`
+      ).toWellFormed(),
     )
   }
 }

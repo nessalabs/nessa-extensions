@@ -22,7 +22,13 @@ const pageCharacters = 8192
 
 /** Small answers stay whole; large answers are read without retaining server-side sessions. */
 export function pageResult(outcome: ToolOutcome, next?: Continuation): ToolOutcome {
-  const json = JSON.stringify(outcome)
+  // Escape non-ASCII code units before splitting: each page is itself valid
+  // Unicode, even where the serialized outcome contains a surrogate pair.
+  // JSON.parse after assembly recovers the original strings without loss.
+  const json = JSON.stringify(outcome).replace(
+    /[\u0080-\uffff]/g,
+    (unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  )
   if (json.length <= pageCharacters && next === undefined) return outcome
   const revision = createHash("sha256").update(json).digest("hex")
   if (next !== undefined && next.revision !== revision) {

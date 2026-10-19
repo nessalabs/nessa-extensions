@@ -202,7 +202,7 @@ out and still returns the text. The app then loads the experiment with
 whole result, JSON-encoded and then encoded again as a JSON string.
 `get_experiment`, `list_runs`, `get_run`, and `open_file` split large answers
 into continuation pages. Each page carries at most 8,192 UTF-16 units of the
-JSON outcome, leaving room for escaping and the MCP envelope. This is an
+JSON outcome (non-ASCII code units are written as JSON escapes before slicing), leaving room for escaping and the MCP envelope. This is an
 extension transport choice; the host's limit stays unchanged. Small results
 use their ordinary text and data. Large results carry `data.page` with
 `revision`, `offset`, `total`, `json`, and an optional `next`. Call the same
@@ -223,6 +223,7 @@ calls, not the final in-memory experiment or its rendering cost.
 | First read, large outcome | Return first page and continuation | `server/paging.test.ts` |
 | Continuation, unchanged outcome | Advance by the page length; omit next on final page | `server/paging.test.ts` |
 | Continuation, changed outcome or offset past end | Refuse; publish no partial experiment | `server/paging.test.ts` |
+| Valid non-ASCII text crosses a page boundary | Each page is ASCII; assembly preserves the original text | `server/paging.test.ts` |
 | Page repeats, changes revision/total, fails to advance, or ends with invalid JSON | Fail the read before domain/UI publication | `app/paged-call.test.ts` |
 | Server refuses a later page | Show the refusal, without a partial result | `app/paged-call.test.ts` |
 | Source becomes malformed, or throws a long diagnostic | Bound refusal text before the server kit encodes it, including between pages | `server/paging.test.ts` |
@@ -235,7 +236,7 @@ matching Nessa's `mcp_servers/domain/app_call.rs` limit and
 experiment over ten times checkout, a single large run, large file contents,
 and quotes, backslashes, controls, surrogate halves, and non-ASCII text.
 Source failures retain at most 4,096 diagnostic code units plus an explicit
-truncation marker, so malformed field names and thrown source errors also fit
+truncation marker and are made well-formed Unicode, so malformed field names and thrown source errors also fit
 the wire bound.
 Browser qualification of this change is separate from those transport tests. The
 scenario runner's completion does not name the MCP tool, and Nessa attaches
