@@ -299,10 +299,12 @@ describe("the experiment app in the fake host", () => {
         if (action !== "retry" && action !== "hide-then-reopen")
           expect(screen.queryByRole("navigation", { name: "Opened run" })).toBeNull()
         const outcome = {
-          text: shape === "paged" ? "old link ".repeat(2000) : "old link",
+          text: shape === "paged" ? "old link ".repeat(6000) : "old link",
           data: { opening: { kind: "link", url: "https://example.com/old" } },
         }
         const page = pageResult(outcome)
+        if (shape === "paged")
+          expect(page.data).toMatchObject({ page: { next: expect.any(Object) } })
         await act(async () =>
           release(answered(page.text, page.data as Record<string, unknown>)),
         )
@@ -318,7 +320,7 @@ describe("the experiment app in the fake host", () => {
   it("continues a current paged file request and opens its link once", async () => {
     const checkout = experiment(checkoutSample)
     const outcome = {
-      text: "Open the artifact. ".repeat(1500),
+      text: "Open the artifact. ".repeat(3000),
       data: { opening: { kind: "link", url: "https://example.com/current" } },
     }
     const view = await renderApp(checkout, {

@@ -1,0 +1,17 @@
+[
+  {
+    "rule": "packing-work-bound",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "encoding-escape-cost",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "payload-budget",
+    "caught": true,
+    "exit": 1
+  }
+]

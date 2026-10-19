@@ -36,7 +36,7 @@ describe("bounded continuation results", () => {
   it("keeps the standalone explanation on every page for clients without assembly", () => {
     const outcome = {
       text: "Can't open this file: the artifact expired.",
-      data: { opening: { kind: "unavailable", reason: "x".repeat(30_000) } },
+      data: { opening: { kind: "unavailable", reason: "x".repeat(60_000) } },
     }
     let next: { revision: string; offset: number } | undefined
     let pages = 0
@@ -50,7 +50,7 @@ describe("bounded continuation results", () => {
     expect(pages).toBeGreaterThan(1)
   })
 
-  it.each([8180, 8181, 8182, 8183])(
+  it.each([39_980, 39_981, 39_982, 39_983])(
     "keeps each page Unicode-safe at shifted boundary %s",
     async (padding) => {
       const outcome = { text: "a".repeat(padding) + "😀" + "界".repeat(100) }
@@ -177,14 +177,14 @@ describe("bounded continuation results", () => {
   )
 
   it("rejects a changed source and an offset outside the result", () => {
-    const original = { text: "a".repeat(20_000) }
+    const original = { text: "a".repeat(60_000) }
     const page = pageResult(original).data as {
       page: { next: { revision: string; offset: number } }
     }
-    expect(() => pageResult({ text: "b".repeat(20_000) }, page.page.next)).toThrow(
+    expect(() => pageResult({ text: "b".repeat(60_000) }, page.page.next)).toThrow(
       "source changed",
     )
-    expect(() => pageResult(original, { ...page.page.next, offset: 30_000 })).toThrow(
+    expect(() => pageResult(original, { ...page.page.next, offset: 100_000 })).toThrow(
       "outside",
     )
   })
@@ -229,6 +229,10 @@ describe("bounded continuation results", () => {
           experimentId: sample.id,
         })
         expect(experiment.structuredContent).toEqual({ experiment: sample })
+        // A realistic 1 MB source used to be re-read/validated 124 times. Keep
+        // the full fixture and round trip, while enforcing useful page packing
+        // without relying on the speed or contention of the test machine.
+        expect(measurements.length).toBeLessThanOrEqual(48)
         const runs = await callPaged(bridge, "list_runs", { experimentId: sample.id })
         expect(runs.structuredContent).toEqual({
           experimentId: sample.id,

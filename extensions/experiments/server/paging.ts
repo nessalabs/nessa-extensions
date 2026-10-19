@@ -17,9 +17,28 @@ export const continuation = z
 
 type Continuation = z.infer<typeof continuation>
 
-// A small UTF-16 slice also bounds escaped controls and surrogate halves.
-// paging.test.ts measures the complete result using the host's double encoding.
-const pageCharacters = 8192
+// Small outcomes can travel whole. For pages, spend bytes on the JSON payload
+// rather than charging ordinary ASCII as if every character needed escaping.
+// 40,000 leaves room for the summary and envelope under the host's 57,344-byte
+// bound. paging.test.ts measures the complete result with its double encoding.
+const wholeCharacters = 8192
+const pageBytes = 40_000
+
+/** End of an ASCII JSON slice after encoding its string value twice. */
+function pageEnd(json: string, offset: number): number {
+  let end = offset
+  let bytes = 0
+  while (end < json.length) {
+    // JSON.stringify escaped controls and non-ASCII was escaped below. Quotes
+    // and backslashes each occupy four bytes after the two enclosing encodings;
+    // every other character in this ASCII alphabet occupies one.
+    const cost = json[end] === '"' || json[end] === "\\" ? 4 : 1
+    if (bytes + cost > pageBytes) break
+    bytes += cost
+    end++
+  }
+  return end
+}
 
 /** Small answers stay whole; large answers are read without retaining server-side sessions. */
 export function pageResult(outcome: ToolOutcome, next?: Continuation): ToolOutcome {
@@ -30,14 +49,14 @@ export function pageResult(outcome: ToolOutcome, next?: Continuation): ToolOutco
     /[\u0080-\uffff]/g,
     (unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, "0")}`,
   )
-  if (json.length <= pageCharacters && next === undefined) return outcome
+  if (json.length <= wholeCharacters && next === undefined) return outcome
   const revision = createHash("sha256").update(json).digest("hex")
   if (next !== undefined && next.revision !== revision) {
     throw new Error("The source changed while reading. Open the experiment again.")
   }
   const offset = next?.offset ?? 0
   if (offset >= json.length) throw new Error("The page is outside this result.")
-  const end = Math.min(offset + pageCharacters, json.length)
+  const end = pageEnd(json, offset)
   return {
     text: `${shortText(outcome.text, 1024, "… [summary truncated]")}\nResult characters ${offset} to ${end} of ${json.length}. Follow the continuation when present.`,
     data: {

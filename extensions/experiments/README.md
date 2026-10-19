@@ -201,8 +201,11 @@ out and still returns the text. The app then loads the experiment with
 `get_experiment`. A call the app makes is a different bound: 56KB of the
 whole result, JSON-encoded and then encoded again as a JSON string.
 `get_experiment`, `list_runs`, `get_run`, and `open_file` split large answers
-into continuation pages. Each page carries at most 8,192 UTF-16 units of the
-JSON outcome (non-ASCII code units are written as JSON escapes before slicing), leaving room for escaping and the MCP envelope. This is an
+into continuation pages. Each page spends at most 40,000 bytes on its ASCII
+JSON slice after the host's two enclosing JSON encodings: quotes and backslashes
+cost four bytes, and other ASCII characters cost one. Non-ASCII code units are
+written as JSON escapes before slicing. This leaves room for the bounded summary
+and MCP envelope under the unchanged 57,344-byte host limit. This is an
 extension transport choice; the host's limit stays unchanged. Small results
 use their ordinary text and data. Large results carry `data.page` with
 `revision`, `offset`, `total`, `json`, and an optional `next`. Call the same
@@ -216,6 +219,10 @@ source on each page. A changed answer is refused instead of mixing revisions;
 reopening starts a fresh read. This keeps no server-side snapshot cache or
 lifetime, at the cost of repeated serialization and source validation. It bounds
 calls, not the final in-memory experiment or its rendering cost.
+The realistic scale fixture keeps its 10,000 changed files and million-case
+evaluation; `server/paging.test.ts` requires its complete experiment to assemble
+in at most 48 calls. This deterministic work bound guards against the previous
+124-page read without relaxing the test deadline or relying on machine speed.
 
 | State / event | Result | Evidence |
 | --- | --- | --- |
@@ -265,6 +272,8 @@ to the real extension MCP server entry. `verification/evidence/large/` holds
 the per-call bytes and the browser assertions/screenshots; the transport-only
 mode writes a separate file with an empty browser list. This does not establish
 Nessa-host or native acceptance; those require the real gateway/browser stack.
+`EXPERIMENTS_CHROMIUM_EXECUTABLE` may name an already installed Chromium binary;
+both engines are still required, and a missing WebKit executable fails the run.
 
 The file-opening lifetime belongs to `useOpenFile`'s mounted control, run
 generation and latest request per target, as defined in `open-file.ts`. The

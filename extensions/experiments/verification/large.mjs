@@ -147,7 +147,12 @@ try {
       ["webkit", webkit],
     ]) {
       engine = name
-      browser = await launcher.launch({ headless: true })
+      browser = await launcher.launch({
+        headless: true,
+        ...(name === "chromium" && process.env.EXPERIMENTS_CHROMIUM_EXECUTABLE
+          ? { executablePath: process.env.EXPERIMENTS_CHROMIUM_EXECUTABLE }
+          : {}),
+      })
       const page = await browser.newPage({ viewport: { width: 1100, height: 900 } })
       const errors = []
       page.on("pageerror", (error) => errors.push(error.message))
@@ -170,6 +175,7 @@ try {
       await page.locator("#host").screenshot({ path: join(evidence, `${name}-run.png`) })
       summary.browsers.push({
         engine: name,
+        version: browser.version(),
         ok: true,
         visibleFiles: rows,
         errors: errors.length,
