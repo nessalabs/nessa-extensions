@@ -1,3 +1,4 @@
+import { toUSVString } from "node:util"
 import { describe, expect, it } from "vitest"
 import { overHttp, overStdio, apps } from "@nessalabs/server-kit/testing"
 import type { CallToolResult } from "@nessalabs/app-shell"
@@ -38,8 +39,8 @@ describe("bounded continuation results", () => {
               ),
             )
             const page = (answer.structuredContent as { page: { json: string } }).page
-            expect(page.json.isWellFormed()).toBe(true)
-            expect(page.json).toMatch(/^[\x00-\x7f]*$/)
+            expect(toUSVString(page.json)).toBe(page.json)
+            expect(Buffer.byteLength(page.json)).toBe(page.json.length)
             expect(carriedBytes(answer)).toBeLessThanOrEqual(hostLimit)
             pages++
             return answer
@@ -104,7 +105,8 @@ describe("bounded continuation results", () => {
         })
         expect(file.isError).toBe(true)
         expect(carriedBytes(file)).toBeLessThanOrEqual(hostLimit)
-        expect((file.content as { text: string }[])[0]!.text.isWellFormed()).toBe(true)
+        const text = (file.content as { text: string }[])[0]!.text
+        expect(toUSVString(text)).toBe(text)
       } finally {
         await connection.close()
       }
@@ -131,8 +133,8 @@ describe("bounded continuation results", () => {
             expect(carriedBytes(result)).toBeLessThanOrEqual(hostLimit)
             const page = result.structuredContent as { page?: { json: string } }
             if (page.page !== undefined) {
-              expect(page.page.json.isWellFormed()).toBe(true)
-              expect(page.page.json).toMatch(/^[\x00-\x7f]*$/)
+              expect(toUSVString(page.page.json)).toBe(page.page.json)
+              expect(Buffer.byteLength(page.page.json)).toBe(page.page.json.length)
             }
             calls++
             return result
