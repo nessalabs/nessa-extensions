@@ -10,6 +10,7 @@ import {
   answer,
   click as ask,
   elapsed,
+  currentRequest,
   openFileMachine,
   refusalFor,
   shown,
@@ -25,6 +26,9 @@ export interface OpenRequest {
   readonly path?: string
 }
 
+/** The request owner decides whether a read or external effect may continue. */
+export type OpenFile = (request: OpenRequest, current: () => boolean) => Promise<Opening>
+
 export interface Schedule {
   /** Runs `run` after `ms`, and returns a function that cancels it. */
   after(ms: number, run: () => void): () => void
@@ -35,7 +39,8 @@ const unsettled: Opening = { kind: "refused", reason: "Couldn't open this." }
 export function useOpenFile(options: {
   experimentId: string
   runId: string
-  open: (request: OpenRequest) => Promise<Opening>
+  active: boolean
+  open: OpenFile
   schedule: Schedule
 }): {
   readonly shown: (target: Target) => Shown
@@ -48,7 +53,7 @@ export function useOpenFile(options: {
   const optionsRef = useRef(options)
   optionsRef.current = options
   const [, setVersion] = useState(0)
-  const identity = `${options.experimentId}\0${options.runId}`
+  const identity = `${options.experimentId}\0${options.runId}\0${options.active}`
   const [tracked, setTracked] = useState(identity)
   // A new run is idle in this render. An answer still in flight no longer
   // matches the generation it was asked in. Cancelling its timer is a side
@@ -63,8 +68,13 @@ export function useOpenFile(options: {
     setVersion((version) => version + 1)
   }
 
-  const settle = (target: Target, request: number, opening: Opening, born: number) => {
-    if (!mounted.current || born !== generation.current) return
+  const settle = (
+    target: Target,
+    request: number,
+    opening: Opening,
+    current: () => boolean,
+  ) => {
+    if (!current()) return
     const next = answer(machine.current, target, request, opening)
     if (next === machine.current) return
     commit(next)
@@ -72,7 +82,7 @@ export function useOpenFile(options: {
     const id = targetId(target)
     const cancel = optionsRef.current.schedule.after(refusalFor, () => {
       timers.current.delete(id)
-      if (!mounted.current || born !== generation.current) return
+      if (!current()) return
       const cleared = elapsed(machine.current, target, request)
       if (cleared !== machine.current) commit(cleared)
     })
@@ -104,9 +114,16 @@ export function useOpenFile(options: {
     commit(asked.machine)
     const { experimentId, runId, open } = optionsRef.current
     const path = target.kind === "file" ? target.path : undefined
-    void open({ experimentId, runId, ...(path === undefined ? {} : { path }) }).then(
-      (opening) => settle(target, asked.request, opening, born),
-      () => settle(target, asked.request, unsettled, born),
+    const current = () =>
+      mounted.current &&
+      born === generation.current &&
+      currentRequest(machine.current, target, asked.request)
+    void open(
+      { experimentId, runId, ...(path === undefined ? {} : { path }) },
+      current,
+    ).then(
+      (opening) => settle(target, asked.request, opening, current),
+      () => settle(target, asked.request, unsettled, current),
     )
   }
 

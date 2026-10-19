@@ -227,7 +227,11 @@ calls, not the final in-memory experiment or its rendering cost.
 | Page repeats, changes revision/total, fails to advance, or ends with invalid JSON | Fail the read before domain/UI publication | `app/paged-call.test.ts` |
 | Server refuses a later page | Show the refusal, without a partial result | `app/paged-call.test.ts` |
 | Source becomes malformed, or throws a long diagnostic | Bound refusal text before the server kit encodes it, including between pages | `server/paging.test.ts` |
-| View changes during an outstanding read | Ignore the result and stop requesting further pages | `app/paged-call.test.ts` and existing hook tests |
+| View changes during an outstanding read | Ignore the result and stop requesting further pages | `app/paged-call.test.ts` and hook tests |
+| A model or a client without assembly reads a large result | Every page retains a bounded original text summary and its continuation instruction | `server/paging.test.ts` |
+| File target is retried, its run changes, its view becomes hidden, or the control unmounts while a call waits | The existing mounted/generation/latest-request authority becomes false; issue no further page or link request | `app/use-open-file.test.tsx` and app integration tests |
+| Different file targets are open concurrently | Each keeps its own latest request authority | `app/use-open-file.test.tsx` |
+| Final file response arrives after its request became stale | Do not call the host's openLink | App integration tests |
 
 The byte regression suite measures every actual stdio-entry and loopback HTTP
 response with `Buffer.byteLength(JSON.stringify(JSON.stringify(result)))`,
@@ -261,3 +265,28 @@ to the real extension MCP server entry. `verification/evidence/large/` holds
 the per-call bytes and the browser assertions/screenshots; the transport-only
 mode writes a separate file with an empty browser list. This does not establish
 Nessa-host or native acceptance; those require the real gateway/browser stack.
+
+The file-opening lifetime belongs to `useOpenFile`'s mounted control, run
+generation and latest request per target, as defined in `open-file.ts`. The
+open port carries a predicate reading that existing authority; `useHostOpen`
+passes it into pagination and consults it before asking the host to open a
+link. No second request table or lifecycle flags live in the transport hook.
+
+This corrects the review-loop diagnosis: a transport-only wrapper had dropped
+the existing standalone-text and request-lifetime contracts. The same outcome
+now supplies both bounded wire text and assembled data, and the same request
+owner governs both settlement and further external effects.
+
+For the real Nessa gateway/server harness, after building nessa-agent and the
+extension, run:
+
+```sh
+NESSA_AGENT_ROOT=/absolute/path/to/nessa-agent EXPERIMENTS_LARGE=1 node extensions/experiments/verification/capture.mjs
+```
+
+The large mode uses `verification/large-server.mjs` as a real stdio server in
+the harness's isolated gateway. Chromium and WebKit each open the experiment,
+its run list and full run detail, assert a virtualized file list, and exercise
+the file refusal. It writes engine-specific Nessa screenshots separately
+from the historical PR21 captures. This harness has not qualified the current
+change while the browser-download access gate remains blocked.

@@ -24,6 +24,23 @@ function wire(outcome: ReturnType<typeof pageResult>): CallToolResult {
 }
 
 describe("bounded continuation results", () => {
+  it("keeps the standalone explanation on every page for clients without assembly", () => {
+    const outcome = {
+      text: "Can't open this file: the artifact expired.",
+      data: { opening: { kind: "unavailable", reason: "x".repeat(30_000) } },
+    }
+    let next: { revision: string; offset: number } | undefined
+    let pages = 0
+    do {
+      const result = pageResult(outcome, next)
+      expect(result.text).toContain(outcome.text)
+      expect(carriedBytes(wire(result))).toBeLessThanOrEqual(hostLimit)
+      next = (result.data as { page: { next?: typeof next } }).page.next
+      pages++
+    } while (next !== undefined)
+    expect(pages).toBeGreaterThan(1)
+  })
+
   it.each([8180, 8181, 8182, 8183])(
     "keeps each page Unicode-safe at shifted boundary %s",
     async (padding) => {
@@ -131,6 +148,8 @@ describe("bounded continuation results", () => {
               ),
             )
             expect(carriedBytes(result)).toBeLessThanOrEqual(hostLimit)
+            const text = (result.content as { text: string }[])[0]!.text
+            expect(toUSVString(text)).toBe(text)
             const page = result.structuredContent as { page?: { json: string } }
             if (page.page !== undefined) {
               expect(toUSVString(page.page.json)).toBe(page.page.json)

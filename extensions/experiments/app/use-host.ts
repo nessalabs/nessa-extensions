@@ -25,7 +25,7 @@ import {
   type OpenAnswer,
 } from "./host-data.ts"
 import type { Opening } from "./open-file.ts"
-import type { OpenRequest } from "./use-open-file.ts"
+import type { OpenRequest, OpenFile } from "./use-open-file.ts"
 import type { Experiment, Run } from "../model/index.ts"
 
 import { callPaged } from "./paged-call.ts"
@@ -255,16 +255,23 @@ export function useFetchedRun(
 }
 
 /** `open_file`, then `ui/open-link` when the host offers it. */
-export function useHostOpen(): (request: OpenRequest) => Promise<Opening> {
+export function useHostOpen(): OpenFile {
   const bridge = useBridge()
   return useCallback(
-    async (request: OpenRequest): Promise<Opening> => {
+    async (request: OpenRequest, current: () => boolean): Promise<Opening> => {
       try {
-        const result = await callPaged(bridge, "open_file", {
-          experimentId: request.experimentId,
-          runId: request.runId,
-          ...(request.path === undefined ? {} : { path: request.path }),
-        })
+        const result = await callPaged(
+          bridge,
+          "open_file",
+          {
+            experimentId: request.experimentId,
+            runId: request.runId,
+            ...(request.path === undefined ? {} : { path: request.path }),
+          },
+          current,
+        )
+        if (!current())
+          return { kind: "refused", reason: "This file request is no longer current." }
         const opening: OpenAnswer = openAnswer(result)
         if (opening.kind === "refused") return opening
         if (!hostOpensLinks(bridge)) {

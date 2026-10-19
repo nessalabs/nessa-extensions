@@ -72,6 +72,15 @@ export function click(machine: OpenFileMachine, target: Target): Click {
   return { machine: { next: request + 1, phases }, request }
 }
 
+/** Whether this request is still the latest request for its target. */
+export function currentRequest(
+  machine: OpenFileMachine,
+  target: Target,
+  request: number,
+): boolean {
+  return machine.phases.get(targetId(target))?.request === request
+}
+
 /**
  * An answer. Applied only when `request` is still `target`'s latest: an
  * earlier request's answer changes nothing, whatever phase `target` is in.
@@ -84,8 +93,7 @@ export function answer(
   opening: Opening,
 ): OpenFileMachine {
   const id = targetId(target)
-  const phase = machine.phases.get(id)
-  if (phase === undefined || phase.request !== request) return machine
+  if (!currentRequest(machine, target, request)) return machine
   const phases = new Map(machine.phases)
   if (opening.kind === "opened") phases.delete(id)
   else phases.set(id, { request, status: "refused", reason: opening.reason })
@@ -104,7 +112,7 @@ export function elapsed(
 ): OpenFileMachine {
   const id = targetId(target)
   const phase = machine.phases.get(id)
-  if (phase === undefined || phase.request !== request || phase.status !== "refused") {
+  if (!currentRequest(machine, target, request) || phase?.status !== "refused") {
     return machine
   }
   const phases = new Map(machine.phases)

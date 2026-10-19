@@ -77,6 +77,7 @@ const forbidden = /\b(areas?|splits?|costs?)\b/gi
 
 function ScaleChange({ experiment: subject, run }: { experiment: Experiment; run: Run }) {
   const change = useChangeView({
+    active: true,
     experiment: subject,
     run,
     open: async () => ({ kind: "opened" }),

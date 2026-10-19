@@ -28,6 +28,7 @@ import {
   type Run,
 } from "../model/index.ts"
 import { checkoutSample, latencySample } from "../samples/index.ts"
+import { pageResult } from "../server/paging.ts"
 import { ExperimentApp } from "./experiment-app.tsx"
 import type { Schedule } from "./use-open-file.ts"
 
@@ -123,7 +124,11 @@ async function renderApp(
   sample: Experiment,
   options?: {
     readonly modes?: ("inline" | "fullscreen")[]
-    readonly opening?: CallToolResult
+    readonly opening?:
+      | CallToolResult
+      | ((
+          args: Record<string, unknown> | undefined,
+        ) => CallToolResult | Promise<CallToolResult>)
     readonly result?: CallToolResult
     readonly holdFullscreen?: boolean
     /** Replaces every `get_run` body's reason, so a test can see the body was drawn. */
@@ -209,7 +214,9 @@ async function renderApp(
         }
         if (name === "open_file") {
           return (
-            options?.opening ??
+            (typeof options?.opening === "function"
+              ? options.opening(args)
+              : options?.opening) ??
             answered("opening", {
               opening: { kind: "unavailable", reason: "No file here." },
             })
@@ -246,6 +253,92 @@ async function openFullscreen() {
 }
 
 describe("the experiment app in the fake host", () => {
+  it.each(["paged", "whole"] as const)(
+    "stops stale %s file reads and links after close, unmount or retry",
+    async (shape) => {
+      for (const action of [
+        "close",
+        "unmount",
+        "retry",
+        "inline",
+        "hide-then-reopen",
+      ] as const) {
+        cleanup()
+        let release: (result: CallToolResult) => void = () => {}
+        const waiting = new Promise<CallToolResult>((resolve) => {
+          release = resolve
+        })
+        let opens = 0
+        const checkout = experiment(checkoutSample)
+        const view = await renderApp(checkout, {
+          opening: () => {
+            opens++
+            return opens === 1
+              ? waiting
+              : answered("new link", {
+                  opening: { kind: "link", url: "https://example.com/new" },
+                })
+          },
+        })
+        await openFullscreen()
+        fireEvent.click(screen.getAllByRole("button", { name: /^Run \d+/ })[0]!)
+        await settle()
+        fireEvent.click(screen.getByRole("button", { name: "Open change" }))
+        await settle()
+        expect(opens).toBe(1)
+        if (action === "inline" || action === "hide-then-reopen") {
+          fireEvent.click(
+            screen.getByRole("button", { name: "Show the experiment inline" }),
+          )
+          await settle()
+          if (action === "hide-then-reopen") await openFullscreen()
+        } else if (action === "unmount") view.unmount()
+        else if (action === "close") fireEvent.keyDown(document, { key: "Escape" })
+        else fireEvent.click(screen.getByRole("button", { name: "Open change" }))
+        await settle()
+        if (action !== "retry" && action !== "hide-then-reopen")
+          expect(screen.queryByRole("navigation", { name: "Opened run" })).toBeNull()
+        const outcome = {
+          text: shape === "paged" ? "old link ".repeat(2000) : "old link",
+          data: { opening: { kind: "link", url: "https://example.com/old" } },
+        }
+        const page = pageResult(outcome)
+        await act(async () =>
+          release(answered(page.text, page.data as Record<string, unknown>)),
+        )
+        await settle()
+        expect(opens).toBe(action === "retry" ? 2 : 1)
+        expect(view.host.links).toEqual(
+          action === "retry" ? ["https://example.com/new"] : [],
+        )
+      }
+    },
+  )
+
+  it("continues a current paged file request and opens its link once", async () => {
+    const checkout = experiment(checkoutSample)
+    const outcome = {
+      text: "Open the artifact. ".repeat(1500),
+      data: { opening: { kind: "link", url: "https://example.com/current" } },
+    }
+    const view = await renderApp(checkout, {
+      opening: (args) => {
+        const page = pageResult(
+          outcome,
+          args?.continuation as { revision: string; offset: number } | undefined,
+        )
+        return answered(page.text, page.data as Record<string, unknown>)
+      },
+    })
+    await openFullscreen()
+    fireEvent.click(screen.getAllByRole("button", { name: /^Run \d+/ })[0]!)
+    await settle()
+    fireEvent.click(screen.getByRole("button", { name: "Open change" }))
+    await settle()
+    expect(view.calls.filter((name) => name === "open_file").length).toBeGreaterThan(1)
+    expect(view.host.links).toEqual(["https://example.com/current"])
+  })
+
   it("opens the checkout experiment from the card into the full view, and Escape walks the trail", async () => {
     const checkout = experiment(checkoutSample)
     const { host, calls } = await renderApp(checkout)

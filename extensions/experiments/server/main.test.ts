@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import type { CallToolResult } from "@nessalabs/app-shell"
 import { callPaged } from "../app/paged-call.ts"
-import { checkoutExperimentId } from "../samples/index.ts"
+import { checkoutExperimentId, scaleExperimentId } from "../samples/index.ts"
 import { experimentView } from "./view.ts"
 
 const appHtmlPath = fileURLToPath(new URL("../dist/app/index.html", import.meta.url))
@@ -21,10 +21,20 @@ afterEach(async () => {
 
 /** The bin's source, and what `pnpm build` makes of it: what `npx` runs. */
 const entries = [
-  { name: "server/main.ts", path: fileURLToPath(new URL("./main.ts", import.meta.url)) },
+  {
+    name: "server/main.ts",
+    path: fileURLToPath(new URL("./main.ts", import.meta.url)),
+    experimentId: checkoutExperimentId,
+  },
   {
     name: "dist/main.js",
     path: fileURLToPath(new URL("../dist/main.js", import.meta.url)),
+    experimentId: checkoutExperimentId,
+  },
+  {
+    name: "verification/large-server.mjs",
+    path: fileURLToPath(new URL("../verification/large-server.mjs", import.meta.url)),
+    experimentId: scaleExperimentId,
   },
 ]
 
@@ -45,7 +55,7 @@ describe("the bin", () => {
       ),
   )(
     "$name serves the samples over stdio, as a child process, to a $era-era client",
-    async ({ path, era }) => {
+    async ({ path, era, experimentId }) => {
       const transport = new StdioClientTransport({
         command: process.execPath,
         args: [path],
@@ -71,7 +81,7 @@ describe("the bin", () => {
       ])
       const result = await client.callTool({
         name: "show_experiment",
-        arguments: { experimentId: checkoutExperimentId },
+        arguments: { experimentId },
       })
       expect(result.isError).toBeFalsy()
       expect(result.structuredContent).toBeUndefined()
@@ -89,11 +99,11 @@ describe("the bin", () => {
           },
         },
         "get_experiment",
-        { experimentId: checkoutExperimentId },
+        { experimentId },
       )
       expect(read.isError).toBeFalsy()
       expect(read.structuredContent).toMatchObject({
-        experiment: { id: checkoutExperimentId },
+        experiment: { id: experimentId },
       })
       if (appHtml === undefined) throw new Error("the app is built")
       expect((await client.readResource({ uri: experimentView })).contents).toMatchObject(

@@ -33,5 +33,10 @@ export { useChangeView } from "./use-change.ts"
 export { useClimbChart } from "./use-climb.ts"
 export { useExplorationMap } from "./use-map.ts"
 export { useElementWidth } from "./use-measure.ts"
-export { useOpenFile, type OpenRequest, type Schedule } from "./use-open-file.ts"
+export {
+  useOpenFile,
+  type OpenRequest,
+  type OpenFile,
+  type Schedule,
+} from "./use-open-file.ts"
 export { VerdictLabel, VerdictList } from "./verdict-label.tsx"

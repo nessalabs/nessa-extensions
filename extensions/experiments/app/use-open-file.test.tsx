@@ -4,7 +4,7 @@ import { StrictMode } from "react"
 import { afterEach, describe, expect, it } from "vitest"
 
 import type { Opening } from "./open-file.ts"
-import { useOpenFile, type Schedule } from "./use-open-file.ts"
+import { useOpenFile, type OpenFile, type Schedule } from "./use-open-file.ts"
 
 afterEach(cleanup)
 
@@ -53,10 +53,10 @@ function Probe({
 }: {
   experimentId: string
   runId: string
-  open: () => Promise<Opening>
+  open: OpenFile
   schedule: Schedule
 }) {
-  const file = useOpenFile({ experimentId, runId, open, schedule })
+  const file = useOpenFile({ experimentId, runId, active: true, open, schedule })
   const path = "search/src/a.go"
   const shown = file.shown({ kind: "file", path })
   const change = file.shown({ kind: "change" })
@@ -85,6 +85,29 @@ const flush = () =>
   })
 
 describe("useOpenFile", () => {
+  it("keeps one current predicate per target and revokes it on replacement, run change and unmount", () => {
+    const current: (() => boolean)[] = []
+    const open: OpenFile = (_request, ownsRequest) => {
+      current.push(ownsRequest)
+      return new Promise(() => {})
+    }
+    const time = clock()
+    const props = { experimentId: "experiment", open, schedule: time.schedule }
+    const view = render(<Probe {...props} runId="first" />)
+    fireEvent.click(screen.getByRole("button", { name: "Open file" }))
+    fireEvent.click(screen.getByRole("button", { name: "Open change" }))
+    expect(current.map((owns) => owns())).toEqual([true, true])
+    fireEvent.click(screen.getByRole("button", { name: "Open file" }))
+    expect(current.map((owns) => owns())).toEqual([false, true, true])
+    view.rerender(<Probe {...props} runId="second" />)
+    expect(current.map((owns) => owns())).toEqual([false, false, false])
+    fireEvent.click(screen.getByRole("button", { name: "Open file" }))
+    expect(current[3]!()).toBe(true)
+    expect(current.slice(0, 3).map((owns) => owns())).toEqual([false, false, false])
+    view.unmount()
+    expect(current[3]!()).toBe(false)
+  })
+
   it("shows nothing while the request is open, then the refusal, then nothing after four seconds", async () => {
     const pending = defer<Opening>()
     const time = clock()

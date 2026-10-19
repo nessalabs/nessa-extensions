@@ -30,8 +30,7 @@ import { useExplorationMap } from "./use-map.ts"
 import { useElementWidth } from "./use-measure.ts"
 import { useExperimentNavigation } from "./use-navigation.ts"
 import type { ViewId } from "./navigation.ts"
-import type { Opening } from "./open-file.ts"
-import type { OpenRequest, Schedule } from "./use-open-file.ts"
+import type { OpenFile, Schedule } from "./use-open-file.ts"
 import type { Experiment, Run } from "../model/index.ts"
 import "./pages.css"
 
@@ -60,7 +59,7 @@ export function ExperimentSurface({
   /** A run may be opened. False while the next snapshot is still loading. */
   readonly runsOpenable: boolean
   readonly active: boolean
-  readonly open: (request: OpenRequest) => Promise<Opening>
+  readonly open: OpenFile
   readonly schedule: Schedule
   readonly onInline: () => void
   readonly inlinePending: boolean
@@ -99,7 +98,7 @@ export function ExperimentSurface({
   )
   const openRun = openId === undefined ? undefined : accepted.get(openId)
   const shown = fetched.status === "ready" ? openRun : undefined
-  const change = useChangeView({ experiment, run: shown, open, schedule })
+  const change = useChangeView({ experiment, run: shown, active, open, schedule })
   const head = useMemo(() => headline(experiment), [experiment])
   const path = useMemo(() => pathSteps(experiment), [experiment])
   const swarm = useMemo(() => swarmNow(experiment), [experiment])

@@ -6,22 +6,23 @@
 import { useMemo, useState } from "react"
 
 import type { ChangeViewProps } from "./change-view.tsx"
-import type { Opening } from "./open-file.ts"
 import { changeRead } from "./reading.ts"
-import { useOpenFile, type OpenRequest, type Schedule } from "./use-open-file.ts"
+import { useOpenFile, type OpenFile, type Schedule } from "./use-open-file.ts"
 import type { Experiment, Run } from "../model/index.ts"
 
 export function useChangeView(options: {
   experiment: Experiment
   run: Run | undefined
-  open: (request: OpenRequest) => Promise<Opening>
+  active: boolean
+  open: OpenFile
   schedule: Schedule
 }): ChangeViewProps | undefined {
-  const { experiment, run, open, schedule } = options
+  const { experiment, run, active, open, schedule } = options
   const read = useMemo(() => (run === undefined ? undefined : changeRead(run)), [run])
   const opening = useOpenFile({
     experimentId: experiment.id,
     runId: run?.id ?? "",
+    active,
     open,
     schedule,
   })

@@ -78,5 +78,50 @@
     "rule": "unicode-failure-encoding",
     "caught": true,
     "exit": 1
+  },
+  {
+    "rule": "standalone-summary",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "summary-bound",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "summary-unicode",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "file-pagination-owner",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "file-link-owner",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "file-target-owner",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "file-mount-owner",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "file-generation-owner",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "file-visibility-generation",
+    "caught": true,
+    "exit": 1
   }
 ]

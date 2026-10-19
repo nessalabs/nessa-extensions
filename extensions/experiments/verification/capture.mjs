@@ -50,7 +50,19 @@ import { build } from "vite"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const extension = dirname(here)
-const shots = here
+const largeMode = process.env.EXPERIMENTS_LARGE === "1"
+const shots = largeMode ? join(here, "evidence/large") : here
+const nessaSample = largeMode
+  ? {
+      id: "search-latency-at-scale",
+      title: "Rewrite search's query planner",
+      server: join(here, "large-server.mjs"),
+    }
+  : {
+      id: "checkout-hillclimb",
+      title: "Hill-climb checkout support",
+      server: join(extension, "dist/main.js"),
+    }
 const hostDir = join(here, "host")
 const nessaRoot = process.env.NESSA_AGENT_ROOT ?? "/tmp/nessa-agent"
 
@@ -449,7 +461,7 @@ function startGateway(scenarioPath, serverPath) {
   return { child, ready }
 }
 
-async function nessaShots(browser) {
+async function nessaShots(browser, engine) {
   const scenarioPath = join(tmpdir(), "experiments-shot-scenario.json")
   writeFileSync(
     scenarioPath,
@@ -461,7 +473,7 @@ async function nessaShots(browser) {
             {
               do: "tool",
               tool: "show_experiment",
-              arguments: { experimentId: "checkout-hillclimb" },
+              arguments: { experimentId: nessaSample.id },
             },
             { do: "end" },
           ],
@@ -469,7 +481,7 @@ async function nessaShots(browser) {
       ],
     }),
   )
-  const stack = startGateway(scenarioPath, join(extension, "dist/main.js"))
+  const stack = startGateway(scenarioPath, nessaSample.server)
   let page
   try {
     log("waiting for the gateway")
@@ -522,7 +534,7 @@ async function nessaShots(browser) {
       throw new Error(`the experiment did not appear\n${text}`)
     }
     log("inline frame attached")
-    const titled = await titledApp(page, "inline", "Hill-climb checkout support", 45_000)
+    const titled = await titledApp(page, "inline", nessaSample.title, 45_000)
     if (!titled) {
       await page
         .screenshot({ path: "/tmp/nessa-fail.png", timeout: 5_000 })
@@ -548,7 +560,7 @@ async function nessaShots(browser) {
       .locator('[data-place="inline"]')
       .first()
       .screenshot({
-        path: join(shots, "nessa-card.png"),
+        path: join(shots, `nessa-${engine}-card.png`),
         timeout: 10_000,
       })
     log("wrote nessa-card.png")
@@ -570,10 +582,30 @@ async function nessaShots(browser) {
       .locator('[data-place="pane"]')
       .first()
       .screenshot({
-        path: join(shots, "nessa-overview.png"),
+        path: join(shots, `nessa-${engine}-overview.png`),
         timeout: 10_000,
       })
     log("wrote nessa-overview.png")
+    if (largeMode) {
+      await pane.app.getByRole("tab", { name: "Runs" }).click()
+      await pane.app.getByRole("button", { name: /^Run 1\b/ }).click()
+      await pane.app.getByRole("heading", { name: "Run 1", exact: true }).waitFor()
+      await pane.app.getByRole("textbox", { name: "Find a file" }).waitFor()
+      const rows = await pane.app.locator(".change-file").count()
+      if (rows < 1 || rows >= 10_000)
+        throw new Error(`The large run did not virtualize its files: ${rows}`)
+      await pane.app.getByRole("button", { name: "Open change" }).click()
+      await pane.app
+        .getByText("The sample records changes, not file contents.", { exact: true })
+        .waitFor()
+      await page
+        .locator('[data-place="pane"]')
+        .first()
+        .screenshot({ path: join(shots, `nessa-${engine}-run.png`) })
+      log(
+        `${engine}: large experiment, runs, run detail and file refusal held; ${rows} visible files`,
+      )
+    }
   } finally {
     if (page) {
       await Promise.race([
@@ -609,7 +641,8 @@ try {
   log("reference host (webkit)")
   await driveReference(safari, site.origin, false)
   log("nessa")
-  await nessaShots(browser)
+  await nessaShots(browser, "chromium")
+  await nessaShots(safari, "webkit")
 } catch (error) {
   log(error instanceof Error ? (error.stack ?? error.message) : String(error))
   throw error
