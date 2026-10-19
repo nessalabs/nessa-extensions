@@ -320,5 +320,7 @@ The large mode uses `verification/large-server.mjs` as a real stdio server in
 the harness's isolated gateway. Chromium and WebKit each open the experiment,
 its run list and full run detail, assert a virtualized file list, and exercise
 the file refusal. It writes engine-specific Nessa screenshots separately
-from the historical PR21 captures. This harness has not qualified the current
-change while the browser-download access gate remains blocked.
+from the historical PR21 captures. Final combined exact-source acceptance is
+pending in the approved Mac environment. Preserve the original canonical
+`jsxDEV` failure alongside the later standalone pass; cache isolation does not
+conclusively explain that failure.
