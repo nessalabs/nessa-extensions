@@ -35,8 +35,9 @@ let dev
 let client
 try {
   dev = await startDevServer(
-    {},
+    { isolateCache: true },
     {
+      NODE_ENV: "development",
       NESSA_STAGE: "ci",
       VITE_NESSA_STAGE: "ci",
       NESSA_BROWSER_GATEWAY_URL: gateway.url,

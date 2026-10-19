@@ -251,6 +251,9 @@ truncation marker and are made well-formed Unicode, so malformed field names and
 the wire bound.
 Browser qualification of this change is separate from those transport tests. The
 real-host capture's child program is `verification/capture-driver.ts`. It uses
+the isolated-cache launcher from [host PR #1036](https://github.com/nessalabs/nessa-agent/pull/1036);
+use a host checkout containing that prerequisite for concurrent verification.
+It requests a private cache and explicitly selects the development React runtime.
 the host client's public `prepare`/`submit` API and resumes stdin so the parent's
 close releases the client, dev server and gateway even while the submission
 receipt is pending. Its subprocess regression uses a client with only that
@@ -263,6 +266,7 @@ one further JSON encoding, rather than recreating its first serialization.
 | Capture event | Required evidence | Regression |
 | --- | --- | --- |
 | Parent closes stdin while the submission receipt is pending | Driver closes client, dev server and gateway | `verification/capture-driver.test.ts` |
+| Host dev server starts beside another verifier | Request a private Vite cache and development React runtime; host launcher owns cleanup | `verification/capture-driver.test.ts`; host `server-cache.test.mjs` |
 | An app request is sent | Correlate id within its own socket; ignore other RPC methods | `verification/capture-calls.test.ts` |
 | Its reply arrives | Measure original resultJson, reject refusal/tool error or excess bytes | `verification/capture-calls.test.ts` |
 | Repeated or reordered pages arrive | Identical duplicates may combine; require consistent totals, contiguous offsets and the full revision hash | `verification/capture-calls.test.ts` |

@@ -38,7 +38,9 @@ export async function startLocalGateway(options) {
     "verification/desktop/scripts/lib/server.mjs",
     `${record}
 export const freePort = async () => 1
-export async function startDevServer() {
+export async function startDevServer(options, env) {
+  if (options.isolateCache !== true) throw new Error("capture must own its cache")
+  if (env.NODE_ENV !== "development") throw new Error("capture needs the development runtime")
   event("dev:start")
   return { url: "http://127.0.0.1:2", close: async () => event("dev:close") }
 }
@@ -86,6 +88,7 @@ export const NessaClient = {
     cwd: root,
     env: {
       PATH: process.env.PATH,
+      NODE_ENV: "production",
       EXPERIMENTS_SCENARIO: join(root, "scenario.json"),
       EXPERIMENTS_SERVER: join(root, "server.mjs"),
       EXPERIMENTS_FORWARD_HOOK: join(root, "hook.mjs"),

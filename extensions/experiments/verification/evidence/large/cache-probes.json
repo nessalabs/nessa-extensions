@@ -1,0 +1,15 @@
+{
+  "scope": "capture requests host-owned private cache and explicit development mode; requires host #1035",
+  "probes": [
+    {
+      "rule": "private-cache-request",
+      "status": 1,
+      "caught": true
+    },
+    {
+      "rule": "development-runtime",
+      "status": 1,
+      "caught": true
+    }
+  ]
+}
