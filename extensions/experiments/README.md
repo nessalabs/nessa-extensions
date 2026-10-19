@@ -254,7 +254,7 @@ real-host capture's child program is `verification/capture-driver.ts`. It uses
 the isolated-cache launcher from [host PR #1036](https://github.com/nessalabs/nessa-agent/pull/1036);
 use a host checkout containing that prerequisite for concurrent verification.
 It requests a private cache and explicitly selects the development React runtime.
-the host client's public `prepare`/`submit` API and resumes stdin so the parent's
+It uses the host client's public `prepare`/`submit` API and resumes stdin so the parent's
 close releases the client, dev server and gateway even while the submission
 receipt is pending. Its subprocess regression uses a client with only that
 current API; it does not start a browser or modify the host.
