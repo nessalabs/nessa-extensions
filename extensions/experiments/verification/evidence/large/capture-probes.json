@@ -1,0 +1,57 @@
+[
+  {
+    "rule": "public-prepared-submission",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "stdin-close-owner",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "pending-receipt-does-not-block",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "original-host-string-encoding",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "actual-host-result-bound",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "complete-revision-hash",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "exact-fixture-data",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "all-four-tools",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "no-pending-at-completion",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "ten-times-fixture",
+    "caught": true,
+    "exit": 1
+  },
+  {
+    "rule": "socket-local-request-identity",
+    "caught": true,
+    "exit": 1
+  }
+]

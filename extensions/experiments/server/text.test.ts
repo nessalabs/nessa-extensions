@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import { validateExperiment, type Experiment, type Problem } from "../model/index.ts"
 import { checkoutSample, latencySample, scaleSample } from "../samples/index.ts"
 import {
+  shortText,
   downloadShown,
   idsNamed,
   missingText,
@@ -251,5 +252,24 @@ describe("openingText", () => {
     ).toBe(
       `Ready to download a.txt in run r1 as a.txt (text/plain):\n\n${"a".repeat(downloadShown)}\n…and 5 more characters`,
     )
+  })
+})
+
+describe("bounded text prefixes", () => {
+  it.each([1024, 4096, 20_000])(
+    "preserves character boundaries at %s units",
+    (maximum) => {
+      const text = "a".repeat(maximum - 1) + "😀" + "tail"
+      expect(shortText(text, maximum, " [truncated]")).toBe(
+        "a".repeat(maximum - 1) + " [truncated]",
+      )
+      expect(shortText("a".repeat(maximum - 2) + "😀", maximum, " [truncated]")).toBe(
+        "a".repeat(maximum - 2) + "😀",
+      )
+    },
+  )
+  it("normalizes an originally unpaired diagnostic without truncating a complete valid string", () => {
+    expect(shortText("unpaired: \ud800", 100, " [truncated]")).toBe("unpaired: �")
+    expect(shortText("valid 😀", 100, " [truncated]")).toBe("valid 😀")
   })
 })

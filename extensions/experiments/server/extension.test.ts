@@ -15,6 +15,8 @@ import {
   latencySample,
   scaleSample,
 } from "../samples/index.ts"
+import { callPaged } from "../app/paged-call.ts"
+import type { CallToolResult } from "@nessalabs/app-shell"
 import { experimentsExtension } from "./extension.ts"
 import { structuredResultBytes } from "./result-bound.ts"
 import { samplesSource } from "./samples-source.ts"
@@ -65,7 +67,26 @@ async function connect(reach: Reach, extension: Extension = samples) {
     { era: reach.era, ...(reach.apps ? { mimeTypes: apps } : {}) },
   )
   opened.push(connection.close)
-  return connection.client
+  return {
+    listTools: connection.client.listTools.bind(connection.client),
+    listResources: connection.client.listResources.bind(connection.client),
+    readResource: connection.client.readResource.bind(connection.client),
+    callTool: async (
+      request: { name: string; arguments?: Record<string, unknown> },
+      options?: { signal: AbortSignal },
+    ) =>
+      callPaged(
+        {
+          callTool: async (name, args) =>
+            (await connection.client.callTool(
+              { name, arguments: args },
+              options,
+            )) as CallToolResult,
+        },
+        request.name,
+        request.arguments ?? {},
+      ),
+  }
 }
 
 /** The sample `make` makes, validated as the server validates it. */

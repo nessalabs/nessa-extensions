@@ -22,9 +22,8 @@ import { useChangeView } from "./use-change.ts"
 import { useClimbChart } from "./use-climb.ts"
 import { useElementWidth } from "./use-measure.ts"
 import { useExplorationMap } from "./use-map.ts"
-import type { OpenRequest, Schedule } from "./use-open-file.ts"
+import type { OpenFile, Schedule } from "./use-open-file.ts"
 import { VerdictList } from "./verdict-label.tsx"
-import type { Opening } from "./open-file.ts"
 import type { Experiment } from "../model/index.ts"
 import "./preview.css"
 
@@ -34,7 +33,7 @@ export function ExperimentPreview({
   schedule,
 }: {
   experiment: Experiment
-  open: (request: OpenRequest) => Promise<Opening>
+  open: OpenFile
   schedule: Schedule
 }) {
   const [frame, width] = useElementWidth<HTMLDivElement>(720)
@@ -48,7 +47,13 @@ export function ExperimentPreview({
     [experiment, casesRun],
   )
   const changeRun = useMemo(() => runWithChange(experiment), [experiment])
-  const change = useChangeView({ experiment, run: changeRun, open, schedule })
+  const change = useChangeView({
+    experiment,
+    run: changeRun,
+    active: true,
+    open,
+    schedule,
+  })
   return (
     <div className="preview" data-ready="">
       <div ref={frame} className="preview-frame">
