@@ -1,0 +1,56 @@
+{
+  "sourceRevision": "47cb6984bebc81e8930edfcafc35e7d5c214b7ec",
+  "date": "2026-11-03",
+  "platform": "Darwin arm64",
+  "node": "24.22.1",
+  "pnpm": "11.9.0",
+  "checks": [
+    {
+      "command": "pnpm architecture",
+      "exit": 0,
+      "tests": 29
+    },
+    {
+      "command": "pnpm install --frozen-lockfile",
+      "exit": 0
+    },
+    {
+      "command": "pnpm typecheck",
+      "exit": 0
+    },
+    {
+      "command": "pnpm build",
+      "exit": 0
+    },
+    {
+      "command": "pnpm test",
+      "exit": 0,
+      "vitestTests": 1024,
+      "vitestFiles": 48,
+      "nodeBoundaryTests": 83
+    },
+    {
+      "command": "pnpm --filter @nessalabs/app-shell verify",
+      "exit": 0,
+      "tests": 18,
+      "engines": ["Chromium", "WebKit"],
+      "hosts": ["fake host", "reference AppBridge"]
+    },
+    {
+      "command": "node extensions/experiments/verification/large.mjs",
+      "exit": 0,
+      "sampleBytes": 1009968,
+      "calls": 422,
+      "maxEncodedCallBytes": 41615,
+      "limit": 57344,
+      "engines": ["Chromium 153.0.8010.12", "WebKit 26.6"],
+      "visibleFileRowsEach": 15
+    }
+  ],
+  "notRun": [
+    "current exact-source native Nessa host acceptance",
+    "live experiment harness",
+    "npm publication"
+  ],
+  "runtimeSourceChanged": false
+}

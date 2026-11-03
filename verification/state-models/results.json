@@ -1,0 +1,275 @@
+{
+  "date": "2026-11-03T09:36:32.268Z",
+  "documents": 24,
+  "baselines": [
+    {
+      "owner": "ext-connection",
+      "id": "051f39b5-9e51-48ef-b034-6b24664c7c90",
+      "state": "passed",
+      "message": "Every rule held. This checks the design, not the code.",
+      "result": {
+        "sourceRevision": "47cb6984bebc81e8930edfcafc35e7d5c214b7ec",
+        "checker": "tlc-1.7.4",
+        "date": "2026-11-03T09:36:32.972Z",
+        "config": "tla/BridgeConnection.cfg",
+        "modelDigest": "1f73c4d3206037a4a2c885da246a9e4b19d7845f255a61c0e2ed78910f50afc4",
+        "states": 13,
+        "held": ["InitializedBeforePublication", "NoLateRevival"],
+        "broke": [],
+        "unchecked": []
+      }
+    },
+    {
+      "owner": "ext-opening",
+      "id": "485289d8-667a-468e-9ce9-b490e980066f",
+      "state": "passed",
+      "message": "Every rule held. This checks the design, not the code.",
+      "result": {
+        "sourceRevision": "47cb6984bebc81e8930edfcafc35e7d5c214b7ec",
+        "checker": "tlc-1.7.4",
+        "date": "2026-11-03T09:36:36.320Z",
+        "config": "tla/FileOpening.cfg",
+        "modelDigest": "65031a0a76901728315270091896d7136c2fe653792031e4b6f3460b7d1b7478",
+        "states": 924,
+        "held": ["CurrentGenerationOnly", "LatestTargetOnly", "MountedOnly"],
+        "broke": [],
+        "unchecked": []
+      }
+    },
+    {
+      "owner": "ext-paging",
+      "id": "c7715627-85c5-48dc-858e-2979d894e575",
+      "state": "passed",
+      "message": "Every rule held. This checks the design, not the code.",
+      "result": {
+        "sourceRevision": "47cb6984bebc81e8930edfcafc35e7d5c214b7ec",
+        "checker": "tlc-1.7.4",
+        "date": "2026-11-03T09:36:41.172Z",
+        "config": "tla/PageAssembly.cfg",
+        "modelDigest": "0d5e219655489ae447ed4b82598793a103d18f88054c9a8289e49e9e06aef6c9",
+        "states": 10,
+        "held": ["OneRevision", "ContiguousPages"],
+        "broke": [],
+        "unchecked": []
+      }
+    }
+  ],
+  "controls": [
+    {
+      "name": "initialization-not-sent",
+      "owner": "ext-connection",
+      "expected": "InitializedBeforePublication",
+      "passed": true,
+      "id": "efadde91-e9e9-4d43-a738-71797ea9b61a",
+      "state": "broke",
+      "message": "A rule broke. This checks the design, not the code.",
+      "result": {
+        "sourceRevision": "47cb6984bebc81e8930edfcafc35e7d5c214b7ec",
+        "checker": "tlc-1.7.4",
+        "date": "2026-11-03T09:36:34.291Z",
+        "config": "tla/BridgeConnection.cfg",
+        "modelDigest": "17026938c09c467e2c43c5ddb9268de71bcbbfdfc1f98ab31717c8c270d37c8d",
+        "states": 13,
+        "held": ["NoLateRevival"],
+        "broke": [
+          {
+            "rule": "InitializedBeforePublication",
+            "path": [
+              "Start with pending is FALSE, publications is {}, sent is {}, phase is Idle.",
+              "Begin: pending is TRUE, publications is {}, sent is {}, phase is Connecting.",
+              "Accept: pending is FALSE, publications is {[before |-> \"Connecting\", initialized |-> FALSE]}, sent is {}, phase is Connected."
+            ],
+            "states": []
+          }
+        ],
+        "unchecked": []
+      }
+    },
+    {
+      "name": "late-initialize-revives",
+      "owner": "ext-connection",
+      "expected": "NoLateRevival",
+      "passed": true,
+      "id": "33a3ab48-35b3-43bb-9f89-5a2e80e52921",
+      "state": "broke",
+      "message": "A rule broke. This checks the design, not the code.",
+      "result": {
+        "sourceRevision": "47cb6984bebc81e8930edfcafc35e7d5c214b7ec",
+        "checker": "tlc-1.7.4",
+        "date": "2026-11-03T09:36:35.631Z",
+        "config": "tla/BridgeConnection.cfg",
+        "modelDigest": "29aa4dc8467c6e1571739f1697dd2939c33519ac55d2025f7a620ab2a54c9f6d",
+        "states": 25,
+        "held": ["InitializedBeforePublication"],
+        "broke": [
+          {
+            "rule": "NoLateRevival",
+            "path": [
+              "Start with pending is FALSE, publications is {}, sent is {}, phase is Idle.",
+              "Begin: pending is TRUE, publications is {}, sent is {}, phase is Connecting.",
+              "Teardown: pending is TRUE, publications is {}, sent is {}, phase is TearingDown.",
+              "Accept: pending is FALSE, publications is {[before |-> \"TearingDown\", initialized |-> TRUE]}, sent is {\"initialized\"}, phase is Connected."
+            ],
+            "states": []
+          }
+        ],
+        "unchecked": []
+      }
+    },
+    {
+      "name": "old-generation-opens",
+      "owner": "ext-opening",
+      "expected": "CurrentGenerationOnly",
+      "passed": true,
+      "id": "8920a310-9a75-4da2-9c86-376580856cdb",
+      "state": "broke",
+      "message": "A rule broke. This checks the design, not the code.",
+      "result": {
+        "sourceRevision": "47cb6984bebc81e8930edfcafc35e7d5c214b7ec",
+        "checker": "tlc-1.7.4",
+        "date": "2026-11-03T09:36:37.738Z",
+        "config": "tla/FileOpening.cfg",
+        "modelDigest": "cd8e4466e0c18a27f11013fe138f089afb77aef974c3529c030e40d68943bb49",
+        "states": 1708,
+        "held": ["LatestTargetOnly", "MountedOnly"],
+        "broke": [
+          {
+            "rule": "CurrentGenerationOnly",
+            "path": [
+              "Start with generation is 0, effects is {}, next is 1, requests is {}, latest is [file |-> 0, change |-> 0], mounted is TRUE.",
+              "Click: generation is 0, effects is {}, next is 2, requests is {[born |-> 0, number |-> 1, target |-> \"file\"]}, latest is [file |-> 1, change |-> 0], mounted is TRUE.",
+              "ChangeIdentity: generation is 1, effects is {}, next is 1, requests is {[born |-> 0, number |-> 1, target |-> \"file\"]}, latest is [file |-> 0, change |-> 0], mounted is TRUE.",
+              "Click: generation is 1, effects is {}, next is 2, requests is { [born |-> 0, number |-> 1, target |-> \"file\"],, [born |-> 1, number |-> 1, target |-> \"file\"] }, latest is [file |-> 1, chan (shortened)",
+              "Next: generation is 1, effects is { [ born |-> 0,, number |-> 1,, currentGeneration |-> 1,, currentNumber |-> 1,, wasMounted |-> TRUE ] }, next is 2, requests is { [born |-> 0, number |-> (shortened)"
+            ],
+            "states": []
+          }
+        ],
+        "unchecked": []
+      }
+    },
+    {
+      "name": "superseded-target-opens",
+      "owner": "ext-opening",
+      "expected": "LatestTargetOnly",
+      "passed": true,
+      "id": "f7ab9f36-6471-4b97-ad95-e52402196732",
+      "state": "broke",
+      "message": "A rule broke. This checks the design, not the code.",
+      "result": {
+        "sourceRevision": "47cb6984bebc81e8930edfcafc35e7d5c214b7ec",
+        "checker": "tlc-1.7.4",
+        "date": "2026-11-03T09:36:39.122Z",
+        "config": "tla/FileOpening.cfg",
+        "modelDigest": "2ec530de6ae08e292a5dc7d8a48f384dbbbf861548579e4ef4bbd980f42894c8",
+        "states": 1740,
+        "held": ["CurrentGenerationOnly", "MountedOnly"],
+        "broke": [
+          {
+            "rule": "LatestTargetOnly",
+            "path": [
+              "Start with generation is 0, effects is {}, next is 1, requests is {}, latest is [file |-> 0, change |-> 0], mounted is TRUE.",
+              "Click: generation is 0, effects is {}, next is 2, requests is {[born |-> 0, number |-> 1, target |-> \"file\"]}, latest is [file |-> 1, change |-> 0], mounted is TRUE.",
+              "Click: generation is 0, effects is {}, next is 3, requests is { [born |-> 0, number |-> 1, target |-> \"file\"],, [born |-> 0, number |-> 2, target |-> \"file\"] }, latest is [file |-> 2, chan (shortened)",
+              "Next: generation is 0, effects is { [ born |-> 0,, number |-> 1,, currentGeneration |-> 0,, currentNumber |-> 2,, wasMounted |-> TRUE ] }, next is 3, requests is { [born |-> 0, number |-> (shortened)"
+            ],
+            "states": []
+          }
+        ],
+        "unchecked": []
+      }
+    },
+    {
+      "name": "unmounted-opens",
+      "owner": "ext-opening",
+      "expected": "MountedOnly",
+      "passed": true,
+      "id": "0dbf2de1-df0a-40c1-8dbd-354e3b4b1447",
+      "state": "broke",
+      "message": "A rule broke. This checks the design, not the code.",
+      "result": {
+        "sourceRevision": "47cb6984bebc81e8930edfcafc35e7d5c214b7ec",
+        "checker": "tlc-1.7.4",
+        "date": "2026-11-03T09:36:40.484Z",
+        "config": "tla/FileOpening.cfg",
+        "modelDigest": "d537f04fe633f766278c8f8088add44162eac3a495babc45ef22fe255502d9c8",
+        "states": 1716,
+        "held": ["CurrentGenerationOnly", "LatestTargetOnly"],
+        "broke": [
+          {
+            "rule": "MountedOnly",
+            "path": [
+              "Start with generation is 0, effects is {}, next is 1, requests is {}, latest is [file |-> 0, change |-> 0], mounted is TRUE.",
+              "Click: generation is 0, effects is {}, next is 2, requests is {[born |-> 0, number |-> 1, target |-> \"file\"]}, latest is [file |-> 1, change |-> 0], mounted is TRUE.",
+              "Unmount: generation is 0, effects is {}, next is 2, requests is {[born |-> 0, number |-> 1, target |-> \"file\"]}, latest is [file |-> 1, change |-> 0], mounted is FALSE.",
+              "Next: generation is 0, effects is { [ born |-> 0,, number |-> 1,, currentGeneration |-> 0,, currentNumber |-> 1,, wasMounted |-> FALSE ] }, next is 2, requests is {[born |-> 0, number |-> (shortened)"
+            ],
+            "states": []
+          }
+        ],
+        "unchecked": []
+      }
+    },
+    {
+      "name": "mixed-revision-accepted",
+      "owner": "ext-paging",
+      "expected": "OneRevision",
+      "passed": true,
+      "id": "1d0b18eb-7e66-4532-a74d-2661cf5027ba",
+      "state": "broke",
+      "message": "A rule broke. This checks the design, not the code.",
+      "result": {
+        "sourceRevision": "47cb6984bebc81e8930edfcafc35e7d5c214b7ec",
+        "checker": "tlc-1.7.4",
+        "date": "2026-11-03T09:36:42.518Z",
+        "config": "tla/PageAssembly.cfg",
+        "modelDigest": "72f0cb900fc55311b8a96d4b8869f16621118e0022b9e32607f12479f2168b4b",
+        "states": 12,
+        "held": ["ContiguousPages"],
+        "broke": [
+          {
+            "rule": "OneRevision",
+            "path": [
+              "Start with parts is <<>>, phase is Reading.",
+              "Receive: parts is <<[revision |-> 1, offset |-> 1]>>, phase is Assembling.",
+              "Receive: parts is <<[revision |-> 1, offset |-> 1], [revision |-> 2, offset |-> 2]>>, phase is Complete."
+            ],
+            "states": []
+          }
+        ],
+        "unchecked": []
+      }
+    },
+    {
+      "name": "wrong-offset-accepted",
+      "owner": "ext-paging",
+      "expected": "ContiguousPages",
+      "passed": true,
+      "id": "1dd047f5-b244-4d87-aeb9-2979a3894f65",
+      "state": "broke",
+      "message": "A rule broke. This checks the design, not the code.",
+      "result": {
+        "sourceRevision": "47cb6984bebc81e8930edfcafc35e7d5c214b7ec",
+        "checker": "tlc-1.7.4",
+        "date": "2026-11-03T09:36:43.819Z",
+        "config": "tla/PageAssembly.cfg",
+        "modelDigest": "f96d1abbef68a5da22144f29f5ed0fb2ef4cc2e480ea8d36043d474034334c2c",
+        "states": 21,
+        "held": ["OneRevision"],
+        "broke": [
+          {
+            "rule": "ContiguousPages",
+            "path": [
+              "Start with parts is <<>>, phase is Reading.",
+              "Receive: parts is <<[revision |-> 1, offset |-> 1]>>, phase is Assembling.",
+              "Receive: parts is <<[revision |-> 1, offset |-> 1], [revision |-> 1, offset |-> 1]>>, phase is Complete."
+            ],
+            "states": []
+          }
+        ],
+        "unchecked": []
+      }
+    }
+  ],
+  "ok": true
+}

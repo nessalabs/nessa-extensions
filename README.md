@@ -11,6 +11,8 @@ Why they live here rather than in the app, and how the repository is laid out,
 is in the [decision record](docs/adr/todo/1-extensions-repo.md). How to work in
 it is in [AGENTS.md](AGENTS.md).
 
+The [state atlas](docs/state/README.md) maps current features, request lifetimes and executed verification evidence.
+
 ## Extensions
 
 | Package | What it is | Status |

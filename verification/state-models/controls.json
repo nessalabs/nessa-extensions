@@ -1,0 +1,51 @@
+[
+  {
+    "owner": "ext-connection",
+    "name": "initialization-not-sent",
+    "rule": "InitializedBeforePublication",
+    "from": "LET delivered == sent \\cup {\"initialized\"}",
+    "to": "LET delivered == sent"
+  },
+  {
+    "owner": "ext-connection",
+    "name": "late-initialize-revives",
+    "rule": "NoLateRevival",
+    "from": "pending /\\ phase = \"Connecting\"",
+    "to": "pending"
+  },
+  {
+    "owner": "ext-paging",
+    "name": "mixed-revision-accepted",
+    "rule": "OneRevision",
+    "from": "IF revisionOK /\\ offsetOK",
+    "to": "IF offsetOK"
+  },
+  {
+    "owner": "ext-paging",
+    "name": "wrong-offset-accepted",
+    "rule": "ContiguousPages",
+    "from": "IF revisionOK /\\ offsetOK",
+    "to": "IF revisionOK"
+  },
+  {
+    "owner": "ext-opening",
+    "name": "old-generation-opens",
+    "rule": "CurrentGenerationOnly",
+    "from": "mounted /\\ q.born = generation /\\ q.number = latest[q.target]",
+    "to": "mounted /\\ q.number = latest[q.target]"
+  },
+  {
+    "owner": "ext-opening",
+    "name": "superseded-target-opens",
+    "rule": "LatestTargetOnly",
+    "from": "mounted /\\ q.born = generation /\\ q.number = latest[q.target]",
+    "to": "mounted /\\ q.born = generation"
+  },
+  {
+    "owner": "ext-opening",
+    "name": "unmounted-opens",
+    "rule": "MountedOnly",
+    "from": "mounted /\\ q.born = generation /\\ q.number = latest[q.target]",
+    "to": "q.born = generation /\\ q.number = latest[q.target]"
+  }
+]
