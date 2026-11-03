@@ -1,0 +1,133 @@
+{
+  "ok": true,
+  "browser": "156.0.8078.80",
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "pages": 24,
+  "diagrams": 5,
+  "errors": [],
+  "results": [
+    {
+      "id": "nessa-extensions",
+      "figures": 1,
+      "failed": 0
+    },
+    {
+      "id": "ext-build",
+      "figures": 0,
+      "failed": 0
+    },
+    {
+      "id": "ext-development",
+      "figures": 0,
+      "failed": 0
+    },
+    {
+      "id": "ext-inventory",
+      "figures": 0,
+      "failed": 0
+    },
+    {
+      "id": "ext-running",
+      "figures": 0,
+      "failed": 0
+    },
+    {
+      "id": "ext-app-shell",
+      "figures": 0,
+      "failed": 0
+    },
+    {
+      "id": "ext-connection",
+      "figures": 1,
+      "failed": 0
+    },
+    {
+      "id": "ext-presentation",
+      "figures": 0,
+      "failed": 0
+    },
+    {
+      "id": "ext-requests",
+      "figures": 0,
+      "failed": 0
+    },
+    {
+      "id": "ext-tool-call",
+      "figures": 1,
+      "failed": 0
+    },
+    {
+      "id": "ext-experiments",
+      "figures": 0,
+      "failed": 0
+    },
+    {
+      "id": "ext-changes",
+      "figures": 0,
+      "failed": 0
+    },
+    {
+      "id": "ext-data",
+      "figures": 0,
+      "failed": 0
+    },
+    {
+      "id": "ext-display",
+      "figures": 0,
+      "failed": 0
+    },
+    {
+      "id": "ext-opening",
+      "figures": 1,
+      "failed": 0
+    },
+    {
+      "id": "ext-overview",
+      "figures": 0,
+      "failed": 0
+    },
+    {
+      "id": "ext-paging",
+      "figures": 1,
+      "failed": 0
+    },
+    {
+      "id": "ext-records",
+      "figures": 0,
+      "failed": 0
+    },
+    {
+      "id": "ext-runs",
+      "figures": 0,
+      "failed": 0
+    },
+    {
+      "id": "ext-server-kit",
+      "figures": 0,
+      "failed": 0
+    },
+    {
+      "id": "ext-definitions",
+      "figures": 0,
+      "failed": 0
+    },
+    {
+      "id": "ext-negotiation",
+      "figures": 0,
+      "failed": 0
+    },
+    {
+      "id": "ext-transports",
+      "figures": 0,
+      "failed": 0
+    },
+    {
+      "id": "ext-verification",
+      "figures": 0,
+      "failed": 0
+    }
+  ]
+}
