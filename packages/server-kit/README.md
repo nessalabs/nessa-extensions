@@ -83,6 +83,7 @@ serveOverStdio(board)
 | `src/negotiation.ts` | Whether the client of one request renders MCP Apps. |
 | `src/server.ts` | The MCP server built from an extension (`serverFactory`). |
 | `src/transports.ts` | Serving it over stdio and over HTTP on this machine. |
+| `src/remote-http.ts` | Authenticated remote HTTP mount on a host-owned listener. |
 | `src/testing.ts` | The client fixture and sample extension the tests share, exported as `@nessalabs/server-kit/testing` so an extension's server tests use the same fixture. |
 | `src/stdio.fixture.ts` | The sample extension on real stdio, run as a child process by `transports.test.ts`. |
 
@@ -138,7 +139,55 @@ unless one is given; at `/mcp`), and resolves with the bound `url` and a
   is refused `403`, which keeps a web page from reaching the server by DNS
   rebinding. A request target that is not a path is answered `400`, and one
   whose path is not exactly `path` `404`; `path` is checked when serving
-  starts. Serving a remote host needs authentication and is #11.
+  starts.
+
+### Opt in to remote HTTP for a modern host
+
+Use `mountRemoteHttp(extension, options)` to obtain a Node request handler
+and MCP cleanup function. Mount `handle` on a dedicated HTTPS listener,
+or forward to a **private** backend from your own TLS terminator. On shutdown,
+stop routing new requests to the mount, call its MCP cleanup, and close your
+listener. The kit opens neither a listener
+nor a public endpoint, issues no tokens, and does not read forwarded
+host, origin, or scheme headers. Do not bind a plaintext backend publicly.
+Enforce request read deadlines and rate limits at the host, even though the
+SDK bounds request-body buffering.
+
+Supply a canonical external HTTPS `publicUrl` with the MCP path, trusted
+`allowedHosts` including its exact authority (port included if nondefault),
+an explicit list of allowed HTTPS `allowedOrigins`, and the existing HTTPS
+authorization server's `oauthMetadata`. Supply `requiredScopes`, a nonempty
+list of up to 16 distinct OAuth scope tokens (up to 128 characters each).
+The same list gates access and appears in protected-resource metadata and
+bearer scope challenges. The host must preserve an allowed
+Host header when forwarding. An absent Origin is normal for a server client;
+an empty list means no Origin header is accepted. Origin checks are not
+authentication and this mount does not implement browser CORS.
+
+`verifyAccessToken(token, resource)` is the host's current authorization check.
+Validate the token's issuer, signature or introspection, expiry, and audience
+for the configured resource, apply the host's policy, and populate
+`AuthInfo.resource` from the verified token audience. The mount checks that
+this audience matches and uses the MCP SDK to check expiration and construct
+a bearer challenge. Throw the SDK's typed `InvalidToken` for a known refusal
+or `InsufficientScope` for denied scope. Treat verifier dependency failure as
+unavailable, not as a grant. The verifier owns its I/O deadline.
+The host's authorization server owns the flows that issue these tokens. The
+kit's SDK client test uses synthetic pre-supplied tokens, not a sign-in flow.
+
+| Request | Result |
+| --- | --- |
+| Wrong Host or a present, unapproved Origin | 403 before token verification. |
+| GET at the SDK-derived OAuth protected-resource metadata path | Public discovery for the configured resource and issuer. |
+| MCP path with missing or rejected credentials | SDK bearer refusal/challenge; no MCP dispatch. |
+| Authenticated modern request | SDK MCP handler, with verified auth info. |
+| Authenticated 2025-era request | Same explicit legacy rejection as loopback HTTP. |
+
+The pinned SDK offers a stateless legacy convenience mode, not a sessionful
+legacy deployment through `createMcpHandler`. Its separate session transport
+does not supply cross-request session routing and storage for this kit.
+[Issue #11](https://github.com/nessalabs/nessa-extensions/issues/11) still tracks
+actual app rendering in a remote host and the 2025-era HTTP criterion.
 
 ## Tests
 

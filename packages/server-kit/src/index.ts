@@ -7,7 +7,7 @@
  * - Its MCP server (`serverFactory`), which answers each request for the
  *   client that sent it: with views for a host that renders MCP Apps, as a
  *   plain MCP server otherwise.
- * - Serving it (`serveOverStdio`, `serveOverHttp`).
+ * - Serving it (`serveOverStdio`, `serveOverHttp`, `mountRemoteHttp`).
  */
 export {
   DefinitionError,
@@ -32,3 +32,8 @@ export {
   type HttpOptions,
   type HttpServing,
 } from "./transports.ts"
+export {
+  mountRemoteHttp,
+  type RemoteHttpMount,
+  type RemoteHttpOptions,
+} from "./remote-http.ts"
